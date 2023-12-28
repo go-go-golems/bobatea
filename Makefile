@@ -1,12 +1,8 @@
-.PHONY: gifs
+.PHONY:
 
-all: gifs
+all: build test
 
-VERSION=v0.1.14
-
-TAPES=$(shell ls doc/vhs/*tape)
-gifs: $(TAPES)
-	for i in $(TAPES); do vhs < $$i; done
+VERSION=v0.0.1
 
 docker-lint:
 	docker run --rm -v $(shell pwd):/app -w /app golangci/golangci-lint:v1.50.1 golangci-lint run -v
@@ -35,14 +31,5 @@ tag-patch:
 
 release:
 	git push --tags
-	GOPROXY=proxy.golang.org go list -m github.com/go-go-golems/XXX@$(shell svu current)
+	GOPROXY=proxy.golang.org go list -m github.com/go-go-golems/bobatea@$(shell svu current)
 
-bump-glazed:
-	go get github.com/go-go-golems/glazed@latest
-	go get github.com/go-go-golems/clay@latest
-	go mod tidy
-
-XXX_BINARY=$(shell which XXX)
-install:
-	go build -o ./dist/XXX ./cmd/XXX && \
-		cp ./dist/XXX $(XXX_BINARY)
