@@ -1,8 +1,12 @@
 package textarea
 
+import "github.com/charmbracelet/bubbles/key"
+
 // This is a clone of the textarea package from charmbracelet/bubbles.
 // It includes the memoization workaround to fix performance issues,
-// see: https://github.com/charmbracelet/bubbles/issues/301
+// see:
+// - https://github.com/charmbracelet/bubbles/issues/301
+// - https://github.com/charmbracelet/bubbletea/issues/831
 
 import (
 	"crypto/sha256"
@@ -13,7 +17,6 @@ import (
 
 	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/cursor"
-	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/runeutil"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
