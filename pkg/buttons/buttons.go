@@ -14,14 +14,49 @@ type Model struct {
 	Width    int
 }
 
-func NewModel(buttons []string) Model {
-	return Model{
-		buttons:  buttons,
-		active:   0,
-		Question: "",
-		Width:    100,
-		keyMap:   DefaultKeyMap(),
+type ModelOption func(*Model)
+
+func WithQuestion(question string) ModelOption {
+	return func(m *Model) {
+		m.Question = question
 	}
+}
+
+func WithButtons(buttons ...string) ModelOption {
+	return func(m *Model) {
+		m.buttons = buttons
+	}
+}
+
+func WithWidth(width int) ModelOption {
+	return func(m *Model) {
+		m.Width = width
+	}
+}
+
+func WithActiveButton(button string) ModelOption {
+	return func(m *Model) {
+		for i, b := range m.buttons {
+			if b == button {
+				m.active = i
+				return
+			}
+		}
+	}
+}
+
+func NewModel(options ...ModelOption) Model {
+	ret := Model{
+		active: 0,
+		Width:  100,
+		keyMap: DefaultKeyMap(),
+	}
+
+	for _, option := range options {
+		option(&ret)
+	}
+
+	return ret
 }
 
 type SelectedMsg struct {
@@ -30,8 +65,6 @@ type SelectedMsg struct {
 }
 
 type AbortedMsg struct{}
-
-var _ tea.Model = Model{}
 
 func (m Model) Init() tea.Cmd {
 	return nil
@@ -61,7 +94,7 @@ var (
 	subtle = lipgloss.AdaptiveColor{Light: "#D9DCCF", Dark: "#383838"}
 )
 
-func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	var cmd tea.Cmd
 
 	switch msg := msg.(type) {

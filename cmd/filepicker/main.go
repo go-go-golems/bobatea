@@ -1,12 +1,14 @@
 package main
 
 import (
+	"fmt"
 	"github.com/charmbracelet/bubbletea"
 )
 import "github.com/go-go-golems/bobatea/pkg/filepicker"
 
 type Model struct {
-	fp filepicker.Model
+	fp           filepicker.Model
+	selectedPath string
 }
 
 func NewModel() Model {
@@ -30,9 +32,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case filepicker.SelectFileMsg:
+		m.selectedPath = msg.Path
 		return m, tea.Quit
 
 	case filepicker.CancelFilePickerMsg:
+		fmt.Println("Cancelled")
 		return m, tea.Quit
 
 	case tea.KeyMsg:
@@ -58,7 +62,11 @@ func main() {
 	b := NewModel()
 
 	p := tea.NewProgram(b)
-	if _, err := p.Run(); err != nil {
+	var err error
+	var m tea.Model
+	if m, err = p.Run(); err != nil {
 		panic(err)
 	}
+
+	fmt.Println("Selected path:", m.(Model).selectedPath)
 }
