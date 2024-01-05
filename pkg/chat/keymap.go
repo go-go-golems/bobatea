@@ -91,8 +91,8 @@ var DefaultKeyMap = KeyMap{
 	),
 
 	Quit: key.NewBinding(
-		key.WithKeys("ctrl+c"),
-		key.WithHelp("ctrl+c", "quit"),
+		key.WithKeys("ctrl+shift+q"),
+		key.WithHelp("ctrl+shift+q", "quit"),
 	),
 }
 
