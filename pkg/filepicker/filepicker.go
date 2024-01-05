@@ -40,13 +40,13 @@ type Model struct {
 	SelectedPath string
 }
 
-type state int
+type state string
 
 const (
-	stateBrowse state = iota
-	stateNewFile
-	stateConfirmNew
-	stateConfirmOverwrite
+	stateBrowse           state = "browse"
+	stateNewFile          state = "new-file"
+	stateConfirmNew       state = "confirm-new"
+	stateConfirmOverwrite state = "confirm-overwrite"
 )
 
 func NewModel() Model {
@@ -146,7 +146,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 	var cmd tea.Cmd
 
 	if key.Matches(msg, m.keyMap.Help) {
-		m.help, cmd = m.help.Update(msg)
+		m.help.ShowAll = !m.help.ShowAll
 		return cmd
 	}
 
@@ -190,7 +190,12 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		}
 
 	case stateConfirmNew, stateConfirmOverwrite:
-		m.confirmDialog, cmd = m.confirmDialog.Update(msg)
+		switch {
+		case key.Matches(msg, m.keyMap.Exit):
+			return m.enterBrowse()
+		default:
+			m.confirmDialog, cmd = m.confirmDialog.Update(msg)
+		}
 		return cmd
 	}
 

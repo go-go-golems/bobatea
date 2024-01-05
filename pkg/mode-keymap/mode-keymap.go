@@ -137,6 +137,8 @@ func EnableMode(keymap interface{}, mode string) {
 	ForEachKeyBinding(keymap, func(b *key.Binding, modes Modes) {
 		if modes.Contains(mode) {
 			b.SetEnabled(true)
+		} else {
+			b.SetEnabled(false)
 		}
 	})
 }
