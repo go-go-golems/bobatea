@@ -33,23 +33,32 @@ type KeyMap struct {
 func (k *KeyMap) ForEach(f func(b *key.Binding)) {
 	v := reflect.ValueOf(k).Elem()
 
-	for i := 0; i < v.NumField(); i++ {
+	n := v.NumField()
+	for i := 0; i < n; i++ {
 		field := v.Field(i)
-		if field.Kind() == reflect.Struct &&
-			field.Type().Name() == "Binding" &&
-			field.Type().PkgPath() == "github.com/charmbracelet/bubbles/key" {
-			if addr, ok := field.Addr().Interface().(*key.Binding); ok {
-				f(addr)
+		kind := field.Kind()
+		//exhaustive:ignore
+		switch kind {
+		case reflect.Struct:
+			name := field.Type().Name()
+			pkgPath := field.Type().PkgPath()
+			if name == "Binding" &&
+				pkgPath == "github.com/charmbracelet/bubbles/key" {
+				if addr, ok := field.Addr().Interface().(*key.Binding); ok {
+					f(addr)
+				}
 			}
-			return
-		}
-		if field.Kind() == reflect.Ptr &&
-			field.Type().Elem().Name() == "Binding" &&
-			field.Type().Elem().PkgPath() == "github.com/charmbracelet/bubbles/key" {
-			if addr, ok := field.Interface().(*key.Binding); ok {
-				f(addr)
+
+		case reflect.Ptr:
+			name := field.Type().Elem().Name()
+			pkg := field.Type().Elem().PkgPath()
+			if name == "Binding" &&
+				pkg == "github.com/charmbracelet/bubbles/key" {
+				if addr, ok := field.Interface().(*key.Binding); ok {
+					f(addr)
+				}
 			}
-			return
+		default:
 		}
 	}
 }
@@ -96,11 +105,12 @@ func (k KeyMap) ShortHelp() []key.Binding {
 	return []key.Binding{
 		k.Help,
 		k.Accept,
+		k.CreateFile,
 		k.GoToTop,
 		k.GoToLast,
 		k.Back,
+		k.Forward,
 		k.ResetFileInput,
-		k.Accept,
 		k.Exit,
 	}
 }
@@ -110,17 +120,17 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 		{
 			k.Help,
 			k.Accept,
+			k.CreateFile,
 			k.GoToTop,
 			k.GoToLast,
 			k.Back,
 			k.ResetFileInput,
-			k.Accept,
 			k.Exit,
 		},
 	}
 }
 
-func (k KeyMap) DisableAll() {
+func (k *KeyMap) DisableAll() {
 	k.ForEach(func(b *key.Binding) {
 		b.SetEnabled(false)
 	})
@@ -131,16 +141,16 @@ func (k *KeyMap) UpdateKeyBindings(state state, input string) {
 
 	switch state {
 	case stateBrowse:
-		for _, k := range []key.Binding{
-			k.Accept, k.Back, k.Help, k.Exit, k.CreateFile,
-			k.GoToTop, k.GoToLast, k.Down, k.Up, k.PageUp, k.PageDown, k.Back, k.Forward,
+		for _, k := range []*key.Binding{
+			&k.Accept, &k.Back, &k.Help, &k.Exit, &k.CreateFile,
+			&k.GoToTop, &k.GoToLast, &k.Down, &k.Up, &k.PageUp, &k.PageDown, &k.Back, &k.Forward,
 		} {
 			k.SetEnabled(true)
 		}
 
 	case stateNewFile:
-		for _, k := range []key.Binding{
-			k.Help, k.Exit,
+		for _, k := range []*key.Binding{
+			&k.Help, &k.Exit, &k.Accept,
 		} {
 			k.SetEnabled(true)
 		}
@@ -150,8 +160,8 @@ func (k *KeyMap) UpdateKeyBindings(state state, input string) {
 		}
 
 	case stateConfirmNew:
-		for _, k := range []key.Binding{
-			k.Accept, k.NextButton, k.LeftButton, k.RightButton, k.Help, k.Exit,
+		for _, k := range []*key.Binding{
+			&k.Accept, &k.NextButton, &k.LeftButton, &k.RightButton, &k.Help, &k.Exit,
 		} {
 			k.SetEnabled(true)
 		}
