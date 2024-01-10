@@ -8,25 +8,23 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	"github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	mode_keymap "github.com/go-go-golems/bobatea/pkg/mode-keymap"
 	"github.com/go-go-golems/bobatea/pkg/textarea"
+	"github.com/go-go-golems/glazed/pkg/helpers/markdown"
 	"github.com/pkg/errors"
+	"golang.design/x/clipboard"
+	"strings"
 	"time"
 )
 
 type errMsg error
 
-// states:
-// - user input
-// - user moving around messages
-// - stream completion
-// - showing error
-
 type State string
 
 const (
-	StateUserInput        State = "user_input"
-	StateMovingAround     State = "moving_around"
-	StateStreamCompletion State = "stream_completion"
+	StateUserInput        State = "user-input"
+	StateMovingAround     State = "moving-around"
+	StateStreamCompletion State = "stream-completion"
 	StateError            State = "error"
 )
 
@@ -84,7 +82,7 @@ func InitialModel(manager ConversationManager, backend Backend) model {
 	}
 
 	ret.textArea = textarea.New()
-	ret.textArea.Placeholder = "Once upon a time..."
+	ret.textArea.Placeholder = "Dear AI, answer my plight..."
 	ret.textArea.Focus()
 	ret.state = StateUserInput
 
@@ -101,7 +99,17 @@ func InitialModel(manager ConversationManager, backend Backend) model {
 }
 
 func (m model) Init() tea.Cmd {
-	return textarea.Blink
+	cmds := []tea.Cmd{
+		textarea.Blink,
+	}
+	err := clipboard.Init()
+	if err != nil {
+		cmds = append(cmds, func() tea.Msg {
+			return errMsg(err)
+		})
+	}
+
+	return tea.Batch(cmds...)
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -110,11 +118,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		k := msg.String()
+		_ = k
 		switch {
+		case key.Matches(msg, m.keyMap.Help):
+			m.help.ShowAll = !m.help.ShowAll
 		case key.Matches(msg, m.keyMap.UnfocusMessage):
 			if m.state == StateUserInput {
 				m.textArea.Blur()
 				m.state = StateMovingAround
+				m.selectedIdx = len(m.contextManager.GetMessages()) - 1
+				if m.selectedIdx < 0 {
+					m.selectedIdx = 0
+				}
+				m.viewport.SetContent(m.messageView())
 				m.updateKeyBindings()
 			}
 		case key.Matches(msg, m.keyMap.Quit):
@@ -131,27 +148,88 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case key.Matches(msg, m.keyMap.FocusMessage):
 			if m.state == StateMovingAround {
+				// TODO(manuel, 2024-01-06) This could potentially focus on a previous message
+				// and allow us to regenerate.
 				cmd = m.textArea.Focus()
 				cmds = append(cmds, cmd)
 
 				m.state = StateUserInput
 				m.updateKeyBindings()
+				m.viewport.SetContent(m.messageView())
 			}
 
 		case key.Matches(msg, m.keyMap.SelectNextMessage):
 			if m.selectedIdx < len(m.contextManager.GetMessages())-1 {
 				m.selectedIdx++
+				m.viewport.SetContent(m.messageView())
 			}
 
 		case key.Matches(msg, m.keyMap.SelectPrevMessage):
 			if m.selectedIdx > 0 {
 				m.selectedIdx--
+				m.viewport.SetContent(m.messageView())
 			}
 
 		case key.Matches(msg, m.keyMap.SubmitMessage):
 			if m.state == StateUserInput {
 				cmd := m.submit()
 				cmds = append(cmds, cmd)
+			}
+
+		case key.Matches(msg, m.keyMap.CopyToClipboard):
+			msgs := m.contextManager.GetMessages()
+			if len(msgs) > 0 {
+				if m.state == StateMovingAround {
+					if m.selectedIdx < len(msgs) && m.selectedIdx >= 0 {
+						msg_ := msgs[m.selectedIdx]
+						clipboard.Write(clipboard.FmtText, []byte(msg_.Text))
+					}
+				} else {
+					text := ""
+					for _, m := range msgs {
+						if m.Role == RoleAssistant {
+							text += m.Text + "\n"
+						}
+					}
+					clipboard.Write(clipboard.FmtText, []byte(text))
+				}
+			}
+
+		case key.Matches(msg, m.keyMap.CopyLastResponseToClipboard):
+			msgs := m.contextManager.GetMessages()
+			if len(msgs) > 0 {
+				if m.state == StateMovingAround {
+					if m.selectedIdx < len(msgs) && m.selectedIdx >= 0 {
+						msg_ := msgs[m.selectedIdx]
+						clipboard.Write(clipboard.FmtText, []byte(msg_.Text))
+					}
+				} else {
+					if m.state == StateUserInput {
+						lastMsg := msgs[len(msgs)-1]
+						clipboard.Write(clipboard.FmtText, []byte(lastMsg.Text))
+					}
+				}
+			}
+
+		case key.Matches(msg, m.keyMap.CopySourceBlocksToClipboard):
+			msgs := m.contextManager.GetMessages()
+			if len(msgs) > 0 {
+				if m.state == StateMovingAround {
+					if m.selectedIdx < len(msgs) && m.selectedIdx >= 0 {
+						msg_ := msgs[m.selectedIdx]
+						code := markdown.ExtractCodeBlocksWithComments(msg_.Text, false)
+						clipboard.Write(clipboard.FmtText, []byte(strings.Join(code, "\n")))
+					}
+				} else {
+					text := ""
+					for _, m := range msgs {
+						if m.Role == RoleAssistant {
+							text += m.Text + "\n"
+						}
+					}
+					code := markdown.ExtractCodeBlocksWithComments(text, false)
+					clipboard.Write(clipboard.FmtText, []byte(strings.Join(code, "\n")))
+				}
 			}
 
 		case key.Matches(msg, m.keyMap.SaveToFile):
@@ -211,9 +289,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.recomputeSize()
 			m.previousResponseHeight = newHeight
 		}
-		cmds = append(cmds, func() tea.Msg {
-			return refreshMessageMsg{}
-		})
+		//cmds = append(cmds, func() tea.Msg {
+		//	return refreshMessageMsg{}
+		//})
 		cmd = m.getNextCompletion()
 		cmds = append(cmds, cmd)
 
@@ -242,20 +320,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *model) updateKeyBindings() {
-	m.keyMap.SaveToFile.SetEnabled(true)
-	m.keyMap.SaveSourceBlocksToFile.SetEnabled(true)
-	m.keyMap.CopyToClipboard.SetEnabled(true)
-	m.keyMap.CopyLastResponseToClipboard.SetEnabled(true)
-	m.keyMap.CopySourceBlocksToClipboard.SetEnabled(true)
-
-	m.keyMap.SelectNextMessage.SetEnabled(m.state == StateMovingAround)
-	m.keyMap.SelectPrevMessage.SetEnabled(m.state == StateMovingAround)
-	m.keyMap.FocusMessage.SetEnabled(m.state == StateMovingAround)
-	m.keyMap.UnfocusMessage.SetEnabled(m.state == StateUserInput)
-	m.keyMap.SubmitMessage.SetEnabled(m.state == StateUserInput)
-
-	m.keyMap.DismissError.SetEnabled(m.state == StateError)
-	m.keyMap.CancelCompletion.SetEnabled(m.state == StateStreamCompletion)
+	mode_keymap.EnableMode(&m.keyMap, string(m.state))
 }
 
 func (m *model) recomputeSize() {
@@ -280,6 +345,8 @@ func (m *model) recomputeSize() {
 
 	m.textArea.SetWidth(m.width - h)
 
+	messages := m.messageView()
+	m.viewport.SetContent(messages)
 	messageView := m.messageView()
 	m.viewport.SetContent(messageView)
 
@@ -299,10 +366,16 @@ func (m model) messageView() string {
 		message := m.contextManager.GetMessagesWithSystemPrompt()[idx]
 		v := fmt.Sprintf("[%s]: %s", message.Role, message.Text)
 
-		w, _ := m.style.SelectedMessage.GetFrameSize()
+		style := m.style.UnselectedMessage
+		if idx == m.selectedIdx && m.state == StateMovingAround {
+			style = m.style.SelectedMessage
+		}
+		w, _ := style.GetFrameSize()
 
-		v_ := wrapWords(v, m.width-w-m.style.SelectedMessage.GetHorizontalPadding())
-		v_ = m.style.UnselectedMessage.Width(m.width - m.style.SelectedMessage.GetHorizontalPadding()).Render(v_)
+		v_ := wrapWords(v, m.width-w-style.GetHorizontalPadding())
+		v_ = style.
+			Width(m.width - style.GetHorizontalPadding()).
+			Render(v_)
 		ret += v_
 		ret += "\n"
 	}

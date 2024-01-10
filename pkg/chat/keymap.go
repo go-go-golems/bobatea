@@ -3,28 +3,36 @@ package chat
 import "github.com/charmbracelet/bubbles/key"
 
 type KeyMap struct {
-	SelectPrevMessage key.Binding
-	SelectNextMessage key.Binding
-	UnfocusMessage    key.Binding
-	FocusMessage      key.Binding
-	SubmitMessage     key.Binding
-	ScrollUp          key.Binding
-	ScrollDown        key.Binding
+	SelectPrevMessage key.Binding `keymap-mode:"moving-around"`
+	SelectNextMessage key.Binding `keymap-mode:"moving-around"`
+	UnfocusMessage    key.Binding `keymap-mode:"user-input"`
+	FocusMessage      key.Binding `keymap-mode:"moving-around"`
 
-	CancelCompletion key.Binding
-	DismissError     key.Binding
+	SubmitMessage key.Binding `keymap-mode:"user-input"`
+	ScrollUp      key.Binding
+	ScrollDown    key.Binding
+
+	CancelCompletion key.Binding `keymap-mode:"stream-completion"`
+	DismissError     key.Binding `keymap-mode:"error"`
 
 	LoadFromFile key.Binding
 
-	SaveToFile             key.Binding
-	SaveSourceBlocksToFile key.Binding
+	Regenerate         key.Binding `keymap-mode:"user-input"`
+	RegenerateFromHere key.Binding `keymap-mode:"moving-around"`
+	EditMessage        key.Binding `keymap-mode:"moving-around"`
 
-	CopyToClipboard             key.Binding
-	CopyLastResponseToClipboard key.Binding
-	CopySourceBlocksToClipboard key.Binding
+	PreviousConversationThread key.Binding `keymap-mode:"moving-around"`
+	NextConversationThread     key.Binding `keymap-mode:"moving-around"`
 
-	Help key.Binding
-	Quit key.Binding
+	SaveToFile             key.Binding `keymap-mode:"*"`
+	SaveSourceBlocksToFile key.Binding `keymap-mode:"*"`
+
+	CopyToClipboard             key.Binding `keymap-mode:"moving-around"`
+	CopyLastResponseToClipboard key.Binding `keymap-mode:"user-input"`
+	CopySourceBlocksToClipboard key.Binding `keymap-mode:"moving-around"`
+
+	Help key.Binding `keymap-mode:"*"`
+	Quit key.Binding `keymap-mode:"*"`
 }
 
 var DefaultKeyMap = KeyMap{
@@ -64,21 +72,21 @@ var DefaultKeyMap = KeyMap{
 		key.WithHelp("ctrl+s", "save to file"),
 	),
 	SaveSourceBlocksToFile: key.NewBinding(
-		key.WithKeys("ctrl+shift+s"),
-		key.WithHelp("ctrl+shift+s", "save source blocks to file"),
+		key.WithKeys("alt+s"),
+		key.WithHelp("alt+s", "save source"),
 	),
 
 	CopyToClipboard: key.NewBinding(
-		key.WithKeys("ctrl+c"),
-		key.WithHelp("ctrl+c", "copy to clipboard"),
+		key.WithKeys("alt+c"),
+		key.WithHelp("alt+c", "copy selected"),
 	),
 	CopyLastResponseToClipboard: key.NewBinding(
-		key.WithKeys("ctrl+shift+d"),
-		key.WithHelp("ctrl+shift+d", "copy last response to clipboard"),
+		key.WithKeys("alt+l"),
+		key.WithHelp("alt+l", "copy response"),
 	),
 	CopySourceBlocksToClipboard: key.NewBinding(
-		key.WithKeys("ctrl+shift+c"),
-		key.WithHelp("ctrl+shift+c", "copy source blocks to clipboard"),
+		key.WithKeys("alt+d"),
+		key.WithHelp("alt+d", "copy selected source"),
 	),
 
 	ScrollUp: key.NewBinding(
@@ -91,21 +99,46 @@ var DefaultKeyMap = KeyMap{
 	),
 
 	Quit: key.NewBinding(
-		key.WithKeys("ctrl+shift+q"),
-		key.WithHelp("ctrl+shift+q", "quit"),
+		key.WithKeys("alt+q"),
+		key.WithHelp("alt+q", "quit"),
+	),
+
+	Help: key.NewBinding(
+		key.WithKeys("ctrl-?"),
+		key.WithHelp("ctrl-?", "help")),
+
+	PreviousConversationThread: key.NewBinding(
+		key.WithKeys("left"),
+		key.WithHelp("left", "previous conversation thread"),
+	),
+
+	NextConversationThread: key.NewBinding(
+		key.WithKeys("right"),
+		key.WithHelp("right", "next conversation thread"),
 	),
 }
 
 func (k KeyMap) ShortHelp() []key.Binding {
 	return []key.Binding{k.Help,
 		k.SubmitMessage,
+		k.CopyLastResponseToClipboard,
+		k.CopyToClipboard,
+		k.CopySourceBlocksToClipboard,
+		k.FocusMessage,
 		k.DismissError,
 		k.CancelCompletion,
+		k.SelectPrevMessage,
+		k.SelectNextMessage,
 		k.SaveToFile,
-		k.Quit}
+		k.Help,
+		k.Quit,
+	}
 }
 func (k KeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
-		{k.SelectPrevMessage, k.SelectNextMessage, k.UnfocusMessage, k.FocusMessage},
+		{k.SelectPrevMessage, k.SelectNextMessage},
+		{k.UnfocusMessage, k.FocusMessage},
+		{k.CopyLastResponseToClipboard, k.CopyToClipboard},
+		{k.CopySourceBlocksToClipboard},
 	}
 }
