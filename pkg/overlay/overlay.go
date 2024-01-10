@@ -18,6 +18,9 @@ import (
 // https://github.com/charmbracelet/lipgloss/pull/102
 // as well as the lipgloss library, with some modification for what I needed.
 
+// TODO(manuel, 2024-01-10) Look at https://github.com/schmorrison/bubble-overlay/blob/main/overlay.go which might
+// just be a better way to do all of this.
+
 // Split a string into lines, additionally returning the size of the widest
 // line.
 func getLines(s string) ([]string, int) {
