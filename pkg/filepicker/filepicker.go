@@ -94,8 +94,8 @@ func (m *Model) resize() tea.Cmd {
 	return cmd
 }
 
-func (m *Model) setError(error string) tea.Cmd {
-	m.Error = error
+func (m *Model) setError(err string) tea.Cmd {
+	m.Error = err
 	m.state = stateBrowse
 
 	if m.Error != "" {
@@ -258,7 +258,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				)
 			}
 
-		default:
+		case stateBrowse, stateNewFile:
 		}
 
 	case tea.KeyMsg:

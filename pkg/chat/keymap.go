@@ -27,9 +27,10 @@ type KeyMap struct {
 	SaveToFile             key.Binding `keymap-mode:"*"`
 	SaveSourceBlocksToFile key.Binding `keymap-mode:"*"`
 
-	CopyToClipboard             key.Binding `keymap-mode:"moving-around"`
-	CopyLastResponseToClipboard key.Binding `keymap-mode:"user-input"`
-	CopySourceBlocksToClipboard key.Binding `keymap-mode:"moving-around"`
+	CopyToClipboard                 key.Binding `keymap-mode:"moving-around"`
+	CopyLastResponseToClipboard     key.Binding `keymap-mode:"user-input"`
+	CopyLastSourceBlocksToClipboard key.Binding `keymap-mode:"user-input"`
+	CopySourceBlocksToClipboard     key.Binding `keymap-mode:"moving-around"`
 
 	Help key.Binding `keymap-mode:"*"`
 	Quit key.Binding `keymap-mode:"*"`
@@ -88,6 +89,10 @@ var DefaultKeyMap = KeyMap{
 		key.WithKeys("alt+d"),
 		key.WithHelp("alt+d", "copy selected source"),
 	),
+	CopyLastSourceBlocksToClipboard: key.NewBinding(
+		key.WithKeys("alt+k"),
+		key.WithHelp("alt+k", "copy source"),
+	),
 
 	ScrollUp: key.NewBinding(
 		key.WithKeys("shift+pgup"),
@@ -122,6 +127,7 @@ func (k KeyMap) ShortHelp() []key.Binding {
 	return []key.Binding{k.Help,
 		k.SubmitMessage,
 		k.CopyLastResponseToClipboard,
+		k.CopyLastSourceBlocksToClipboard,
 		k.CopyToClipboard,
 		k.CopySourceBlocksToClipboard,
 		k.FocusMessage,

@@ -12,7 +12,9 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	return m.buttons.Update(msg)
+	m_, cmds := m.buttons.Update(msg)
+	m.buttons = m_
+	return m, cmds
 }
 
 func (m Model) View() string {
@@ -22,11 +24,11 @@ func (m Model) View() string {
 var _ tea.Model = Model{}
 
 func NewModel() Model {
-	model := buttons.NewModel([]string{
+	model := buttons.NewModel(buttons.WithButtons(
 		"button1",
 		"button2",
 		"button3",
-	})
+	))
 	model.Question = "What is your favorite color?"
 	ret := Model{
 		buttons: model,
