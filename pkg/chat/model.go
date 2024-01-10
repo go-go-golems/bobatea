@@ -468,8 +468,7 @@ func (m *model) submit() tea.Cmd {
 	})
 
 	ctx := context2.Background()
-	var err error
-	err = m.backend.Start(ctx, m.contextManager.GetMessagesWithSystemPrompt())
+	err := m.backend.Start(ctx, m.contextManager.GetMessagesWithSystemPrompt())
 
 	m.state = StateStreamCompletion
 	m.updateKeyBindings()

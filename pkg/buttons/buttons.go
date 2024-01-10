@@ -92,6 +92,7 @@ var (
 				Underline(true)
 
 	subtle = lipgloss.AdaptiveColor{Light: "#D9DCCF", Dark: "#383838"}
+	_      = subtle
 )
 
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {

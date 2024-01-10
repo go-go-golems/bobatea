@@ -1149,8 +1149,8 @@ func (m Model) View() string {
 	return m.style.Base.Render(m.viewport.View())
 }
 
-func (m Model) getPromptString(displayLine int) (prompt string) {
-	prompt = m.Prompt
+func (m Model) getPromptString(displayLine int) string {
+	prompt := m.Prompt
 	if m.promptFunc == nil {
 		return prompt
 	}
