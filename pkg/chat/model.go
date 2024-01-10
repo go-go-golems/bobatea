@@ -211,13 +211,36 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 
+		case key.Matches(msg, m.keyMap.CopyLastSourceBlocksToClipboard):
+			msgs := m.contextManager.GetMessages()
+			if len(msgs) > 0 {
+				if m.state == StateMovingAround {
+					if m.selectedIdx < len(msgs) && m.selectedIdx >= 0 {
+						msg_ := msgs[m.selectedIdx]
+						code := markdown.ExtractQuotedBlocks(msg_.Text, false)
+						clipboard.Write(clipboard.FmtText, []byte(strings.Join(code, "\n")))
+					}
+				} else {
+					if m.state == StateUserInput {
+						text := ""
+						for _, m := range msgs {
+							if m.Role == RoleAssistant {
+								text += m.Text + "\n"
+							}
+						}
+						code := markdown.ExtractQuotedBlocks(text, false)
+						clipboard.Write(clipboard.FmtText, []byte(strings.Join(code, "\n")))
+					}
+				}
+			}
+
 		case key.Matches(msg, m.keyMap.CopySourceBlocksToClipboard):
 			msgs := m.contextManager.GetMessages()
 			if len(msgs) > 0 {
 				if m.state == StateMovingAround {
 					if m.selectedIdx < len(msgs) && m.selectedIdx >= 0 {
 						msg_ := msgs[m.selectedIdx]
-						code := markdown.ExtractCodeBlocksWithComments(msg_.Text, false)
+						code := markdown.ExtractQuotedBlocks(msg_.Text, false)
 						clipboard.Write(clipboard.FmtText, []byte(strings.Join(code, "\n")))
 					}
 				} else {
@@ -227,7 +250,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							text += m.Text + "\n"
 						}
 					}
-					code := markdown.ExtractCodeBlocksWithComments(text, false)
+					code := markdown.ExtractQuotedBlocks(text, false)
 					clipboard.Write(clipboard.FmtText, []byte(strings.Join(code, "\n")))
 				}
 			}
