@@ -187,6 +187,13 @@ var (
 	docStyle = lipgloss.NewStyle().Padding(1, 2, 1, 2)
 )
 
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
 func main() {
 	physicalWidth, _, _ := term.GetSize(int(os.Stdout.Fd()))
 	doc := strings.Builder{}
@@ -201,7 +208,7 @@ func main() {
 			tab.Render("Mascara"),
 			tab.Render("Foundation"),
 		)
-		gap := tabGap.Render(strings.Repeat(" ", overlay.max(0, width-lipgloss.Width(row)-2)))
+		gap := tabGap.Render(strings.Repeat(" ", max(0, width-lipgloss.Width(row)-2)))
 		row = lipgloss.JoinHorizontal(lipgloss.Bottom, row, gap)
 		doc.WriteString(row + "\n\n")
 	}
