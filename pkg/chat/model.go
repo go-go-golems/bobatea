@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	"github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/go-go-golems/bobatea/pkg/chat/conversation"
 	mode_keymap "github.com/go-go-golems/bobatea/pkg/mode-keymap"
 	"github.com/go-go-golems/bobatea/pkg/textarea"
 	"github.com/go-go-golems/glazed/pkg/helpers/markdown"
@@ -29,7 +30,7 @@ const (
 )
 
 type model struct {
-	contextManager ConversationManager
+	contextManager conversation.ConversationManager
 
 	viewport viewport.Model
 
@@ -58,20 +59,19 @@ type model struct {
 
 	state        State
 	quitReceived bool
+
+	title string
 }
 
-type StreamDoneMsg struct {
+type ModelOption func(*model)
+
+func WithTitle(title string) ModelOption {
+	return func(m *model) {
+		m.title = title
+	}
 }
 
-type StreamCompletionMsg struct {
-	Completion string
-}
-
-type StreamCompletionError struct {
-	Err error
-}
-
-func InitialModel(manager ConversationManager, backend Backend) model {
+func InitialModel(manager conversation.ConversationManager, backend Backend, options ...ModelOption) model {
 	ret := model{
 		contextManager: manager,
 		style:          DefaultStyles(),
@@ -81,6 +81,10 @@ func InitialModel(manager ConversationManager, backend Backend) model {
 		help:           help.New(),
 	}
 
+	for _, option := range options {
+		option(&ret)
+	}
+
 	ret.textArea = textarea.New()
 	ret.textArea.Placeholder = "Dear AI, answer my plight..."
 	ret.textArea.Focus()
@@ -88,7 +92,7 @@ func InitialModel(manager ConversationManager, backend Backend) model {
 
 	ret.selectedIdx = len(ret.contextManager.GetMessages()) - 1
 
-	messages := ret.messageView()
+	messages, _ := ret.messageView()
 	ret.viewport.SetContent(messages)
 	ret.viewport.YPosition = 0
 	ret.viewport.GotoBottom()
@@ -112,141 +116,123 @@ func (m model) Init() tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmds []tea.Cmd
+func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	k := msg.String()
+	_ = k
+
 	var cmd tea.Cmd
 
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		k := msg.String()
-		_ = k
-		switch {
-		case key.Matches(msg, m.keyMap.Help):
-			m.help.ShowAll = !m.help.ShowAll
-		case key.Matches(msg, m.keyMap.UnfocusMessage):
-			if m.state == StateUserInput {
-				m.textArea.Blur()
-				m.state = StateMovingAround
-				m.selectedIdx = len(m.contextManager.GetMessages()) - 1
-				if m.selectedIdx < 0 {
-					m.selectedIdx = 0
-				}
-				m.viewport.SetContent(m.messageView())
-				m.updateKeyBindings()
+	switch {
+	case key.Matches(msg, m.keyMap.Help):
+		m.help.ShowAll = !m.help.ShowAll
+
+	case key.Matches(msg, m.keyMap.UnfocusMessage):
+		if m.state == StateUserInput {
+			m.textArea.Blur()
+			m.state = StateMovingAround
+			m.selectedIdx = len(m.contextManager.GetMessages()) - 1
+			if m.selectedIdx < 0 {
+				m.selectedIdx = 0
 			}
-		case key.Matches(msg, m.keyMap.Quit):
-			if !m.quitReceived {
-				m.quitReceived = true
-				// on first quit, try to cancel completion if running
-				m.backend.Interrupt()
-			}
+			v, height := m.messageView()
+			m.viewport.SetContent(v)
+			m.viewport.SetYOffset(height)
+			m.updateKeyBindings()
+		}
 
-			// force save completion before quitting
-			m.finishCompletion()
+	case key.Matches(msg, m.keyMap.Quit):
+		if !m.quitReceived {
+			m.quitReceived = true
+			// on first quit, try to cancel completion if running
+			m.backend.Interrupt()
+		}
 
-			return m, tea.Quit
+		// force save completion before quitting
+		m.finishCompletion()
 
-		case key.Matches(msg, m.keyMap.FocusMessage):
+		cmd = tea.Quit
+
+	case key.Matches(msg, m.keyMap.FocusMessage):
+		// TODO(manuel, 2024-01-06) This could potentially focus on a previous message
+		// and allow us to regenerate.
+		cmd = m.textArea.Focus()
+
+		m.state = StateUserInput
+		m.updateKeyBindings()
+		v, _ := m.messageView()
+		m.viewport.SetContent(v)
+
+	case key.Matches(msg, m.keyMap.SelectNextMessage):
+		messages := m.contextManager.GetMessages()
+		if m.selectedIdx < len(messages)-1 {
+			m.selectedIdx++
+			v, height := m.messageView()
+			m.viewport.SetYOffset(height)
+			m.viewport.SetContent(v)
+		} else {
+			m.viewport, cmd = m.viewport.Update(msg)
+		}
+
+	case key.Matches(msg, m.keyMap.SelectPrevMessage):
+		if m.selectedIdx > 0 {
+			m.selectedIdx--
+			v, height := m.messageView()
+			m.viewport.SetYOffset(height)
+			m.viewport.SetContent(v)
+		}
+
+	case key.Matches(msg, m.keyMap.SubmitMessage):
+		cmd = m.submit()
+
+	case key.Matches(msg, m.keyMap.CopyToClipboard):
+		msgs := m.contextManager.GetMessages()
+		if len(msgs) > 0 {
 			if m.state == StateMovingAround {
-				// TODO(manuel, 2024-01-06) This could potentially focus on a previous message
-				// and allow us to regenerate.
-				cmd = m.textArea.Focus()
-				cmds = append(cmds, cmd)
-
-				m.state = StateUserInput
-				m.updateKeyBindings()
-				m.viewport.SetContent(m.messageView())
-			}
-
-		case key.Matches(msg, m.keyMap.SelectNextMessage):
-			if m.selectedIdx < len(m.contextManager.GetMessages())-1 {
-				m.selectedIdx++
-				m.viewport.SetContent(m.messageView())
-			}
-
-		case key.Matches(msg, m.keyMap.SelectPrevMessage):
-			if m.selectedIdx > 0 {
-				m.selectedIdx--
-				m.viewport.SetContent(m.messageView())
-			}
-
-		case key.Matches(msg, m.keyMap.SubmitMessage):
-			if m.state == StateUserInput {
-				cmd := m.submit()
-				cmds = append(cmds, cmd)
-			}
-
-		case key.Matches(msg, m.keyMap.CopyToClipboard):
-			msgs := m.contextManager.GetMessages()
-			if len(msgs) > 0 {
-				if m.state == StateMovingAround {
-					if m.selectedIdx < len(msgs) && m.selectedIdx >= 0 {
-						msg_ := msgs[m.selectedIdx]
-						clipboard.Write(clipboard.FmtText, []byte(msg_.Text))
+				if m.selectedIdx < len(msgs) && m.selectedIdx >= 0 {
+					msg_ := msgs[m.selectedIdx]
+					clipboard.Write(clipboard.FmtText, []byte(msg_.Text))
+				}
+			} else {
+				text := ""
+				for _, m := range msgs {
+					if m.Role == conversation.RoleAssistant {
+						text += m.Text + "\n"
 					}
-				} else {
+				}
+				clipboard.Write(clipboard.FmtText, []byte(text))
+			}
+		}
+
+	case key.Matches(msg, m.keyMap.CopyLastResponseToClipboard):
+		msgs := m.contextManager.GetMessages()
+		if len(msgs) > 0 {
+			if m.state == StateMovingAround {
+				if m.selectedIdx < len(msgs) && m.selectedIdx >= 0 {
+					msg_ := msgs[m.selectedIdx]
+					clipboard.Write(clipboard.FmtText, []byte(msg_.Text))
+				}
+			} else {
+				if m.state == StateUserInput {
+					lastMsg := msgs[len(msgs)-1]
+					clipboard.Write(clipboard.FmtText, []byte(lastMsg.Text))
+				}
+			}
+		}
+
+	case key.Matches(msg, m.keyMap.CopyLastSourceBlocksToClipboard):
+		msgs := m.contextManager.GetMessages()
+		if len(msgs) > 0 {
+			if m.state == StateMovingAround {
+				if m.selectedIdx < len(msgs) && m.selectedIdx >= 0 {
+					msg_ := msgs[m.selectedIdx]
+					code := markdown.ExtractQuotedBlocks(msg_.Text, false)
+					clipboard.Write(clipboard.FmtText, []byte(strings.Join(code, "\n")))
+				}
+			} else {
+				if m.state == StateUserInput {
 					text := ""
 					for _, m := range msgs {
-						if m.Role == RoleAssistant {
-							text += m.Text + "\n"
-						}
-					}
-					clipboard.Write(clipboard.FmtText, []byte(text))
-				}
-			}
-
-		case key.Matches(msg, m.keyMap.CopyLastResponseToClipboard):
-			msgs := m.contextManager.GetMessages()
-			if len(msgs) > 0 {
-				if m.state == StateMovingAround {
-					if m.selectedIdx < len(msgs) && m.selectedIdx >= 0 {
-						msg_ := msgs[m.selectedIdx]
-						clipboard.Write(clipboard.FmtText, []byte(msg_.Text))
-					}
-				} else {
-					if m.state == StateUserInput {
-						lastMsg := msgs[len(msgs)-1]
-						clipboard.Write(clipboard.FmtText, []byte(lastMsg.Text))
-					}
-				}
-			}
-
-		case key.Matches(msg, m.keyMap.CopyLastSourceBlocksToClipboard):
-			msgs := m.contextManager.GetMessages()
-			if len(msgs) > 0 {
-				if m.state == StateMovingAround {
-					if m.selectedIdx < len(msgs) && m.selectedIdx >= 0 {
-						msg_ := msgs[m.selectedIdx]
-						code := markdown.ExtractQuotedBlocks(msg_.Text, false)
-						clipboard.Write(clipboard.FmtText, []byte(strings.Join(code, "\n")))
-					}
-				} else {
-					if m.state == StateUserInput {
-						text := ""
-						for _, m := range msgs {
-							if m.Role == RoleAssistant {
-								text += m.Text + "\n"
-							}
-						}
-						code := markdown.ExtractQuotedBlocks(text, false)
-						clipboard.Write(clipboard.FmtText, []byte(strings.Join(code, "\n")))
-					}
-				}
-			}
-
-		case key.Matches(msg, m.keyMap.CopySourceBlocksToClipboard):
-			msgs := m.contextManager.GetMessages()
-			if len(msgs) > 0 {
-				if m.state == StateMovingAround {
-					if m.selectedIdx < len(msgs) && m.selectedIdx >= 0 {
-						msg_ := msgs[m.selectedIdx]
-						code := markdown.ExtractQuotedBlocks(msg_.Text, false)
-						clipboard.Write(clipboard.FmtText, []byte(strings.Join(code, "\n")))
-					}
-				} else {
-					text := ""
-					for _, m := range msgs {
-						if m.Role == RoleAssistant {
+						if m.Role == conversation.RoleAssistant {
 							text += m.Text + "\n"
 						}
 					}
@@ -254,43 +240,70 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					clipboard.Write(clipboard.FmtText, []byte(strings.Join(code, "\n")))
 				}
 			}
-
-		case key.Matches(msg, m.keyMap.SaveToFile):
-			// TODO(manuel, 2023-11-14) Implement file chosing dialog
-			err := m.contextManager.SaveToFile("/tmp/output.json")
-			if err != nil {
-				return m, func() tea.Msg {
-					return errMsg(err)
-				}
-			}
-
-		// same keybinding for both
-		case key.Matches(msg, m.keyMap.CancelCompletion):
-			if m.state == StateStreamCompletion {
-				m.backend.Interrupt()
-			}
-			return m, tea.Batch(cmds...)
-
-		case key.Matches(msg, m.keyMap.DismissError):
-			if m.state == StateError {
-				m.err = nil
-				m.state = StateUserInput
-				m.updateKeyBindings()
-			}
-
-			return m, tea.Batch(cmds...)
-
-		default:
-			switch m.state {
-			case StateUserInput:
-				m.textArea, cmd = m.textArea.Update(msg)
-				cmds = append(cmds, cmd)
-			case StateMovingAround, StateStreamCompletion, StateError:
-				m.viewport, cmd = m.viewport.Update(msg)
-				cmds = append(cmds, cmd)
-			}
-			return m, tea.Batch(cmds...)
 		}
+
+	case key.Matches(msg, m.keyMap.CopySourceBlocksToClipboard):
+		msgs := m.contextManager.GetMessages()
+		if len(msgs) > 0 {
+			if m.state == StateMovingAround {
+				if m.selectedIdx < len(msgs) && m.selectedIdx >= 0 {
+					msg_ := msgs[m.selectedIdx]
+					code := markdown.ExtractQuotedBlocks(msg_.Text, false)
+					clipboard.Write(clipboard.FmtText, []byte(strings.Join(code, "\n")))
+				}
+			} else {
+				text := ""
+				for _, m := range msgs {
+					if m.Role == conversation.RoleAssistant {
+						text += m.Text + "\n"
+					}
+				}
+				code := markdown.ExtractQuotedBlocks(text, false)
+				clipboard.Write(clipboard.FmtText, []byte(strings.Join(code, "\n")))
+			}
+		}
+
+	case key.Matches(msg, m.keyMap.SaveToFile):
+		// TODO(manuel, 2023-11-14) Implement file chosing dialog
+		err := m.contextManager.SaveToFile("/tmp/output.json")
+		if err != nil {
+			cmd = func() tea.Msg {
+				return errMsg(err)
+			}
+		}
+
+	// same keybinding for both
+	case key.Matches(msg, m.keyMap.CancelCompletion):
+		if m.state == StateStreamCompletion {
+			m.backend.Interrupt()
+		}
+
+	case key.Matches(msg, m.keyMap.DismissError):
+		if m.state == StateError {
+			m.err = nil
+			m.state = StateUserInput
+			m.updateKeyBindings()
+		}
+
+	default:
+		switch m.state {
+		case StateUserInput:
+			m.textArea, cmd = m.textArea.Update(msg)
+		case StateMovingAround, StateStreamCompletion, StateError:
+			m.viewport, cmd = m.viewport.Update(msg)
+		}
+	}
+
+	return m, cmd
+}
+
+func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmds []tea.Cmd
+	var cmd tea.Cmd
+
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		return m.handleKeyPress(msg)
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -303,41 +316,25 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = msg
 		return m, nil
 
-	// handle chat streaming messages
-	case StreamCompletionMsg:
-		m.currentResponse += msg.Completion
-		newTextAreaView := m.textAreaView()
-		newHeight := lipgloss.Height(newTextAreaView)
-		if newHeight != m.previousResponseHeight {
-			m.recomputeSize()
-			m.previousResponseHeight = newHeight
-		}
-		//cmds = append(cmds, func() tea.Msg {
-		//	return refreshMessageMsg{}
-		//})
-		cmd = m.getNextCompletion()
-		cmds = append(cmds, cmd)
-
-	case StreamDoneMsg:
-		cmd = m.finishCompletion()
-		cmds = append(cmds, cmd)
-
-	case StreamCompletionError:
-		cmd = m.setError(msg.Err)
-		cmds = append(cmds, cmd)
+	case StreamCompletionMsg,
+		StreamStartMsg,
+		StreamStatusMsg,
+		StreamDoneMsg,
+		StreamCompletionError:
+		return m.handleStreamMessage(msg)
 
 	case refreshMessageMsg:
-		m.viewport.SetContent(m.messageView())
+		v, _ := m.messageView()
+		m.viewport.SetContent(v)
 		m.recomputeSize()
 		if msg.GoToBottom {
 			m.viewport.GotoBottom()
 		}
 
 	default:
+		m.viewport, cmd = m.viewport.Update(msg)
+		cmds = append(cmds, cmd)
 	}
-
-	m.viewport, cmd = m.viewport.Update(msg)
-	cmds = append(cmds, cmd)
 
 	return m, tea.Batch(cmds...)
 }
@@ -349,6 +346,9 @@ func (m *model) updateKeyBindings() {
 func (m *model) recomputeSize() {
 	headerView := m.headerView()
 	headerHeight := lipgloss.Height(headerView)
+	if headerView == "" {
+		headerHeight = 0
+	}
 	textAreaView := m.textAreaView()
 	textAreaHeight := lipgloss.Height(textAreaView)
 
@@ -368,10 +368,8 @@ func (m *model) recomputeSize() {
 
 	m.textArea.SetWidth(m.width - h)
 
-	messages := m.messageView()
-	m.viewport.SetContent(messages)
-	messageView := m.messageView()
-	m.viewport.SetContent(messageView)
+	v, _ := m.messageView()
+	m.viewport.SetContent(v)
 
 	// TODO(manuel, 2023-09-21) Keep the current position by trying to match it to some message
 	// This is probably going to be tricky
@@ -379,19 +377,23 @@ func (m *model) recomputeSize() {
 }
 
 func (m model) headerView() string {
-	return "PINOCCHIO AT YOUR SERVICE:"
+	return m.title
 }
 
-func (m model) messageView() string {
+// messageView computes the content of the message view and returns the y offset of the selected message or 0
+func (m model) messageView() (string, int) {
 	ret := ""
+	height := 0
+	selectedHeight := 0
 
-	for idx := range m.contextManager.GetMessagesWithSystemPrompt() {
-		message := m.contextManager.GetMessagesWithSystemPrompt()[idx]
+	for idx := range m.contextManager.GetMessages() {
+		message := m.contextManager.GetMessages()[idx]
 		v := fmt.Sprintf("[%s]: %s", message.Role, message.Text)
 
 		style := m.style.UnselectedMessage
 		if idx == m.selectedIdx && m.state == StateMovingAround {
 			style = m.style.SelectedMessage
+			selectedHeight = height
 		}
 		w, _ := style.GetFrameSize()
 
@@ -401,9 +403,10 @@ func (m model) messageView() string {
 			Render(v_)
 		ret += v_
 		ret += "\n"
+		height += lipgloss.Height(v_)
 	}
 
-	return ret
+	return ret, selectedHeight
 }
 
 func (m model) textAreaView() string {
@@ -448,7 +451,11 @@ func (m model) View() string {
 	_ = headerHeight
 	helpViewHeight := lipgloss.Height(helpView)
 	_ = helpViewHeight
-	ret := headerView + "\n" + viewportView + "\n" + textAreaView + "\n" + helpView
+	ret := ""
+	if headerView != "" {
+		ret = headerView + "\n"
+	}
+	ret += viewportView + "\n" + textAreaView + "\n" + helpView
 
 	return ret
 }
@@ -461,14 +468,14 @@ func (m *model) submit() tea.Cmd {
 		}
 	}
 
-	m.contextManager.AddMessages(&Message{
-		Role: RoleUser,
+	m.contextManager.AddMessages(&conversation.Message{
+		Role: conversation.RoleUser,
 		Text: m.textArea.Value(),
 		Time: time.Now(),
 	})
 
 	ctx := context2.Background()
-	err := m.backend.Start(ctx, m.contextManager.GetMessagesWithSystemPrompt())
+	err := m.backend.Start(ctx, m.contextManager.GetMessages())
 
 	m.state = StateStreamCompletion
 	m.updateKeyBindings()
@@ -506,8 +513,8 @@ func (m *model) finishCompletion() tea.Cmd {
 		return nil
 	}
 
-	m.contextManager.AddMessages(&Message{
-		Role: RoleAssistant,
+	m.contextManager.AddMessages(&conversation.Message{
+		Role: conversation.RoleAssistant,
 		Text: m.currentResponse,
 		Time: time.Now(),
 	})
@@ -539,4 +546,36 @@ func (m *model) setError(err error) tea.Cmd {
 	m.state = StateError
 	m.updateKeyBindings()
 	return cmd
+}
+
+func (m model) handleStreamMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+
+	switch msg := msg.(type) {
+	// handle chat streaming messages
+	case StreamCompletionMsg:
+		m.currentResponse += msg.Completion
+		newTextAreaView := m.textAreaView()
+		newHeight := lipgloss.Height(newTextAreaView)
+		if newHeight != m.previousResponseHeight {
+			m.recomputeSize()
+			m.previousResponseHeight = newHeight
+		}
+		//cmds = append(cmds, func() tea.Msg {
+		//	return refreshMessageMsg{}
+		//})
+		cmd = m.getNextCompletion()
+
+	case StreamDoneMsg:
+		cmd = m.finishCompletion()
+
+	case StreamCompletionError:
+		// does this imply the completion is finished, or do we get a separate StreamDoneMsg
+		cmd = m.setError(msg.Err)
+
+	case StreamStartMsg:
+	case StreamStatusMsg:
+	}
+
+	return m, cmd
 }

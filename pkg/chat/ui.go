@@ -2,42 +2,49 @@ package chat
 
 import (
 	"context"
+	"github.com/go-go-golems/bobatea/pkg/chat/conversation"
 	"github.com/google/uuid"
-	"time"
 )
 
 import "github.com/charmbracelet/bubbletea"
 
-type Backend interface {
-	Interrupt()
-	Kill()
-	GetNextCompletion() tea.Cmd
-	Start(ctx context.Context, msgs []*Message) error
-	IsFinished() bool
-}
+// These messages are used by the backend to send new streaming data
 
-type Message struct {
-	Text string    `json:"text" yaml:"text"`
-	Time time.Time `json:"time" yaml:"time"`
-	Role string    `json:"role" yaml:"role"`
-
+type StreamMetadata struct {
 	ID             uuid.UUID `json:"id" yaml:"id"`
 	ParentID       uuid.UUID `json:"parent_id" yaml:"parent_id"`
 	ConversationID uuid.UUID `json:"conversation_id" yaml:"conversation_id"`
-
-	// additional metadata for the message
-	Metadata map[string]interface{} `json:"metadata,omitempty" yaml:"metadata,omitempty"`
 }
 
-type ConversationManager interface {
-	GetMessages() []*Message
-	GetMessagesWithSystemPrompt() []*Message
-
-	AddMessages(msgs ...*Message)
-	SaveToFile(filename string) error
+type StreamStartMsg struct {
+	StreamMetadata
 }
 
-const RoleSystem = "system"
-const RoleAssistant = "assistant"
-const RoleUser = "user"
-const RoleTool = "tool"
+type StreamStatusMsg struct {
+	StreamMetadata
+	Text string
+}
+
+type StreamDoneMsg struct {
+	StreamMetadata
+}
+
+type StreamCompletionMsg struct {
+	StreamMetadata
+	Completion string
+}
+
+// StreamCompletionError does not imply that the stream finished
+type StreamCompletionError struct {
+	StreamMetadata
+	Err error
+}
+
+type Backend interface {
+	Start(ctx context.Context, msgs []*conversation.Message) error
+	Interrupt()
+	Kill()
+
+	GetNextCompletion() tea.Cmd
+	IsFinished() bool
+}
