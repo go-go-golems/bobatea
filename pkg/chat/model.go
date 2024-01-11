@@ -476,19 +476,22 @@ func (m *model) submit() tea.Cmd {
 
 	ctx := context2.Background()
 	err := m.backend.Start(ctx, m.contextManager.GetMessages())
+	if err != nil {
+		return func() tea.Msg {
+			return errMsg(err)
+		}
+	}
 
+	return m.startCompletion()
+}
+
+func (m *model) startCompletion() tea.Cmd {
 	m.state = StateStreamCompletion
 	m.updateKeyBindings()
 	m.currentResponse = ""
 	m.previousResponseHeight = 0
 
 	m.viewport.GotoBottom()
-
-	if err != nil {
-		return func() tea.Msg {
-			return errMsg(err)
-		}
-	}
 
 	return tea.Batch(func() tea.Msg {
 		return refreshMessageMsg{
@@ -497,6 +500,7 @@ func (m *model) submit() tea.Cmd {
 	},
 		m.getNextCompletion(),
 	)
+
 }
 
 func (m model) getNextCompletion() tea.Cmd {
@@ -564,6 +568,7 @@ func (m model) handleStreamMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
 		//cmds = append(cmds, func() tea.Msg {
 		//	return refreshMessageMsg{}
 		//})
+		// TODO(manuel, 2024-01-11) I don't think we need this anymore now that we are not streaming partial events over the completion channel
 		cmd = m.getNextCompletion()
 
 	case StreamDoneMsg:
