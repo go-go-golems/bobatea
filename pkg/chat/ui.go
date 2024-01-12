@@ -27,10 +27,12 @@ type StreamStatusMsg struct {
 
 type StreamDoneMsg struct {
 	StreamMetadata
+	Completion string
 }
 
 type StreamCompletionMsg struct {
 	StreamMetadata
+	Delta      string
 	Completion string
 }
 

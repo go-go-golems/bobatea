@@ -474,14 +474,6 @@ func (m *model) submit() tea.Cmd {
 		Time: time.Now(),
 	})
 
-	ctx := context2.Background()
-	err := m.backend.Start(ctx, m.contextManager.GetMessages())
-	if err != nil {
-		return func() tea.Msg {
-			return errMsg(err)
-		}
-	}
-
 	return m.startCompletion()
 }
 
@@ -498,6 +490,15 @@ func (m *model) startCompletion() tea.Cmd {
 			GoToBottom: true,
 		}
 	},
+		func() tea.Msg {
+			ctx := context2.Background()
+			err := m.backend.Start(ctx, m.contextManager.GetMessages())
+			if err != nil {
+				return errMsg(err)
+			}
+
+			return nil
+		},
 		m.getNextCompletion(),
 	)
 
@@ -558,7 +559,7 @@ func (m model) handleStreamMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	// handle chat streaming messages
 	case StreamCompletionMsg:
-		m.currentResponse += msg.Completion
+		m.currentResponse += msg.Delta
 		newTextAreaView := m.textAreaView()
 		newHeight := lipgloss.Height(newTextAreaView)
 		if newHeight != m.previousResponseHeight {
