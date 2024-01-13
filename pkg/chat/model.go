@@ -30,7 +30,7 @@ const (
 )
 
 type model struct {
-	contextManager conversation.ConversationManager
+	contextManager conversation.Manager
 
 	viewport viewport.Model
 
@@ -71,7 +71,7 @@ func WithTitle(title string) ModelOption {
 	}
 }
 
-func InitialModel(manager conversation.ConversationManager, backend Backend, options ...ModelOption) model {
+func InitialModel(manager conversation.Manager, backend Backend, options ...ModelOption) model {
 	ret := model{
 		contextManager: manager,
 		style:          DefaultStyles(),
@@ -90,7 +90,7 @@ func InitialModel(manager conversation.ConversationManager, backend Backend, opt
 	ret.textArea.Focus()
 	ret.state = StateUserInput
 
-	ret.selectedIdx = len(ret.contextManager.GetMessages()) - 1
+	ret.selectedIdx = len(ret.contextManager.GetConversation()) - 1
 
 	messages, _ := ret.messageView()
 	ret.viewport.SetContent(messages)
@@ -130,7 +130,7 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.state == StateUserInput {
 			m.textArea.Blur()
 			m.state = StateMovingAround
-			m.selectedIdx = len(m.contextManager.GetMessages()) - 1
+			m.selectedIdx = len(m.contextManager.GetConversation()) - 1
 			if m.selectedIdx < 0 {
 				m.selectedIdx = 0
 			}
@@ -163,7 +163,7 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.viewport.SetContent(v)
 
 	case key.Matches(msg, m.keyMap.SelectNextMessage):
-		messages := m.contextManager.GetMessages()
+		messages := m.contextManager.GetConversation()
 		if m.selectedIdx < len(messages)-1 {
 			m.selectedIdx++
 			v, height := m.messageView()
@@ -185,7 +185,7 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		cmd = m.submit()
 
 	case key.Matches(msg, m.keyMap.CopyToClipboard):
-		msgs := m.contextManager.GetMessages()
+		msgs := m.contextManager.GetConversation()
 		if len(msgs) > 0 {
 			if m.state == StateMovingAround {
 				if m.selectedIdx < len(msgs) && m.selectedIdx >= 0 {
@@ -204,7 +204,7 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case key.Matches(msg, m.keyMap.CopyLastResponseToClipboard):
-		msgs := m.contextManager.GetMessages()
+		msgs := m.contextManager.GetConversation()
 		if len(msgs) > 0 {
 			if m.state == StateMovingAround {
 				if m.selectedIdx < len(msgs) && m.selectedIdx >= 0 {
@@ -220,7 +220,7 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case key.Matches(msg, m.keyMap.CopyLastSourceBlocksToClipboard):
-		msgs := m.contextManager.GetMessages()
+		msgs := m.contextManager.GetConversation()
 		if len(msgs) > 0 {
 			if m.state == StateMovingAround {
 				if m.selectedIdx < len(msgs) && m.selectedIdx >= 0 {
@@ -243,7 +243,7 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case key.Matches(msg, m.keyMap.CopySourceBlocksToClipboard):
-		msgs := m.contextManager.GetMessages()
+		msgs := m.contextManager.GetConversation()
 		if len(msgs) > 0 {
 			if m.state == StateMovingAround {
 				if m.selectedIdx < len(msgs) && m.selectedIdx >= 0 {
@@ -386,8 +386,8 @@ func (m model) messageView() (string, int) {
 	height := 0
 	selectedHeight := 0
 
-	for idx := range m.contextManager.GetMessages() {
-		message := m.contextManager.GetMessages()[idx]
+	for idx := range m.contextManager.GetConversation() {
+		message := m.contextManager.GetConversation()[idx]
 		v := fmt.Sprintf("[%s]: %s", message.Role, message.Text)
 
 		style := m.style.UnselectedMessage
@@ -492,7 +492,7 @@ func (m *model) startCompletion() tea.Cmd {
 	},
 		func() tea.Msg {
 			ctx := context2.Background()
-			err := m.backend.Start(ctx, m.contextManager.GetMessages())
+			err := m.backend.Start(ctx, m.contextManager.GetConversation())
 			if err != nil {
 				return errMsg(err)
 			}

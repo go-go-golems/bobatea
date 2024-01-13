@@ -2,7 +2,6 @@ package conversation
 
 import (
 	"encoding/json"
-	"fmt"
 	"github.com/google/uuid"
 	"gopkg.in/yaml.v3"
 	"os"
@@ -56,29 +55,29 @@ func loadFromJSONFile(filename string) ([]*Message, error) {
 	return messages, nil
 }
 
-type Manager struct {
+type ManagerImpl struct {
 	Messages       []*Message
 	ConversationID uuid.UUID
 }
 
-var _ ConversationManager = (*Manager)(nil)
+var _ Manager = (*ManagerImpl)(nil)
 
-type ManagerOption func(*Manager)
+type ManagerOption func(*ManagerImpl)
 
 func WithMessages(messages []*Message) ManagerOption {
-	return func(m *Manager) {
+	return func(m *ManagerImpl) {
 		m.AddMessages(messages...)
 	}
 }
 
 func WithManagerConversationID(conversationID uuid.UUID) ManagerOption {
-	return func(m *Manager) {
+	return func(m *ManagerImpl) {
 		m.ConversationID = conversationID
 	}
 }
 
-func NewManager(options ...ManagerOption) *Manager {
-	ret := &Manager{
+func NewManager(options ...ManagerOption) *ManagerImpl {
+	ret := &ManagerImpl{
 		ConversationID: uuid.Nil,
 	}
 	for _, option := range options {
@@ -94,7 +93,7 @@ func NewManager(options ...ManagerOption) *Manager {
 	return ret
 }
 
-func (ret *Manager) setMessageIds() {
+func (ret *ManagerImpl) setMessageIds() {
 	parentId := uuid.Nil
 	for _, message := range ret.Messages {
 		if message.ID == uuid.Nil {
@@ -106,43 +105,23 @@ func (ret *Manager) setMessageIds() {
 	}
 }
 
-func (c *Manager) GetMessages() []*Message {
+func (c *ManagerImpl) GetConversation() Conversation {
 	return c.Messages
 }
 
-func (c *Manager) AddMessages(messages ...*Message) {
+func (c *ManagerImpl) AddMessages(messages ...*Message) {
 	c.Messages = append(c.Messages, messages...)
 	c.setMessageIds()
 }
 
-func (c *Manager) PrependMessages(messages ...*Message) {
+func (c *ManagerImpl) PrependMessages(messages ...*Message) {
 	c.Messages = append(messages, c.Messages...)
 	c.setMessageIds()
 }
 
-// GetSinglePrompt is a helper to use the context manager with a completion api.
-// It just concatenates all the messages together with a prompt in front (if there are more than one message).
-func (c *Manager) GetSinglePrompt() string {
-	messages := c.GetMessages()
-	if len(messages) == 0 {
-		return ""
-	}
-
-	if len(messages) == 1 {
-		return messages[0].Text
-	}
-
-	prompt := ""
-	for _, message := range messages {
-		prompt += fmt.Sprintf("[%s]: %s\n", message.Role, message.Text)
-	}
-
-	return prompt
-}
-
-func (c *Manager) SaveToFile(s string) error {
+func (c *ManagerImpl) SaveToFile(s string) error {
 	// TODO(manuel, 2023-11-14) For now only json
-	msgs := c.GetMessages()
+	msgs := c.GetConversation()
 	f, err := os.Create(s)
 	if err != nil {
 		return err

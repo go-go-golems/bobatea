@@ -1,6 +1,7 @@
 package conversation
 
 import (
+	"fmt"
 	"github.com/google/uuid"
 	"time"
 )
@@ -17,6 +18,8 @@ type Message struct {
 	// additional metadata for the message
 	Metadata map[string]interface{} `json:"metadata,omitempty" yaml:"metadata,omitempty"`
 }
+
+type Conversation []*Message
 
 type MessageOption func(*Message)
 
@@ -79,3 +82,22 @@ const RoleSystem = "system"
 const RoleAssistant = "assistant"
 const RoleUser = "user"
 const RoleTool = "tool"
+
+// GetSinglePrompt concatenates all the messages together with a prompt in front.
+// It just concatenates all the messages together with a prompt in front (if there are more than one message).
+func (messages Conversation) GetSinglePrompt() string {
+	if len(messages) == 0 {
+		return ""
+	}
+
+	if len(messages) == 1 {
+		return messages[0].Text
+	}
+
+	prompt := ""
+	for _, message := range messages {
+		prompt += fmt.Sprintf("[%s]: %s\n", message.Role, message.Text)
+	}
+
+	return prompt
+}
