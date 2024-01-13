@@ -2,7 +2,6 @@ package chat
 
 import (
 	context2 "context"
-	"fmt"
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -15,7 +14,6 @@ import (
 	"github.com/pkg/errors"
 	"golang.design/x/clipboard"
 	"strings"
-	"time"
 )
 
 type errMsg error
@@ -190,13 +188,15 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.state == StateMovingAround {
 				if m.selectedIdx < len(msgs) && m.selectedIdx >= 0 {
 					msg_ := msgs[m.selectedIdx]
-					clipboard.Write(clipboard.FmtText, []byte(msg_.Text))
+					clipboard.Write(clipboard.FmtText, []byte(msg_.Content.String()))
 				}
 			} else {
 				text := ""
 				for _, m := range msgs {
-					if m.Role == conversation.RoleAssistant {
-						text += m.Text + "\n"
+					if content, ok := m.Content.(*conversation.ChatMessageContent); ok {
+						if content.Role == conversation.RoleAssistant {
+							text += content.Text + "\n"
+						}
 					}
 				}
 				clipboard.Write(clipboard.FmtText, []byte(text))
@@ -209,12 +209,16 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.state == StateMovingAround {
 				if m.selectedIdx < len(msgs) && m.selectedIdx >= 0 {
 					msg_ := msgs[m.selectedIdx]
-					clipboard.Write(clipboard.FmtText, []byte(msg_.Text))
+					if content, ok := msg_.Content.(*conversation.ChatMessageContent); ok {
+						clipboard.Write(clipboard.FmtText, []byte(content.Text))
+					}
 				}
 			} else {
 				if m.state == StateUserInput {
 					lastMsg := msgs[len(msgs)-1]
-					clipboard.Write(clipboard.FmtText, []byte(lastMsg.Text))
+					if content, ok := lastMsg.Content.(*conversation.ChatMessageContent); ok {
+						clipboard.Write(clipboard.FmtText, []byte(content.Text))
+					}
 				}
 			}
 		}
@@ -225,15 +229,19 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.state == StateMovingAround {
 				if m.selectedIdx < len(msgs) && m.selectedIdx >= 0 {
 					msg_ := msgs[m.selectedIdx]
-					code := markdown.ExtractQuotedBlocks(msg_.Text, false)
-					clipboard.Write(clipboard.FmtText, []byte(strings.Join(code, "\n")))
+					if content, ok := msg_.Content.(*conversation.ChatMessageContent); ok {
+						code := markdown.ExtractQuotedBlocks(content.Text, false)
+						clipboard.Write(clipboard.FmtText, []byte(strings.Join(code, "\n")))
+					}
 				}
 			} else {
 				if m.state == StateUserInput {
 					text := ""
 					for _, m := range msgs {
-						if m.Role == conversation.RoleAssistant {
-							text += m.Text + "\n"
+						if content, ok := m.Content.(*conversation.ChatMessageContent); ok {
+							if content.Role == conversation.RoleAssistant {
+								text += content.Text + "\n"
+							}
 						}
 					}
 					code := markdown.ExtractQuotedBlocks(text, false)
@@ -248,14 +256,18 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.state == StateMovingAround {
 				if m.selectedIdx < len(msgs) && m.selectedIdx >= 0 {
 					msg_ := msgs[m.selectedIdx]
-					code := markdown.ExtractQuotedBlocks(msg_.Text, false)
-					clipboard.Write(clipboard.FmtText, []byte(strings.Join(code, "\n")))
+					if content, ok := msg_.Content.(*conversation.ChatMessageContent); ok {
+						code := markdown.ExtractQuotedBlocks(content.Text, false)
+						clipboard.Write(clipboard.FmtText, []byte(strings.Join(code, "\n")))
+					}
 				}
 			} else {
 				text := ""
 				for _, m := range msgs {
-					if m.Role == conversation.RoleAssistant {
-						text += m.Text + "\n"
+					if content, ok := m.Content.(*conversation.ChatMessageContent); ok {
+						if content.Role == conversation.RoleAssistant {
+							text += content.Text + "\n"
+						}
 					}
 				}
 				code := markdown.ExtractQuotedBlocks(text, false)
@@ -388,7 +400,7 @@ func (m model) messageView() (string, int) {
 
 	for idx := range m.contextManager.GetConversation() {
 		message := m.contextManager.GetConversation()[idx]
-		v := fmt.Sprintf("[%s]: %s", message.Role, message.Text)
+		v := message.Content.View()
 
 		style := m.style.UnselectedMessage
 		if idx == m.selectedIdx && m.state == StateMovingAround {
@@ -468,11 +480,7 @@ func (m *model) submit() tea.Cmd {
 		}
 	}
 
-	m.contextManager.AddMessages(&conversation.Message{
-		Role: conversation.RoleUser,
-		Text: m.textArea.Value(),
-		Time: time.Now(),
-	})
+	m.contextManager.AddMessages(conversation.NewChatMessage(conversation.RoleUser, m.textArea.Value()))
 
 	return m.startCompletion()
 }
@@ -518,11 +526,7 @@ func (m *model) finishCompletion() tea.Cmd {
 		return nil
 	}
 
-	m.contextManager.AddMessages(&conversation.Message{
-		Role: conversation.RoleAssistant,
-		Text: m.currentResponse,
-		Time: time.Now(),
-	})
+	m.contextManager.AddMessages(conversation.NewChatMessage(conversation.RoleAssistant, m.currentResponse))
 	m.currentResponse = ""
 	m.previousResponseHeight = 0
 	m.backend.Kill()

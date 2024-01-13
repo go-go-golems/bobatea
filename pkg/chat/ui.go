@@ -3,7 +3,6 @@ package chat
 import (
 	"context"
 	"github.com/go-go-golems/bobatea/pkg/chat/conversation"
-	"github.com/google/uuid"
 )
 
 import "github.com/charmbracelet/bubbletea"
@@ -11,9 +10,9 @@ import "github.com/charmbracelet/bubbletea"
 // These messages are used by the backend to send new streaming data
 
 type StreamMetadata struct {
-	ID             uuid.UUID `json:"id" yaml:"id"`
-	ParentID       uuid.UUID `json:"parent_id" yaml:"parent_id"`
-	ConversationID uuid.UUID `json:"conversation_id" yaml:"conversation_id"`
+	ID             conversation.NodeID `json:"id" yaml:"id"`
+	ParentID       conversation.NodeID `json:"parent_id" yaml:"parent_id"`
+	ConversationID conversation.NodeID `json:"conversation_id" yaml:"conversation_id"`
 }
 
 type StreamStartMsg struct {

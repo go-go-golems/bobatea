@@ -9,6 +9,7 @@ import (
 type Manager interface {
 	GetConversation() Conversation
 	AddMessages(msgs ...*Message)
+	AttachMessagesToNode(parentID NodeID, msgs ...*Message)
 	SaveToFile(filename string) error
 }
 
@@ -53,23 +54,25 @@ func CreateManager(
 		}
 
 		// TODO(manuel, 2023-12-07) Only do this conditionally, or maybe if the system prompt hasn't been set yet, if you use an agent.
-		manager.AddMessages(NewMessage(systemPromptBuffer.String(), RoleSystem))
+		manager.AddMessages(NewChatMessage(RoleSystem, systemPromptBuffer.String()))
 	}
 
 	for _, message := range messages {
-		messageTemplate, err := templating.CreateTemplate("message").Parse(message.Text)
-		if err != nil {
-			return nil, err
-		}
+		if msg, ok := message.Content.(*ChatMessageContent); ok {
+			messageTemplate, err := templating.CreateTemplate("message").Parse(msg.Text)
+			if err != nil {
+				return nil, err
+			}
 
-		var messageBuffer strings.Builder
-		err = messageTemplate.Execute(&messageBuffer, ps)
-		if err != nil {
-			return nil, err
-		}
-		s_ := messageBuffer.String()
+			var messageBuffer strings.Builder
+			err = messageTemplate.Execute(&messageBuffer, ps)
+			if err != nil {
+				return nil, err
+			}
+			s_ := messageBuffer.String()
 
-		manager.AddMessages(NewMessage(s_, message.Role, WithTime(message.Time)))
+			manager.AddMessages(NewChatMessage(msg.Role, s_, WithTime(message.Time)))
+		}
 	}
 
 	// render the prompt
@@ -88,7 +91,7 @@ func CreateManager(
 			return nil, err
 		}
 
-		manager.AddMessages(NewMessage(promptBuffer.String(), RoleUser))
+		manager.AddMessages(NewChatMessage(RoleUser, promptBuffer.String()))
 	}
 
 	for _, option := range options {

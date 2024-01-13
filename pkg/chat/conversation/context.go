@@ -56,7 +56,7 @@ func loadFromJSONFile(filename string) ([]*Message, error) {
 }
 
 type ManagerImpl struct {
-	Messages       []*Message
+	Tree           *ConversationTree
 	ConversationID uuid.UUID
 }
 
@@ -64,7 +64,7 @@ var _ Manager = (*ManagerImpl)(nil)
 
 type ManagerOption func(*ManagerImpl)
 
-func WithMessages(messages []*Message) ManagerOption {
+func WithMessages(messages ...*Message) ManagerOption {
 	return func(m *ManagerImpl) {
 		m.AddMessages(messages...)
 	}
@@ -79,6 +79,7 @@ func WithManagerConversationID(conversationID uuid.UUID) ManagerOption {
 func NewManager(options ...ManagerOption) *ManagerImpl {
 	ret := &ManagerImpl{
 		ConversationID: uuid.Nil,
+		Tree:           NewConversationTree(),
 	}
 	for _, option := range options {
 		option(ret)
@@ -88,35 +89,23 @@ func NewManager(options ...ManagerOption) *ManagerImpl {
 		ret.ConversationID = uuid.New()
 	}
 
-	ret.setMessageIds()
-
 	return ret
 }
 
-func (ret *ManagerImpl) setMessageIds() {
-	parentId := uuid.Nil
-	for _, message := range ret.Messages {
-		if message.ID == uuid.Nil {
-			message.ID = uuid.New()
-		}
-		message.ConversationID = ret.ConversationID
-		message.ParentID = parentId
-		parentId = message.ID
-	}
-}
-
 func (c *ManagerImpl) GetConversation() Conversation {
-	return c.Messages
+	return c.Tree.GetLeftMostThread(c.Tree.RootID)
 }
 
 func (c *ManagerImpl) AddMessages(messages ...*Message) {
-	c.Messages = append(c.Messages, messages...)
-	c.setMessageIds()
+	c.Tree.AddMessages(messages...)
+}
+
+func (c *ManagerImpl) AttachMessagesToNode(parentID NodeID, messages ...*Message) {
+	c.Tree.AttachMessageThread(parentID, messages)
 }
 
 func (c *ManagerImpl) PrependMessages(messages ...*Message) {
-	c.Messages = append(messages, c.Messages...)
-	c.setMessageIds()
+	c.Tree.PrependMessageThread(messages)
 }
 
 func (c *ManagerImpl) SaveToFile(s string) error {
