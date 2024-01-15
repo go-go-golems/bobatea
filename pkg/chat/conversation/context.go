@@ -66,7 +66,7 @@ type ManagerOption func(*ManagerImpl)
 
 func WithMessages(messages ...*Message) ManagerOption {
 	return func(m *ManagerImpl) {
-		m.AddMessages(messages...)
+		m.AppendMessages(messages...)
 	}
 }
 
@@ -96,16 +96,20 @@ func (c *ManagerImpl) GetConversation() Conversation {
 	return c.Tree.GetLeftMostThread(c.Tree.RootID)
 }
 
-func (c *ManagerImpl) AddMessages(messages ...*Message) {
-	c.Tree.AddMessages(messages...)
+func (c *ManagerImpl) GetMessage(ID NodeID) (*Message, bool) {
+	return c.Tree.GetMessage(ID)
 }
 
-func (c *ManagerImpl) AttachMessagesToNode(parentID NodeID, messages ...*Message) {
-	c.Tree.AttachMessageThread(parentID, messages)
+func (c *ManagerImpl) AppendMessages(messages ...*Message) {
+	c.Tree.AppendMessages(messages)
+}
+
+func (c *ManagerImpl) AttachMessages(parentID NodeID, messages ...*Message) {
+	c.Tree.AttachThread(parentID, messages)
 }
 
 func (c *ManagerImpl) PrependMessages(messages ...*Message) {
-	c.Tree.PrependMessageThread(messages)
+	c.Tree.PrependThread(messages)
 }
 
 func (c *ManagerImpl) SaveToFile(s string) error {

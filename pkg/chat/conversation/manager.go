@@ -8,8 +8,9 @@ import (
 
 type Manager interface {
 	GetConversation() Conversation
-	AddMessages(msgs ...*Message)
-	AttachMessagesToNode(parentID NodeID, msgs ...*Message)
+	AppendMessages(msgs ...*Message)
+	AttachMessages(parentID NodeID, msgs ...*Message)
+	GetMessage(ID NodeID) (*Message, bool)
 	SaveToFile(filename string) error
 }
 
@@ -54,7 +55,7 @@ func CreateManager(
 		}
 
 		// TODO(manuel, 2023-12-07) Only do this conditionally, or maybe if the system prompt hasn't been set yet, if you use an agent.
-		manager.AddMessages(NewChatMessage(RoleSystem, systemPromptBuffer.String()))
+		manager.AppendMessages(NewChatMessage(RoleSystem, systemPromptBuffer.String()))
 	}
 
 	for _, message := range messages {
@@ -71,7 +72,7 @@ func CreateManager(
 			}
 			s_ := messageBuffer.String()
 
-			manager.AddMessages(NewChatMessage(msg.Role, s_, WithTime(message.Time)))
+			manager.AppendMessages(NewChatMessage(msg.Role, s_, WithTime(message.Time)))
 		}
 	}
 
@@ -91,7 +92,7 @@ func CreateManager(
 			return nil, err
 		}
 
-		manager.AddMessages(NewChatMessage(RoleUser, promptBuffer.String()))
+		manager.AppendMessages(NewChatMessage(RoleUser, promptBuffer.String()))
 	}
 
 	for _, option := range options {

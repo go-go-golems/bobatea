@@ -20,15 +20,20 @@ type errMsg error
 
 type State string
 
+// TODO(manuel, 2024-01-15)
+// we should also have a state that we are starting a completion
+// (which will only really be finished until the subjacent steps are done, but how do we know that?)
+
 const (
 	StateUserInput        State = "user-input"
 	StateMovingAround     State = "moving-around"
 	StateStreamCompletion State = "stream-completion"
-	StateError            State = "error"
+
+	StateError State = "error"
 )
 
 type model struct {
-	contextManager conversation.Manager
+	conversationManager conversation.Manager
 
 	viewport viewport.Model
 
@@ -36,24 +41,18 @@ type model struct {
 	// or implement wrapping ourselves.
 	textArea textarea.Model
 
+	conversation conversation.Model
+
 	help help.Model
 
-	// currently selected message, always valid
-	selectedIdx int
-	err         error
-	keyMap      KeyMap
+	err    error
+	keyMap KeyMap
 
-	style  *Style
+	style  *conversation.Style
 	width  int
 	height int
 
 	backend Backend
-	//step chat.Step
-	//// if not nil, streaming is going on
-	//stepResult steps.StepResult[string]
-
-	currentResponse        string
-	previousResponseHeight int
 
 	state        State
 	quitReceived bool
@@ -71,12 +70,13 @@ func WithTitle(title string) ModelOption {
 
 func InitialModel(manager conversation.Manager, backend Backend, options ...ModelOption) model {
 	ret := model{
-		contextManager: manager,
-		style:          DefaultStyles(),
-		keyMap:         DefaultKeyMap,
-		backend:        backend,
-		viewport:       viewport.New(0, 0),
-		help:           help.New(),
+		conversationManager: manager,
+		conversation:        conversation.NewModel(manager),
+		style:               conversation.DefaultStyles(),
+		keyMap:              DefaultKeyMap,
+		backend:             backend,
+		viewport:            viewport.New(0, 0),
+		help:                help.New(),
 	}
 
 	for _, option := range options {
@@ -88,9 +88,9 @@ func InitialModel(manager conversation.Manager, backend Backend, options ...Mode
 	ret.textArea.Focus()
 	ret.state = StateUserInput
 
-	ret.selectedIdx = len(ret.contextManager.GetConversation()) - 1
+	ret.conversation.Init()
 
-	messages, _ := ret.messageView()
+	messages := ret.conversation.View()
 	ret.viewport.SetContent(messages)
 	ret.viewport.YPosition = 0
 	ret.viewport.GotoBottom()
@@ -128,24 +128,27 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.state == StateUserInput {
 			m.textArea.Blur()
 			m.state = StateMovingAround
-			m.selectedIdx = len(m.contextManager.GetConversation()) - 1
-			if m.selectedIdx < 0 {
-				m.selectedIdx = 0
-			}
-			v, height := m.messageView()
+			m.conversation.SetActive(true)
+			v, selectedHeight := m.conversation.ViewAndSelectedHeight()
 			m.viewport.SetContent(v)
-			m.viewport.SetYOffset(height)
+			m.viewport.SetYOffset(selectedHeight)
 			m.updateKeyBindings()
 		}
 
 	case key.Matches(msg, m.keyMap.Quit):
 		if !m.quitReceived {
 			m.quitReceived = true
-			// on first quit, try to cancel completion if running
-			m.backend.Interrupt()
+			// on first quit, try to cancel completion if running.
+			// NOTE(manuel, 2024-01-15) Maybe we should also check for the state here, add some invariants.
+			if !m.backend.IsFinished() {
+				m.backend.Interrupt()
+			}
 		}
 
 		// force save completion before quitting
+		// TODO(manuel, 2024-01-15) Actually we just need to kill and then append the current response, right?
+		// But if we kill we might get another completion response and then we would have two messages.
+		// Maybe we should just do the right thing and implementing a Quitting state...
 		m.finishCompletion()
 
 		cmd = tea.Quit
@@ -155,16 +158,15 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// and allow us to regenerate.
 		cmd = m.textArea.Focus()
 
+		m.conversation.SetActive(false)
 		m.state = StateUserInput
 		m.updateKeyBindings()
-		v, _ := m.messageView()
-		m.viewport.SetContent(v)
 
 	case key.Matches(msg, m.keyMap.SelectNextMessage):
-		messages := m.contextManager.GetConversation()
-		if m.selectedIdx < len(messages)-1 {
-			m.selectedIdx++
-			v, height := m.messageView()
+		messages := m.conversation.Conversation()
+		if m.conversation.SelectedIdx() < len(messages)-1 {
+			m.conversation.SetSelectedIdx(m.conversation.SelectedIdx() + 1)
+			v, height := m.conversation.ViewAndSelectedHeight()
 			m.viewport.SetYOffset(height)
 			m.viewport.SetContent(v)
 		} else {
@@ -172,9 +174,9 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case key.Matches(msg, m.keyMap.SelectPrevMessage):
-		if m.selectedIdx > 0 {
-			m.selectedIdx--
-			v, height := m.messageView()
+		if m.conversation.SelectedIdx() > 0 {
+			m.conversation.SetSelectedIdx(m.conversation.SelectedIdx() - 1)
+			v, height := m.conversation.ViewAndSelectedHeight()
 			m.viewport.SetYOffset(height)
 			m.viewport.SetContent(v)
 		}
@@ -183,11 +185,12 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		cmd = m.submit()
 
 	case key.Matches(msg, m.keyMap.CopyToClipboard):
-		msgs := m.contextManager.GetConversation()
+		msgs := m.conversation.Conversation()
 		if len(msgs) > 0 {
 			if m.state == StateMovingAround {
-				if m.selectedIdx < len(msgs) && m.selectedIdx >= 0 {
-					msg_ := msgs[m.selectedIdx]
+				selectedIdx := m.conversation.SelectedIdx()
+				if selectedIdx < len(msgs) && selectedIdx >= 0 {
+					msg_ := msgs[selectedIdx]
 					clipboard.Write(clipboard.FmtText, []byte(msg_.Content.String()))
 				}
 			} else {
@@ -204,11 +207,12 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case key.Matches(msg, m.keyMap.CopyLastResponseToClipboard):
-		msgs := m.contextManager.GetConversation()
+		msgs := m.conversation.Conversation()
 		if len(msgs) > 0 {
 			if m.state == StateMovingAround {
-				if m.selectedIdx < len(msgs) && m.selectedIdx >= 0 {
-					msg_ := msgs[m.selectedIdx]
+				selectedIdx := m.conversation.SelectedIdx()
+				if selectedIdx < len(msgs) && selectedIdx >= 0 {
+					msg_ := msgs[selectedIdx]
 					if content, ok := msg_.Content.(*conversation.ChatMessageContent); ok {
 						clipboard.Write(clipboard.FmtText, []byte(content.Text))
 					}
@@ -224,11 +228,12 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case key.Matches(msg, m.keyMap.CopyLastSourceBlocksToClipboard):
-		msgs := m.contextManager.GetConversation()
+		msgs := m.conversation.Conversation()
 		if len(msgs) > 0 {
 			if m.state == StateMovingAround {
-				if m.selectedIdx < len(msgs) && m.selectedIdx >= 0 {
-					msg_ := msgs[m.selectedIdx]
+				selectedIdx := m.conversation.SelectedIdx()
+				if selectedIdx < len(msgs) && selectedIdx >= 0 {
+					msg_ := msgs[selectedIdx]
 					if content, ok := msg_.Content.(*conversation.ChatMessageContent); ok {
 						code := markdown.ExtractQuotedBlocks(content.Text, false)
 						clipboard.Write(clipboard.FmtText, []byte(strings.Join(code, "\n")))
@@ -251,11 +256,12 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case key.Matches(msg, m.keyMap.CopySourceBlocksToClipboard):
-		msgs := m.contextManager.GetConversation()
+		msgs := m.conversation.Conversation()
 		if len(msgs) > 0 {
 			if m.state == StateMovingAround {
-				if m.selectedIdx < len(msgs) && m.selectedIdx >= 0 {
-					msg_ := msgs[m.selectedIdx]
+				selectedIdx := m.conversation.SelectedIdx()
+				if selectedIdx < len(msgs) && selectedIdx >= 0 {
+					msg_ := msgs[selectedIdx]
 					if content, ok := msg_.Content.(*conversation.ChatMessageContent); ok {
 						code := markdown.ExtractQuotedBlocks(content.Text, false)
 						clipboard.Write(clipboard.FmtText, []byte(strings.Join(code, "\n")))
@@ -277,7 +283,7 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, m.keyMap.SaveToFile):
 		// TODO(manuel, 2023-11-14) Implement file chosing dialog
-		err := m.contextManager.SaveToFile("/tmp/output.json")
+		err := m.conversationManager.SaveToFile("/tmp/output.json")
 		if err != nil {
 			cmd = func() tea.Msg {
 				return errMsg(err)
@@ -313,38 +319,44 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 	var cmd tea.Cmd
 
-	switch msg := msg.(type) {
+	switch msg_ := msg.(type) {
 	case tea.KeyMsg:
-		return m.handleKeyPress(msg)
+		return m.handleKeyPress(msg_)
 
 	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
+		m.width = msg_.Width
+		m.height = msg_.Height
 
 		m.recomputeSize()
 
 	// We handle errors just like any other message
 	case errMsg:
-		m.err = msg
+		m.err = msg_
 		return m, nil
 
-	case StreamCompletionMsg,
-		StreamStartMsg,
-		StreamStatusMsg,
-		StreamDoneMsg,
-		StreamCompletionError:
-		return m.handleStreamMessage(msg)
+	case conversation.StreamCompletionMsg,
+		conversation.StreamStartMsg,
+		conversation.StreamStatusMsg,
+		conversation.StreamDoneMsg,
+		conversation.StreamCompletionError:
+		// is CompletionMsg, we need to getNextCompletion
+		m.conversation, cmd = m.conversation.Update(msg)
+		cmds = append(cmds, cmd)
+
+	case BackendFinishedMsg:
+		cmd = m.finishCompletion()
+		cmds = append(cmds, cmd)
 
 	case refreshMessageMsg:
-		v, _ := m.messageView()
+		v, _ := m.conversation.ViewAndSelectedHeight()
 		m.viewport.SetContent(v)
 		m.recomputeSize()
-		if msg.GoToBottom {
+		if msg_.GoToBottom {
 			m.viewport.GotoBottom()
 		}
 
 	default:
-		m.viewport, cmd = m.viewport.Update(msg)
+		m.viewport, cmd = m.viewport.Update(msg_)
 		cmds = append(cmds, cmd)
 	}
 
@@ -367,11 +379,13 @@ func (m *model) recomputeSize() {
 	helpView := m.help.View(m.keyMap)
 	helpViewHeight := lipgloss.Height(helpView)
 
-	m.previousResponseHeight = textAreaHeight
 	newHeight := m.height - textAreaHeight - headerHeight - helpViewHeight
 	if newHeight < 0 {
 		newHeight = 0
 	}
+
+	m.conversation.Width = m.width
+
 	m.viewport.Width = m.width
 	m.viewport.Height = newHeight
 	m.viewport.YPosition = headerHeight + 1
@@ -380,7 +394,7 @@ func (m *model) recomputeSize() {
 
 	m.textArea.SetWidth(m.width - h)
 
-	v, _ := m.messageView()
+	v, _ := m.conversation.ViewAndSelectedHeight()
 	m.viewport.SetContent(v)
 
 	// TODO(manuel, 2023-09-21) Keep the current position by trying to match it to some message
@@ -392,49 +406,12 @@ func (m model) headerView() string {
 	return m.title
 }
 
-// messageView computes the content of the message view and returns the y offset of the selected message or 0
-func (m model) messageView() (string, int) {
-	ret := ""
-	height := 0
-	selectedHeight := 0
-
-	for idx := range m.contextManager.GetConversation() {
-		message := m.contextManager.GetConversation()[idx]
-		v := message.Content.View()
-
-		style := m.style.UnselectedMessage
-		if idx == m.selectedIdx && m.state == StateMovingAround {
-			style = m.style.SelectedMessage
-			selectedHeight = height
-		}
-		w, _ := style.GetFrameSize()
-
-		v_ := wrapWords(v, m.width-w-style.GetHorizontalPadding())
-		v_ = style.
-			Width(m.width - style.GetHorizontalPadding()).
-			Render(v_)
-		ret += v_
-		ret += "\n"
-		height += lipgloss.Height(v_)
-	}
-
-	return ret, selectedHeight
-}
-
 func (m model) textAreaView() string {
 	if m.err != nil {
 		// TODO(manuel, 2023-09-21) Use a proper error style
 		w, _ := m.style.SelectedMessage.GetFrameSize()
 		v := wrapWords(m.err.Error(), m.width-w)
 		return m.style.SelectedMessage.Render(v)
-	}
-
-	// we are currently streaming
-	if !m.backend.IsFinished() {
-		w, _ := m.style.SelectedMessage.GetFrameSize()
-		v := wrapWords(m.currentResponse, m.width-w-m.style.SelectedMessage.GetHorizontalPadding())
-		// TODO(manuel, 2023-09-21) this is where we'd add the spinner
-		return m.style.SelectedMessage.Width(m.width - m.style.SelectedMessage.GetHorizontalPadding()).Render(v)
 	}
 
 	v := m.textArea.View()
@@ -451,6 +428,10 @@ func (m model) textAreaView() string {
 
 func (m model) View() string {
 	headerView := m.headerView()
+
+	view, _ := m.conversation.ViewAndSelectedHeight()
+	m.viewport.SetContent(view)
+
 	viewportView := m.viewport.View()
 	textAreaView := m.textAreaView()
 	helpView := m.help.View(m.keyMap)
@@ -480,40 +461,33 @@ func (m *model) submit() tea.Cmd {
 		}
 	}
 
-	m.contextManager.AddMessages(conversation.NewChatMessage(conversation.RoleUser, m.textArea.Value()))
+	m.conversationManager.AppendMessages(
+		conversation.NewChatMessage(conversation.RoleUser, m.textArea.Value()))
+	m.textArea.SetValue("")
 
-	return m.startCompletion()
-}
-
-func (m *model) startCompletion() tea.Cmd {
 	m.state = StateStreamCompletion
 	m.updateKeyBindings()
-	m.currentResponse = ""
-	m.previousResponseHeight = 0
 
+	m.textArea.SetValue("")
 	m.viewport.GotoBottom()
-
-	return tea.Batch(func() tea.Msg {
-		return refreshMessageMsg{
-			GoToBottom: true,
-		}
-	},
+	cmds := []tea.Cmd{
 		func() tea.Msg {
-			ctx := context2.Background()
-			err := m.backend.Start(ctx, m.contextManager.GetConversation())
-			if err != nil {
-				return errMsg(err)
+			return refreshMessageMsg{
+				GoToBottom: true,
 			}
-
-			return nil
 		},
-		m.getNextCompletion(),
-	)
+	}
+	ctx := context2.Background()
+	cmd, err := m.backend.Start(ctx, m.conversationManager.GetConversation())
+	if err != nil {
+		cmds = append(cmds, func() tea.Msg {
+			return errMsg(err)
+		})
+	} else {
+		cmds = append(cmds, cmd)
+	}
 
-}
-
-func (m model) getNextCompletion() tea.Cmd {
-	return m.backend.GetNextCompletion()
+	return tea.Batch(cmds...)
 }
 
 type refreshMessageMsg struct {
@@ -521,33 +495,32 @@ type refreshMessageMsg struct {
 }
 
 func (m *model) finishCompletion() tea.Cmd {
-	// completion already finished, happens when error and completion finish or cancellation happen
-	if m.backend.IsFinished() {
-		return nil
-	}
-
-	m.contextManager.AddMessages(conversation.NewChatMessage(conversation.RoleAssistant, m.currentResponse))
-	m.currentResponse = ""
-	m.previousResponseHeight = 0
-	m.backend.Kill()
-
-	m.state = StateUserInput
-	m.textArea.Focus()
-	m.textArea.SetValue("")
-
-	m.recomputeSize()
-	m.updateKeyBindings()
-
-	if m.quitReceived {
-		return tea.Quit
-	}
-
-	return func() tea.Msg {
+	refreshCommand := func() tea.Msg {
 		return refreshMessageMsg{
 			GoToBottom: true,
 		}
 	}
+
+	if m.state == StateStreamCompletion {
+		// WARN not sure if really necessary actually, this should only be called once at this point.
+		m.backend.Kill()
+
+		m.state = StateUserInput
+		m.textArea.Focus()
+		m.textArea.SetValue("")
+
+		m.recomputeSize()
+		m.updateKeyBindings()
+
+		if m.quitReceived {
+			return tea.Quit
+		}
+	}
+
+	return refreshCommand
 }
+
+// TODO(manuel, 2024-01-15) Should be moved to conversation manager, probably
 
 func (m *model) setError(err error) tea.Cmd {
 	cmd := m.finishCompletion()
@@ -555,37 +528,4 @@ func (m *model) setError(err error) tea.Cmd {
 	m.state = StateError
 	m.updateKeyBindings()
 	return cmd
-}
-
-func (m model) handleStreamMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmd tea.Cmd
-
-	switch msg := msg.(type) {
-	// handle chat streaming messages
-	case StreamCompletionMsg:
-		m.currentResponse += msg.Delta
-		newTextAreaView := m.textAreaView()
-		newHeight := lipgloss.Height(newTextAreaView)
-		if newHeight != m.previousResponseHeight {
-			m.recomputeSize()
-			m.previousResponseHeight = newHeight
-		}
-		//cmds = append(cmds, func() tea.Msg {
-		//	return refreshMessageMsg{}
-		//})
-		// TODO(manuel, 2024-01-11) I don't think we need this anymore now that we are not streaming partial events over the completion channel
-		cmd = m.getNextCompletion()
-
-	case StreamDoneMsg:
-		cmd = m.finishCompletion()
-
-	case StreamCompletionError:
-		// does this imply the completion is finished, or do we get a separate StreamDoneMsg
-		cmd = m.setError(msg.Err)
-
-	case StreamStartMsg:
-	case StreamStatusMsg:
-	}
-
-	return m, cmd
 }

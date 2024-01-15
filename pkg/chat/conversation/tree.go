@@ -6,15 +6,14 @@ import (
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	"os"
+	"strings"
 	"time"
 )
 
 type ContentType string
 
 const (
-	ContentTypeChatMessage            ContentType = "chat-message"
-	ContextTypeToolCompletionResponse ContentType = "tool-completion-response"
-	ContextTypeToolExecutionResult    ContentType = "tool-execution-result"
+	ContentTypeChatMessage ContentType = "chat-message"
 )
 
 // NodeContent is an interface for different types of node content.
@@ -32,10 +31,12 @@ func NewNodeID() NodeID {
 
 // Message represents a single message in the conversation.
 type Message struct {
-	ParentID NodeID                 `json:"parentID"`
-	ID       NodeID                 `json:"id"`
+	ParentID   NodeID    `json:"parentID"`
+	ID         NodeID    `json:"id"`
+	Time       time.Time `json:"time"`
+	LastUpdate time.Time `json:"lastUpdate"`
+
 	Content  NodeContent            `json:"content"`
-	Time     time.Time              `json:"time"`
 	Metadata map[string]interface{} `json:"metadata"` // Flexible metadata field
 
 	Children []*Message `json:"children,omitempty"`
@@ -69,9 +70,10 @@ func WithID(id NodeID) MessageOption {
 
 func NewMessage(content NodeContent, options ...MessageOption) *Message {
 	ret := &Message{
-		Content: content,
-		ID:      NodeID(uuid.New()),
-		Time:    time.Now(),
+		Content:    content,
+		ID:         NodeID(uuid.New()),
+		Time:       time.Now(),
+		LastUpdate: time.Now(),
 	}
 
 	for _, option := range options {
@@ -112,7 +114,7 @@ func (c *ChatMessageContent) String() string {
 }
 
 func (c *ChatMessageContent) View() string {
-	return fmt.Sprintf("[%s]: %s\n", c.Role, c.Text)
+	return fmt.Sprintf("[%s]: %s", c.Role, strings.TrimRight(c.Text, "\n"))
 }
 
 var _ NodeContent = (*ChatMessageContent)(nil)
@@ -178,8 +180,8 @@ func NewConversationTree() *ConversationTree {
 
 var NullNode NodeID = NodeID(uuid.Nil)
 
-// AddMessages adds a new message to the conversation tree.
-func (ct *ConversationTree) AddMessages(msgs ...*Message) {
+// InsertMessages adds a new message to the conversation tree.
+func (ct *ConversationTree) InsertMessages(msgs ...*Message) {
 	for _, msg := range msgs {
 		ct.Nodes[msg.ID] = msg
 		if ct.RootID == NullNode {
@@ -193,7 +195,7 @@ func (ct *ConversationTree) AddMessages(msgs ...*Message) {
 	}
 }
 
-func (ct *ConversationTree) AttachMessageThread(parentID NodeID, thread Conversation) {
+func (ct *ConversationTree) AttachThread(parentID NodeID, thread Conversation) {
 	for _, msg := range thread {
 		msg.ParentID = parentID
 		ct.Nodes[msg.ID] = msg
@@ -209,11 +211,11 @@ func (ct *ConversationTree) AttachMessageThread(parentID NodeID, thread Conversa
 	}
 }
 
-func (ct *ConversationTree) AddMessagesToLast(thread Conversation) {
-	ct.AttachMessageThread(ct.LastID, thread)
+func (ct *ConversationTree) AppendMessages(thread Conversation) {
+	ct.AttachThread(ct.LastID, thread)
 }
 
-func (ct *ConversationTree) PrependMessageThread(thread Conversation) {
+func (ct *ConversationTree) PrependThread(thread Conversation) {
 	prevRootID := ct.RootID
 	newRootID := NullNode
 	for _, msg := range thread {
@@ -294,7 +296,7 @@ func (ct *ConversationTree) GetLeftMostThread(id NodeID) Conversation {
 		if !exists {
 			break
 		}
-		thread = append([]*Message{node}, thread...)
+		thread = append(thread, node)
 		if len(node.Children) > 0 {
 			id = node.Children[0].ID
 		} else {
@@ -320,4 +322,10 @@ func (ct *ConversationTree) LoadFromFile(filename string) error {
 		return err
 	}
 	return json.Unmarshal(data, ct)
+}
+
+func (ct *ConversationTree) GetMessage(id NodeID) (*Message, bool) {
+	ret, exists := ct.Nodes[id]
+
+	return ret, exists
 }
