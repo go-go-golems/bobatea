@@ -35,7 +35,8 @@ const (
 type model struct {
 	conversationManager conversation.Manager
 
-	viewport viewport.Model
+	viewport       viewport.Model
+	scrollToBottom bool
 
 	// not really what we want, but use this for now, we'll have to either find a normal text box,
 	// or implement wrapping ourselves.
@@ -77,6 +78,7 @@ func InitialModel(manager conversation.Manager, backend Backend, options ...Mode
 		backend:             backend,
 		viewport:            viewport.New(0, 0),
 		help:                help.New(),
+		scrollToBottom:      true,
 	}
 
 	for _, option := range options {
@@ -129,9 +131,10 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.textArea.Blur()
 			m.state = StateMovingAround
 			m.conversation.SetActive(true)
-			v, selectedHeight := m.conversation.ViewAndSelectedHeight()
-			m.viewport.SetContent(v)
-			m.viewport.SetYOffset(selectedHeight)
+			if m.scrollToBottom {
+				m.conversation.SetSelectedIdx(len(m.conversation.Conversation()) - 1)
+			}
+			m.scrollToSelected()
 			m.updateKeyBindings()
 		}
 
@@ -158,6 +161,9 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// and allow us to regenerate.
 		cmd = m.textArea.Focus()
 
+		m.scrollToBottom = true
+		m.viewport.GotoBottom()
+
 		m.conversation.SetActive(false)
 		m.state = StateUserInput
 		m.updateKeyBindings()
@@ -166,19 +172,17 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		messages := m.conversation.Conversation()
 		if m.conversation.SelectedIdx() < len(messages)-1 {
 			m.conversation.SetSelectedIdx(m.conversation.SelectedIdx() + 1)
-			v, height := m.conversation.ViewAndSelectedHeight()
-			m.viewport.SetYOffset(height)
-			m.viewport.SetContent(v)
-		} else {
-			m.viewport, cmd = m.viewport.Update(msg)
+			m.scrollToSelected()
+		} else if m.conversation.SelectedIdx() == len(messages)-1 {
+			m.scrollToBottom = true
+			m.viewport.GotoBottom()
 		}
 
 	case key.Matches(msg, m.keyMap.SelectPrevMessage):
 		if m.conversation.SelectedIdx() > 0 {
 			m.conversation.SetSelectedIdx(m.conversation.SelectedIdx() - 1)
-			v, height := m.conversation.ViewAndSelectedHeight()
-			m.viewport.SetYOffset(height)
-			m.viewport.SetContent(v)
+			m.scrollToSelected()
+			m.scrollToBottom = false
 		}
 
 	case key.Matches(msg, m.keyMap.SubmitMessage):
@@ -308,7 +312,11 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case StateUserInput:
 			m.textArea, cmd = m.textArea.Update(msg)
 		case StateMovingAround, StateStreamCompletion, StateError:
+			prevAtBottom := m.viewport.AtBottom()
 			m.viewport, cmd = m.viewport.Update(msg)
+			if m.viewport.AtBottom() && !prevAtBottom {
+				m.scrollToBottom = false
+			}
 		}
 	}
 
@@ -341,6 +349,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		conversation.StreamCompletionError:
 		// is CompletionMsg, we need to getNextCompletion
 		m.conversation, cmd = m.conversation.Update(msg)
+		if m.scrollToBottom {
+			v, _ := m.conversation.ViewAndSelectedPosition()
+			m.viewport.SetContent(v)
+			m.viewport.GotoBottom()
+		}
 		cmds = append(cmds, cmd)
 
 	case BackendFinishedMsg:
@@ -348,10 +361,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, cmd)
 
 	case refreshMessageMsg:
-		v, _ := m.conversation.ViewAndSelectedHeight()
+		v, _ := m.conversation.ViewAndSelectedPosition()
 		m.viewport.SetContent(v)
 		m.recomputeSize()
-		if msg_.GoToBottom {
+		if msg_.GoToBottom || m.scrollToBottom {
 			m.viewport.GotoBottom()
 		}
 
@@ -365,6 +378,25 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *model) updateKeyBindings() {
 	mode_keymap.EnableMode(&m.keyMap, string(m.state))
+}
+
+func (m *model) scrollViewport() {
+	if m.scrollToBottom {
+		m.viewport.GotoBottom()
+	}
+}
+
+func (m *model) scrollToSelected() {
+	v, pos := m.conversation.ViewAndSelectedPosition()
+	m.viewport.SetContent(v)
+	midScreenOffset := m.viewport.YOffset + m.viewport.Height/2
+	msgEndOffset := pos.Offset + pos.Height
+	bottomOffset := m.viewport.YOffset + m.viewport.Height
+	if pos.Offset > midScreenOffset && msgEndOffset > bottomOffset {
+		m.viewport.SetYOffset(pos.Offset - max(m.viewport.Height-pos.Height-1, m.viewport.Height/2))
+	} else if pos.Offset < m.viewport.YOffset {
+		m.viewport.SetYOffset(pos.Offset)
+	}
 }
 
 func (m *model) recomputeSize() {
@@ -394,7 +426,7 @@ func (m *model) recomputeSize() {
 
 	m.textArea.SetWidth(m.width - h)
 
-	v, _ := m.conversation.ViewAndSelectedHeight()
+	v, _ := m.conversation.ViewAndSelectedPosition()
 	m.viewport.SetContent(v)
 
 	// TODO(manuel, 2023-09-21) Keep the current position by trying to match it to some message
@@ -429,7 +461,7 @@ func (m model) textAreaView() string {
 func (m model) View() string {
 	headerView := m.headerView()
 
-	view, _ := m.conversation.ViewAndSelectedHeight()
+	view, _ := m.conversation.ViewAndSelectedPosition()
 	m.viewport.SetContent(view)
 
 	viewportView := m.viewport.View()
@@ -453,7 +485,6 @@ func (m model) View() string {
 	return ret
 }
 
-// Chat completion messages
 func (m *model) submit() tea.Cmd {
 	if !m.backend.IsFinished() {
 		return func() tea.Msg {
@@ -518,14 +549,4 @@ func (m *model) finishCompletion() tea.Cmd {
 	}
 
 	return refreshCommand
-}
-
-// TODO(manuel, 2024-01-15) Should be moved to conversation manager, probably
-
-func (m *model) setError(err error) tea.Cmd {
-	cmd := m.finishCompletion()
-	m.err = err
-	m.state = StateError
-	m.updateKeyBindings()
-	return cmd
 }

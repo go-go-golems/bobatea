@@ -38,11 +38,11 @@ type KeyMap struct {
 
 var DefaultKeyMap = KeyMap{
 	SelectPrevMessage: key.NewBinding(
-		key.WithKeys("up"),
-		key.WithHelp("↑", "move up")),
+		key.WithKeys("shift+up"),
+		key.WithHelp("shift+↑", "move up")),
 	SelectNextMessage: key.NewBinding(
-		key.WithKeys("down"),
-		key.WithHelp("↓", "move down"),
+		key.WithKeys("shift+down"),
+		key.WithHelp("shift+↓", "move down"),
 	),
 
 	UnfocusMessage: key.NewBinding(

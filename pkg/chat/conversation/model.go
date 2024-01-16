@@ -44,7 +44,6 @@ func (m Model) Conversation() Conversation {
 func (m Model) Init() tea.Cmd {
 	c := m.manager.GetConversation()
 	m.updateCache(c...)
-	m.selectedIdx = len(c) - 1
 
 	return nil
 }
@@ -81,6 +80,7 @@ func (m *Model) SelectedIdx() int {
 }
 
 func (m *Model) SetSelectedIdx(idx int) {
+	m.selectedID = NullNode
 	m.selectedIdx = idx
 	conversation := m.manager.GetConversation()
 	if idx > len(conversation) {
@@ -90,6 +90,8 @@ func (m *Model) SetSelectedIdx(idx int) {
 	if m.selectedIdx < 0 {
 		return
 	}
+
+	m.selectedID = conversation[m.selectedIdx].ID
 }
 
 func (m Model) renderMessage(selected bool, msg *Message) string {
@@ -168,13 +170,19 @@ func wrapWords(text string, w int) string {
 }
 
 func (m Model) View() string {
-	v, _ := m.ViewAndSelectedHeight()
+	v, _ := m.ViewAndSelectedPosition()
 	return v
 }
 
-func (m Model) ViewAndSelectedHeight() (string, int) {
+type MessagePosition struct {
+	Offset int
+	Height int
+}
+
+func (m Model) ViewAndSelectedPosition() (string, MessagePosition) {
 	ret := ""
 	height := 0
+	selectedOffset := 0
 	selectedHeight := 0
 
 	msgs_ := m.manager.GetConversation()
@@ -185,12 +193,20 @@ func (m Model) ViewAndSelectedHeight() (string, int) {
 		if !ok {
 			continue
 		}
+		h := lipgloss.Height(c_.rendered)
+		if m.selectedID == msg.ID {
+			selectedOffset = height
+			selectedHeight = h
+		}
 		ret += c_.rendered
 		ret += "\n"
-		height += lipgloss.Height(c_.rendered)
+		height += h
 	}
 
-	return ret, selectedHeight
+	return ret, MessagePosition{
+		Offset: selectedOffset,
+		Height: selectedHeight,
+	}
 }
 
 type StreamMetadata struct {
