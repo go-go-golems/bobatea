@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/go-go-golems/geppetto/pkg/steps"
+	"github.com/google/uuid"
 	"github.com/muesli/reflow/wordwrap"
 	"strings"
 	"time"
@@ -134,6 +136,19 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 	case StreamDoneMsg:
 		// I don't think there is anything to do here, for now at least
+		msg_, ok := m.manager.GetMessage(msg.ID)
+		if !ok {
+			return m, nil
+		}
+
+		textMsg, ok := msg_.Content.(*ChatMessageContent)
+		if !ok {
+			return m, nil
+		}
+
+		// update with the final text
+		textMsg.Text = msg.Completion
+		msg_.LastUpdate = time.Now()
 
 	case StreamCompletionError:
 		// TODO(manuel, 2024-01-15) Update error view...
@@ -142,7 +157,13 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	case StreamStartMsg:
 		msg_ := NewChatMessage(
 			RoleAssistant, "",
-			WithID(msg.ID), WithParentID(msg.ParentID))
+			WithID(msg.ID),
+			WithParentID(msg.ParentID),
+			WithMetadata(map[string]interface{}{
+				"id":        uuid.UUID(msg.ID).String(),
+				"parent_id": uuid.UUID(msg.ParentID).String(),
+				"step":      msg.Step.ToMap(),
+			}))
 		m.manager.AppendMessages(msg_)
 
 		m.updateCache(msg_)
@@ -210,9 +231,10 @@ func (m Model) ViewAndSelectedPosition() (string, MessagePosition) {
 }
 
 type StreamMetadata struct {
-	ID             NodeID `json:"id" yaml:"id"`
-	ParentID       NodeID `json:"parent_id" yaml:"parent_id"`
-	ConversationID NodeID `json:"conversation_id" yaml:"conversation_id"`
+	ID       NodeID                 `json:"id" yaml:"id"`
+	ParentID NodeID                 `json:"parent_id" yaml:"parent_id"`
+	Metadata map[string]interface{} `json:"metadata" yaml:"metadata"`
+	Step     *steps.StepMetadata    `json:"step_metadata,omitempty"`
 }
 
 type StreamStartMsg struct {
