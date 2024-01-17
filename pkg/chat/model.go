@@ -380,12 +380,6 @@ func (m *model) updateKeyBindings() {
 	mode_keymap.EnableMode(&m.keyMap, string(m.state))
 }
 
-func (m *model) scrollViewport() {
-	if m.scrollToBottom {
-		m.viewport.GotoBottom()
-	}
-}
-
 func (m *model) scrollToSelected() {
 	v, pos := m.conversation.ViewAndSelectedPosition()
 	m.viewport.SetContent(v)
