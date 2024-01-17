@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/go-go-golems/geppetto/pkg/steps"
 	"github.com/google/uuid"
 	"github.com/muesli/reflow/wordwrap"
 	"strings"
@@ -236,11 +235,39 @@ func (m Model) ViewAndSelectedPosition() (string, MessagePosition) {
 	}
 }
 
+// StepMetadata represents metadata about the step that issues the streaming messages.
+// There is not a real definition of what a streaming message right now, this will need to be
+// cleaned up as the agent framework is built out.
+// NOTE(manuel, 2024-01-17) This is a copy of the StepMetadata in geppetto, and we might want to extract this out into a separate steps package.
+type StepMetadata struct {
+	StepID     uuid.UUID `json:"step_id"`
+	Type       string    `json:"type"`
+	InputType  string    `json:"input_type"`
+	OutputType string    `json:"output_type"`
+
+	Metadata map[string]interface{} `json:"meta"`
+}
+
+func (sm *StepMetadata) ToMap() map[string]interface{} {
+	ret := map[string]interface{}{
+		"step_id":     sm.StepID,
+		"type":        sm.Type,
+		"input_type":  sm.InputType,
+		"output_type": sm.OutputType,
+	}
+
+	for k, v := range sm.Metadata {
+		ret[k] = v
+	}
+
+	return ret
+}
+
 type StreamMetadata struct {
 	ID       NodeID                 `json:"id" yaml:"id"`
 	ParentID NodeID                 `json:"parent_id" yaml:"parent_id"`
 	Metadata map[string]interface{} `json:"metadata" yaml:"metadata"`
-	Step     *steps.StepMetadata    `json:"step_metadata,omitempty"`
+	Step     *StepMetadata          `json:"step_metadata,omitempty"`
 }
 
 type StreamStartMsg struct {
