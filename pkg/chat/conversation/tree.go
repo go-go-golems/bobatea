@@ -127,6 +127,10 @@ func (c *ChatMessageContent) String() string {
 }
 
 func (c *ChatMessageContent) View() string {
+	// If we are markdown, add a newline so that it becomes valid markdown to parse.
+	if strings.HasPrefix(c.Text, "```") {
+		c.Text = "\n" + c.Text
+	}
 	return fmt.Sprintf("[%s]: %s", c.Role, strings.TrimRight(c.Text, "\n"))
 }
 
