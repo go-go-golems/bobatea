@@ -25,6 +25,19 @@ type NodeContent interface {
 
 type NodeID uuid.UUID
 
+func (id NodeID) MarshalJSON() ([]byte, error) {
+	return json.Marshal(uuid.UUID(id))
+}
+
+func (id *NodeID) UnmarshalJSON(data []byte) error {
+	var uuid uuid.UUID
+	if err := json.Unmarshal(data, &uuid); err != nil {
+		return err
+	}
+	*id = NodeID(uuid)
+	return nil
+}
+
 func NewNodeID() NodeID {
 	return NodeID(uuid.New())
 }

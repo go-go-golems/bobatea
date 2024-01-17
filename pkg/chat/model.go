@@ -416,7 +416,7 @@ func (m *model) recomputeSize() {
 		newHeight = 0
 	}
 
-	m.conversation.Width = m.width
+	m.conversation.SetWidth(m.width)
 
 	m.viewport.Width = m.width
 	m.viewport.Height = newHeight

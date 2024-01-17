@@ -22,7 +22,7 @@ type Model struct {
 	manager Manager
 	style   *Style
 	active  bool
-	Width   int
+	width   int
 
 	cache map[NodeID]cacheEntry
 
@@ -77,6 +77,12 @@ func (m *Model) SetActive(active bool) {
 	m.active = active
 }
 
+func (m *Model) SetWidth(width int) {
+	m.width = width
+
+	m.cache = make(map[NodeID]cacheEntry)
+}
+
 func (m *Model) SelectedIdx() int {
 	return m.selectedIdx
 }
@@ -105,10 +111,10 @@ func (m Model) renderMessage(selected bool, msg *Message) string {
 		style = m.style.SelectedMessage
 	}
 	w, _ := style.GetFrameSize()
-	v_ := wrapWords(v, m.Width-w-style.GetHorizontalPadding())
+	v_ := wrapWords(v, m.width-w-style.GetHorizontalPadding())
 
 	v_ = style.
-		Width(m.Width - style.GetHorizontalPadding()).
+		Width(m.width - style.GetHorizontalPadding()).
 		Render(v_)
 
 	return v_
