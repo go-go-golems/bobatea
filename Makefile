@@ -33,3 +33,6 @@ release:
 	git push --tags
 	GOPROXY=proxy.golang.org go list -m github.com/go-go-golems/bobatea@$(shell svu current)
 
+bump-glazed:
+	go get github.com/go-go-golems/glazed@latest
+	go mod tidy
