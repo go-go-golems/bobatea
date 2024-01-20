@@ -251,6 +251,12 @@ type Model struct {
 	rsan runeutil.Sanitizer
 }
 
+var Log []string = []string{}
+
+func LogLine(s string, v ...interface{}) {
+	Log = append(Log, fmt.Sprintf(s, v...))
+}
+
 // New creates a new model with default settings.
 func New() Model {
 	vp := viewport.New(0, 0)
@@ -337,6 +343,7 @@ func (m *Model) insertRunesFromUserInput(runes []rune) {
 	// clipboard. This avoids bugs due to e.g. tab characters and
 	// whatnot.
 	runes = m.san().Sanitize(runes)
+	LogLine(fmt.Sprintf("Sanitized runes: '%s'", string(runes)))
 
 	var availSpace int
 	if m.CharLimit > 0 {
@@ -351,6 +358,7 @@ func (m *Model) insertRunesFromUserInput(runes []rune) {
 			runes = runes[:len(runes)-availSpace]
 		}
 	}
+	LogLine("runes: '%s'", string(runes))
 
 	// Split the input into lines.
 	var lines [][]rune
@@ -371,10 +379,13 @@ func (m *Model) insertRunesFromUserInput(runes []rune) {
 		lines = append(lines, runes[lstart:])
 	}
 
+	LogLine("len(m.value): %d, len(lines): %d", len(m.value), len(lines))
+
 	// Obey the maximum height limit.
 	if m.MaxHeight > 0 && len(m.value)+len(lines) > m.MaxHeight {
 		allowedHeight := max(0, m.MaxHeight-len(m.value))
 		lines = lines[:allowedHeight]
+		LogLine("reduced lines to %v (allowdHeight: %d)", lines, allowedHeight)
 	}
 
 	if len(lines) == 0 {
@@ -944,6 +955,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		LogLine("Key pressed: %s", msg.String())
 		switch {
 		case key.Matches(msg, m.KeyMap.DeleteAfterCursor):
 			m.col = clamp(m.col, 0, len(m.value[m.row]))
@@ -1036,6 +1048,9 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			m.insertRunesFromUserInput([]rune("\t"))
 
 		default:
+			LogLine(fmt.Sprintf("insertRunesFromUserInput: '%s' %v (%s) (%d/%d)",
+				string(msg.Runes), msg.Runes, msg.String(),
+				m.CharLimit, m.Length()))
 			m.insertRunesFromUserInput(msg.Runes)
 		}
 
