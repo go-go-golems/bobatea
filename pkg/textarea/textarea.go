@@ -372,8 +372,8 @@ func (m *Model) insertRunesFromUserInput(runes []rune) {
 	}
 
 	// Obey the maximum height limit.
-	if m.MaxHeight > 0 && len(m.value)+len(lines)-1 > m.MaxHeight {
-		allowedHeight := max(0, m.MaxHeight-len(m.value)+1)
+	if m.MaxHeight > 0 && len(m.value)+len(lines) > m.MaxHeight {
+		allowedHeight := max(0, m.MaxHeight-len(m.value))
 		lines = lines[:allowedHeight]
 	}
 
@@ -996,6 +996,9 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			if m.MaxHeight > 0 && len(m.value) >= m.MaxHeight {
 				return m, nil
 			}
+			if m.CharLimit > 0 && m.Length() >= m.CharLimit {
+				return m, nil
+			}
 			m.col = clamp(m.col, 0, len(m.value[m.row]))
 			m.splitLine(m.row, m.col)
 		case key.Matches(msg, m.KeyMap.LineEnd):
@@ -1028,6 +1031,9 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			m.capitalizeRight()
 		case key.Matches(msg, m.KeyMap.TransposeCharacterBackward):
 			m.transposeLeft()
+
+		case msg.String() == "tab":
+			m.insertRunesFromUserInput([]rune("\t"))
 
 		default:
 			m.insertRunesFromUserInput(msg.Runes)
@@ -1207,7 +1213,7 @@ func Blink() tea.Msg {
 	return cursor.Blink()
 }
 
-func (m Model) memoizedWrap(runes []rune, width int) [][]rune {
+func (m *Model) memoizedWrap(runes []rune, width int) [][]rune {
 	input := WrapInput{
 		Runes: runes,
 		Width: width,
