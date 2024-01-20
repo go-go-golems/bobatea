@@ -53,6 +53,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	default:
 		m.ta, cmd = m.ta.Update(msg)
+		cmds = append(cmds, cmd)
 	}
 
 	return m, tea.Batch(cmds...)
@@ -73,8 +74,4 @@ func main() {
 	}
 
 	fmt.Println("Typed text:", m.(Model).ta.Value())
-	fmt.Println("Log:")
-	for _, s := range textarea.Log {
-		fmt.Println(s)
-	}
 }
