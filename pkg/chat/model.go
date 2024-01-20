@@ -88,6 +88,8 @@ func InitialModel(manager conversation.Manager, backend Backend, options ...Mode
 	ret.textArea = textarea.New()
 	ret.textArea.Placeholder = "Dear AI, answer my plight..."
 	ret.textArea.Focus()
+	ret.textArea.CharLimit = 20000
+	ret.textArea.MaxHeight = 500
 	ret.state = StateUserInput
 
 	ret.conversation.Init()
