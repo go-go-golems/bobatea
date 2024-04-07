@@ -2,13 +2,13 @@ package filepicker
 
 import (
 	"fmt"
-	"github.com/charmbracelet/bubbles/filepicker"
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/go-go-golems/bobatea/pkg/buttons"
+	bubblesfilepicker "github.com/go-go-golems/bobatea/pkg/thirdparty/bubbles/filepicker"
 	"os"
 	"path"
 	"strings"
@@ -22,18 +22,20 @@ type CancelFilePickerMsg struct{}
 
 type clearError struct{}
 
+//goland:noinspection GoMixedReceiverTypes
 type Model struct {
 	Title string
 	Error string
 
-	Filepicker    filepicker.Model
+	Filepicker    bubblesfilepicker.Model
 	confirmDialog buttons.Model
 	help          help.Model
 	filenameInput textinput.Model
 
-	width  int
-	height int
-	state  state
+	width             int
+	height            int
+	state             state
+	creatingDirectory bool
 
 	keyMap KeyMap
 
@@ -50,7 +52,7 @@ const (
 )
 
 func NewModel() Model {
-	fp := filepicker.New()
+	fp := bubblesfilepicker.New()
 	filenameInput := textinput.New()
 	filenameInput.Focus()
 	keyMap := DefaultKeyMap()
@@ -108,10 +110,11 @@ func (m *Model) setError(err string) tea.Cmd {
 	return m.resize()
 }
 
-func (m *Model) enterNew() tea.Cmd {
+func (m *Model) enterNewFile(creatingDirectory bool) tea.Cmd {
 	m.filenameInput.Reset()
 	m.filenameInput.Focus()
 	m.state = stateNewFile
+	m.creatingDirectory = creatingDirectory
 	return m.resize()
 }
 
@@ -154,7 +157,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 	case stateBrowse:
 		switch {
 		case key.Matches(msg, m.keyMap.CreateFile):
-			return m.enterNew()
+			return m.enterNewFile(false)
+
+		case key.Matches(msg, m.keyMap.CreateDirectory):
+			return m.enterNewFile(true)
 
 		case key.Matches(msg, m.keyMap.Exit):
 			return func() tea.Msg {
@@ -170,10 +176,14 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		case key.Matches(msg, m.keyMap.Accept):
 			if m.filenameInput.Value() != "" {
 				m.SelectedPath = path.Join(m.Filepicker.CurrentDirectory, m.filenameInput.Value())
-				if fi, err := os.Stat(m.SelectedPath); err == nil && fi.IsDir() {
-					return tea.Batch(m.setError("File is a directory"), m.enterBrowse())
+				if m.creatingDirectory {
+					return m.enterConfirmNew()
+				} else {
+					if fi, err := os.Stat(m.SelectedPath); err == nil && fi.IsDir() {
+						return tea.Batch(m.setError("File is a directory"), m.enterBrowse())
+					}
+					return m.enterConfirmNew()
 				}
-				return m.enterConfirmNew()
 			}
 			return m.enterBrowse()
 
@@ -222,27 +232,64 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			case "Yes":
 				cmd = func() tea.Cmd {
 					fi, err := os.Stat(m.SelectedPath)
-					if err != nil {
-						if os.IsNotExist(err) {
+
+					if m.creatingDirectory {
+						if err != nil {
+							if os.IsNotExist(err) {
+								err = os.Mkdir(m.SelectedPath, 0755)
+								if err != nil {
+									return tea.Batch(
+										m.setError(err.Error()),
+										m.enterBrowse(),
+									)
+								}
+								return tea.Batch(
+									m.enterDir(m.SelectedPath),
+									m.enterBrowse(),
+								)
+							} else {
+								return tea.Batch(
+									m.setError(err.Error()),
+									m.enterBrowse(),
+								)
+							}
+						}
+
+						if fi.IsDir() {
 							return tea.Batch(
-								m.selectFile(),
-								m.enterBrowse(),
-							)
-						} else {
-							return tea.Batch(
-								m.setError(err.Error()),
+								m.enterDir(m.SelectedPath),
 								m.enterBrowse(),
 							)
 						}
-					}
-					if fi.IsDir() {
+
 						return tea.Batch(
-							m.setError("File is a directory"),
+							m.setError("File or Directory already exists"),
 							m.enterBrowse(),
 						)
+					} else {
+						if err != nil {
+							if os.IsNotExist(err) {
+								return tea.Batch(
+									m.selectFile(),
+									m.enterBrowse(),
+								)
+							} else {
+								return tea.Batch(
+									m.setError(err.Error()),
+									m.enterBrowse(),
+								)
+							}
+						}
+						if fi.IsDir() {
+							return tea.Batch(
+								m.setError("File is a directory"),
+								m.enterBrowse(),
+							)
+						}
+
+						return m.enterConfirmOverwrite()
 					}
 
-					return m.enterConfirmOverwrite()
 				}()
 				cmds = append(cmds, cmd)
 			}
@@ -279,23 +326,11 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 		helpView := m.help.View(m.keyMap)
 		helpViewHeight := lipgloss.Height(helpView)
-		fpHeight := msg.Height - helpViewHeight - errorViewHeight
+		titleViewHeight := lipgloss.Height(m.viewTitle(""))
 
 		switch m.state {
 		case stateBrowse:
-			m.Filepicker, cmd = m.Filepicker.Update(tea.WindowSizeMsg{
-				Width:  msg.Width,
-				Height: fpHeight,
-			})
-			cmds = append(cmds, cmd)
-
-		case stateNewFile:
-			inputView := m.viewInput()
-			inputViewHeight := lipgloss.Height(inputView)
-			if inputViewHeight > 0 {
-				inputViewHeight++
-			}
-			fpHeight -= inputViewHeight
+			fpHeight := msg.Height - helpViewHeight - errorViewHeight - titleViewHeight
 
 			m.Filepicker, cmd = m.Filepicker.Update(tea.WindowSizeMsg{
 				Width:  msg.Width,
@@ -310,6 +345,10 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			})
 			cmds = append(cmds, cmd)
 		}
+
+	case bubblesfilepicker.NavigateToDirMsg:
+		m.Filepicker, cmd = m.Filepicker.Update(msg)
+		cmds = append(cmds, cmd)
 
 	default:
 		switch m.state {
@@ -355,17 +394,21 @@ func (m Model) View() string {
 func (m Model) viewBrowse() string {
 	helpView := m.help.View(m.keyMap)
 	errorView := m.viewError()
+	headerView := m.viewTitle(fmt.Sprintf("Current Directory: %s", m.Filepicker.CurrentDirectory))
 	listView := m.Filepicker.View()
 	listViewHeight := lipgloss.Height(listView)
 	_ = listViewHeight
 
 	return strings.Join([]string{
-		listView, errorView, helpView,
+		headerView, listView, errorView, helpView,
 	}, "\n")
 }
 
 func (m Model) viewInput() string {
 	inputTitle := "New file name:"
+	if m.creatingDirectory {
+		inputTitle = "New directory name:"
+	}
 	inputView := m.filenameInput.View()
 
 	return strings.Join([]string{
@@ -381,6 +424,12 @@ func (m Model) viewError() string {
 	return lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#F25D94")).
 		Render(m.Error)
+}
+
+func (m Model) viewTitle(title string) string {
+	return lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#FFCC66")).
+		Render(title) + "\n"
 }
 
 func (m Model) viewNewFile() string {
@@ -404,4 +453,12 @@ func (m Model) viewConfirm() string {
 	return strings.Join([]string{
 		confirmView, errorView, helpView,
 	}, "\n")
+}
+
+func (m Model) enterDir(selectedPath string) tea.Cmd {
+	return func() tea.Msg {
+		return bubblesfilepicker.NavigateToDirMsg{
+			Path: selectedPath,
+		}
+	}
 }

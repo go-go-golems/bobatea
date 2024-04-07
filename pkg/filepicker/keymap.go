@@ -11,7 +11,8 @@ type KeyMap struct {
 	Help           key.Binding `keymap-mode:"*"`
 	Exit           key.Binding `keymap-mode:"*"`
 
-	CreateFile key.Binding `keymap-mode:"browse"`
+	CreateFile      key.Binding `keymap-mode:"browse"`
+	CreateDirectory key.Binding `keymap-mode:"browse"`
 
 	// filepicker forward
 	GoToTop  key.Binding `keymap-mode:"browse"`
@@ -48,7 +49,8 @@ func DefaultKeyMap() KeyMap {
 			key.WithHelp("esc/ctrl+g", "Exit"),
 		),
 
-		CreateFile: key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "Create file")),
+		CreateFile:      key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "Create file")),
+		CreateDirectory: key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "Create directory")),
 
 		// forward to filepicker
 		GoToTop:  key.NewBinding(key.WithKeys("home"), key.WithHelp("home", "Go to top")),
@@ -72,6 +74,7 @@ func (k KeyMap) ShortHelp() []key.Binding {
 		k.Help,
 		k.Accept,
 		k.CreateFile,
+		k.CreateDirectory,
 		k.Back,
 		k.Forward,
 		k.ResetFileInput,
@@ -89,6 +92,7 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 		{
 			k.Exit,
 			k.CreateFile,
+			k.CreateDirectory,
 		}, {
 			k.GoToTop,
 			k.GoToLast,
