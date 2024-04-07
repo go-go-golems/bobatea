@@ -67,7 +67,7 @@ func NewModel() Model {
 	}
 }
 
-func newConfirmCreateDialog(questionname string) buttons.Model {
+func newConfirmCreateDialog(question string) buttons.Model {
 	return buttons.NewModel(
 		buttons.WithQuestion(question),
 		buttons.WithButtons("No", "Yes"),

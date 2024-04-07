@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/go-go-golems/bobatea/pkg/conversation"
 	"github.com/google/uuid"
 	"github.com/muesli/reflow/wordwrap"
 	"strings"
@@ -11,34 +12,34 @@ import (
 )
 
 type cacheEntry struct {
-	msg         *Message
+	msg         *conversation.Message
 	rendered    string
 	selected    bool
 	lastUpdated time.Time
 }
 
 type Model struct {
-	manager Manager
+	manager conversation.Manager
 	style   *Style
 	active  bool
 	width   int
 
-	cache map[NodeID]cacheEntry
+	cache map[conversation.NodeID]cacheEntry
 
 	selectedIdx int
-	selectedID  NodeID
+	selectedID  conversation.NodeID
 }
 
-func NewModel(manager Manager) Model {
+func NewModel(manager conversation.Manager) Model {
 	return Model{
 		manager:    manager,
 		style:      DefaultStyles(),
-		cache:      make(map[NodeID]cacheEntry),
-		selectedID: NullNode,
+		cache:      make(map[conversation.NodeID]cacheEntry),
+		selectedID: conversation.NullNode,
 	}
 }
 
-func (m Model) Conversation() Conversation {
+func (m Model) Conversation() conversation.Conversation {
 	return m.manager.GetConversation()
 }
 
@@ -49,7 +50,7 @@ func (m Model) Init() tea.Cmd {
 	return nil
 }
 
-func (m Model) updateCache(c ...*Message) {
+func (m Model) updateCache(c ...*conversation.Message) {
 	for idx, msg := range c {
 		c_, ok := m.cache[msg.ID]
 		selected := idx == m.selectedIdx && m.active
@@ -79,7 +80,7 @@ func (m *Model) SetActive(active bool) {
 func (m *Model) SetWidth(width int) {
 	m.width = width
 
-	m.cache = make(map[NodeID]cacheEntry)
+	m.cache = make(map[conversation.NodeID]cacheEntry)
 }
 
 func (m *Model) SelectedIdx() int {
@@ -87,7 +88,7 @@ func (m *Model) SelectedIdx() int {
 }
 
 func (m *Model) SetSelectedIdx(idx int) {
-	m.selectedID = NullNode
+	m.selectedID = conversation.NullNode
 	m.selectedIdx = idx
 	conversation := m.manager.GetConversation()
 	if idx > len(conversation) {
@@ -101,7 +102,7 @@ func (m *Model) SetSelectedIdx(idx int) {
 	m.selectedID = conversation[m.selectedIdx].ID
 }
 
-func (m Model) renderMessage(selected bool, msg *Message) string {
+func (m Model) renderMessage(selected bool, msg *conversation.Message) string {
 	v := msg.Content.View()
 	v = strings.TrimRight(v, "\n")
 
@@ -125,13 +126,14 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	// handle chat streaming messages
 	case StreamCompletionMsg:
+		// update the respective message's text content with the new completion
 		msg_, ok := m.manager.GetMessage(msg.ID)
 		if !ok {
 			// TODO not sure if we need to handle the error here, or do some warning?
 			return m, nil
 		}
 
-		textMsg, ok := msg_.Content.(*ChatMessageContent)
+		textMsg, ok := msg_.Content.(*conversation.ChatMessageContent)
 		if !ok {
 			return m, nil
 		}
@@ -146,7 +148,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			return m, nil
 		}
 
-		textMsg, ok := msg_.Content.(*ChatMessageContent)
+		textMsg, ok := msg_.Content.(*conversation.ChatMessageContent)
 		if !ok {
 			return m, nil
 		}
@@ -160,11 +162,11 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		//cmd = m.setError(msg.Err)
 
 	case StreamStartMsg:
-		msg_ := NewChatMessage(
-			RoleAssistant, "",
-			WithID(msg.ID),
-			WithParentID(msg.ParentID),
-			WithMetadata(map[string]interface{}{
+		msg_ := conversation.NewChatMessage(
+			conversation.RoleAssistant, "",
+			conversation.WithID(msg.ID),
+			conversation.WithParentID(msg.ParentID),
+			conversation.WithMetadata(map[string]interface{}{
 				"id":        uuid.UUID(msg.ID).String(),
 				"parent_id": uuid.UUID(msg.ParentID).String(),
 				"step":      msg.Step.ToMap(),
@@ -264,33 +266,60 @@ func (sm *StepMetadata) ToMap() map[string]interface{} {
 }
 
 type StreamMetadata struct {
-	ID       NodeID                 `json:"id" yaml:"id"`
-	ParentID NodeID                 `json:"parent_id" yaml:"parent_id"`
+	ID       conversation.NodeID    `json:"id" yaml:"id"`
+	ParentID conversation.NodeID    `json:"parent_id" yaml:"parent_id"`
 	Metadata map[string]interface{} `json:"metadata" yaml:"metadata"`
 	Step     *StepMetadata          `json:"step_metadata,omitempty"`
 }
 
+// StreamStartMsg is sent by the backend when a streaming operation begins.
+// The UI uses this message to append a new message to the conversation,
+// indicating that the assistant has started processing. The conversation
+// manager is responsible for adding this message to the conversation tree.
 type StreamStartMsg struct {
 	StreamMetadata
 }
 
+// StreamStatusMsg is sent by the backend to provide status updates during
+// a streaming operation. It includes the current text of the stream along
+// with the stream metadata.
+//
+// The UI typically does not need to update the
+// conversation view in response to this message, but it could be used to
+// show a loading indicator or similar temporary status.
 type StreamStatusMsg struct {
 	StreamMetadata
 	Text string
 }
 
-type StreamDoneMsg struct {
-	StreamMetadata
-	Completion string
-}
-
+// StreamCompletionMsg is sent by the backend when new data, such as a message
+// completion, is available.
+//
+// The UI uses this message to update the text content
+// of the respective message in the conversation. The conversation manager
+// updates the message content and the last update timestamp.
 type StreamCompletionMsg struct {
 	StreamMetadata
 	Delta      string
 	Completion string
 }
 
-// StreamCompletionError does not imply that the stream finished
+// StreamDoneMsg is sent by the backend to signal the successful completion
+// of the streaming operation.
+//
+// The UI uses this message to finalize the content of the
+// message in the conversation. The conversation manager updates the message
+// content and the last update timestamp to reflect the final text.
+type StreamDoneMsg struct {
+	StreamMetadata
+	Completion string
+}
+
+// StreamCompletionError is sent by the backend when an error occurs during
+// the streaming operation.
+//
+// The UI uses this message to display an error state or
+// message to the user.
 type StreamCompletionError struct {
 	StreamMetadata
 	Err error

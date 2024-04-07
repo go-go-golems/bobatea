@@ -7,7 +7,9 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	"github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/go-go-golems/bobatea/pkg/chat/conversation"
+	conversation3 "github.com/go-go-golems/bobatea/pkg/chat/conversation"
+	conversation2 "github.com/go-go-golems/bobatea/pkg/conversation"
+	"github.com/go-go-golems/bobatea/pkg/filepicker"
 	mode_keymap "github.com/go-go-golems/bobatea/pkg/mode-keymap"
 	"github.com/go-go-golems/bobatea/pkg/textarea"
 	"github.com/go-go-golems/glazed/pkg/helpers/markdown"
@@ -28,12 +30,13 @@ const (
 	StateUserInput        State = "user-input"
 	StateMovingAround     State = "moving-around"
 	StateStreamCompletion State = "stream-completion"
+	StateSavingToFile     State = "saving-to-file"
 
 	StateError State = "error"
 )
 
 type model struct {
-	conversationManager conversation.Manager
+	conversationManager conversation2.Manager
 
 	viewport       viewport.Model
 	scrollToBottom bool
@@ -42,14 +45,16 @@ type model struct {
 	// or implement wrapping ourselves.
 	textArea textarea.Model
 
-	conversation conversation.Model
+	filepicker filepicker.Model
+
+	conversation conversation3.Model
 
 	help help.Model
 
 	err    error
 	keyMap KeyMap
 
-	style  *conversation.Style
+	style  *conversation3.Style
 	width  int
 	height int
 
@@ -69,11 +74,11 @@ func WithTitle(title string) ModelOption {
 	}
 }
 
-func InitialModel(manager conversation.Manager, backend Backend, options ...ModelOption) model {
+func InitialModel(manager conversation2.Manager, backend Backend, options ...ModelOption) model {
 	ret := model{
 		conversationManager: manager,
-		conversation:        conversation.NewModel(manager),
-		style:               conversation.DefaultStyles(),
+		conversation:        conversation3.NewModel(manager),
+		style:               conversation3.DefaultStyles(),
 		keyMap:              DefaultKeyMap,
 		backend:             backend,
 		viewport:            viewport.New(0, 0),
@@ -202,8 +207,8 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			} else {
 				text := ""
 				for _, m := range msgs {
-					if content, ok := m.Content.(*conversation.ChatMessageContent); ok {
-						if content.Role == conversation.RoleAssistant {
+					if content, ok := m.Content.(*conversation2.ChatMessageContent); ok {
+						if content.Role == conversation2.RoleAssistant {
 							text += content.Text + "\n"
 						}
 					}
@@ -219,14 +224,14 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				selectedIdx := m.conversation.SelectedIdx()
 				if selectedIdx < len(msgs) && selectedIdx >= 0 {
 					msg_ := msgs[selectedIdx]
-					if content, ok := msg_.Content.(*conversation.ChatMessageContent); ok {
+					if content, ok := msg_.Content.(*conversation2.ChatMessageContent); ok {
 						clipboard.Write(clipboard.FmtText, []byte(content.Text))
 					}
 				}
 			} else {
 				if m.state == StateUserInput {
 					lastMsg := msgs[len(msgs)-1]
-					if content, ok := lastMsg.Content.(*conversation.ChatMessageContent); ok {
+					if content, ok := lastMsg.Content.(*conversation2.ChatMessageContent); ok {
 						clipboard.Write(clipboard.FmtText, []byte(content.Text))
 					}
 				}
@@ -240,7 +245,7 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				selectedIdx := m.conversation.SelectedIdx()
 				if selectedIdx < len(msgs) && selectedIdx >= 0 {
 					msg_ := msgs[selectedIdx]
-					if content, ok := msg_.Content.(*conversation.ChatMessageContent); ok {
+					if content, ok := msg_.Content.(*conversation2.ChatMessageContent); ok {
 						code := markdown.ExtractQuotedBlocks(content.Text, false)
 						clipboard.Write(clipboard.FmtText, []byte(strings.Join(code, "\n")))
 					}
@@ -249,8 +254,8 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				if m.state == StateUserInput {
 					text := ""
 					for _, m := range msgs {
-						if content, ok := m.Content.(*conversation.ChatMessageContent); ok {
-							if content.Role == conversation.RoleAssistant {
+						if content, ok := m.Content.(*conversation2.ChatMessageContent); ok {
+							if content.Role == conversation2.RoleAssistant {
 								text += content.Text + "\n"
 							}
 						}
@@ -268,7 +273,7 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				selectedIdx := m.conversation.SelectedIdx()
 				if selectedIdx < len(msgs) && selectedIdx >= 0 {
 					msg_ := msgs[selectedIdx]
-					if content, ok := msg_.Content.(*conversation.ChatMessageContent); ok {
+					if content, ok := msg_.Content.(*conversation2.ChatMessageContent); ok {
 						code := markdown.ExtractQuotedBlocks(content.Text, false)
 						clipboard.Write(clipboard.FmtText, []byte(strings.Join(code, "\n")))
 					}
@@ -276,8 +281,8 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			} else {
 				text := ""
 				for _, m := range msgs {
-					if content, ok := m.Content.(*conversation.ChatMessageContent); ok {
-						if content.Role == conversation.RoleAssistant {
+					if content, ok := m.Content.(*conversation2.ChatMessageContent); ok {
+						if content.Role == conversation2.RoleAssistant {
 							text += content.Text + "\n"
 						}
 					}
@@ -288,13 +293,8 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case key.Matches(msg, m.keyMap.SaveToFile):
-		// TODO(manuel, 2023-11-14) Implement file chosing dialog
-		err := m.conversationManager.SaveToFile("/tmp/output.json")
-		if err != nil {
-			cmd = func() tea.Msg {
-				return errMsg(err)
-			}
-		}
+		m.state = StateSavingToFile
+		m.updateKeyBindings()
 
 	// same keybinding for both
 	case key.Matches(msg, m.keyMap.CancelCompletion):
@@ -325,6 +325,20 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+func (m model) saveToFile(path string) (tea.Model, tea.Cmd) {
+	err := m.conversationManager.SaveToFile(path)
+	if err != nil {
+		return m, func() tea.Msg {
+			return errMsg(err)
+		}
+	}
+
+	m.state = StateUserInput
+	m.updateKeyBindings()
+
+	return m, nil
+}
+
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 	var cmd tea.Cmd
@@ -344,11 +358,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = msg_
 		return m, nil
 
-	case conversation.StreamCompletionMsg,
-		conversation.StreamStartMsg,
-		conversation.StreamStatusMsg,
-		conversation.StreamDoneMsg,
-		conversation.StreamCompletionError:
+	case conversation3.StreamCompletionMsg,
+		conversation3.StreamStartMsg,
+		conversation3.StreamStatusMsg,
+		conversation3.StreamDoneMsg,
+		conversation3.StreamCompletionError:
 		// is CompletionMsg, we need to getNextCompletion
 		m.conversation, cmd = m.conversation.Update(msg)
 		if m.scrollToBottom {
@@ -369,6 +383,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg_.GoToBottom || m.scrollToBottom {
 			m.viewport.GotoBottom()
 		}
+
+	case filepicker.SelectFileMsg:
+		return m.saveToFile(msg_.Path)
 
 	default:
 		m.viewport, cmd = m.viewport.Update(msg_)
@@ -448,7 +465,7 @@ func (m model) textAreaView() string {
 		v = m.style.FocusedMessage.Render(v)
 	case StateMovingAround, StateStreamCompletion:
 		v = m.style.UnselectedMessage.Render(v)
-	case StateError:
+	case StateError, StateSavingToFile:
 	}
 
 	return v
@@ -464,6 +481,7 @@ func (m model) View() string {
 	textAreaView := m.textAreaView()
 	helpView := m.help.View(m.keyMap)
 
+	// debugging heights
 	viewportHeight := lipgloss.Height(viewportView)
 	_ = viewportHeight
 	textAreaHeight := lipgloss.Height(textAreaView)
@@ -472,11 +490,19 @@ func (m model) View() string {
 	_ = headerHeight
 	helpViewHeight := lipgloss.Height(helpView)
 	_ = helpViewHeight
+
 	ret := ""
 	if headerView != "" {
 		ret = headerView + "\n"
 	}
-	ret += viewportView + "\n" + textAreaView + "\n" + helpView
+
+	switch m.state {
+	case StateUserInput, StateError, StateMovingAround, StateStreamCompletion:
+		ret += viewportView + "\n" + textAreaView + "\n" + helpView
+
+	case StateSavingToFile:
+		ret += m.filepicker.View()
+	}
 
 	return ret
 }
@@ -489,7 +515,7 @@ func (m *model) submit() tea.Cmd {
 	}
 
 	m.conversationManager.AppendMessages(
-		conversation.NewChatMessage(conversation.RoleUser, m.textArea.Value()))
+		conversation2.NewChatMessage(conversation2.RoleUser, m.textArea.Value()))
 	m.textArea.SetValue("")
 
 	m.state = StateStreamCompletion

@@ -3,6 +3,7 @@ package conversation
 import (
 	"github.com/go-go-golems/glazed/pkg/helpers/maps"
 	"github.com/go-go-golems/glazed/pkg/helpers/templating"
+	"github.com/google/uuid"
 	"strings"
 )
 
@@ -14,8 +15,7 @@ type Manager interface {
 	SaveToFile(filename string) error
 }
 
-// CreateManager creates a new Context ManagerImpl. It is used by the code generator
-// to initialize a conversation by passing a custom glazed struct for params.
+// CreateManager creates a concrete Manager implementation.
 //
 // The systemPrompt and prompt templates are rendered using the params.
 // Messages are also rendered using the params before being added to the manager.
@@ -100,4 +100,49 @@ func CreateManager(
 	}
 
 	return manager, nil
+}
+
+type ManagerImpl struct {
+	Tree           *ConversationTree
+	ConversationID uuid.UUID
+}
+
+var _ Manager = (*ManagerImpl)(nil)
+
+type ManagerOption func(*ManagerImpl)
+
+func WithMessages(messages ...*Message) ManagerOption {
+	return func(m *ManagerImpl) {
+		m.AppendMessages(messages...)
+	}
+}
+
+func WithManagerConversationID(conversationID uuid.UUID) ManagerOption {
+	return func(m *ManagerImpl) {
+		m.ConversationID = conversationID
+	}
+}
+
+func NewManager(options ...ManagerOption) *ManagerImpl {
+	ret := &ManagerImpl{
+		ConversationID: uuid.Nil,
+		Tree:           NewConversationTree(),
+	}
+	for _, option := range options {
+		option(ret)
+	}
+
+	if ret.ConversationID == uuid.Nil {
+		ret.ConversationID = uuid.New()
+	}
+
+	return ret
+}
+
+func (c *ManagerImpl) GetConversation() Conversation {
+	return c.Tree.GetLeftMostThread(c.Tree.RootID)
+}
+
+func (c *ManagerImpl) GetMessage(ID NodeID) (*Message, bool) {
+	return c.Tree.GetMessageByID(ID)
 }
