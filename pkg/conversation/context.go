@@ -80,6 +80,7 @@ func (c *ManagerImpl) SaveToFile(s string) error {
 
 	encoder := json.NewEncoder(f)
 	encoder.SetIndent("", "  ")
+	// TODO(manuel, 2024-04-07) Encode as tree structure?? we skip the Children field on purpose to avoid circular references
 	err = encoder.Encode(msgs)
 	if err != nil {
 		return err

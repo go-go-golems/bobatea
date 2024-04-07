@@ -69,13 +69,13 @@ var DefaultKeyMap = KeyMap{
 	),
 
 	SaveToFile: key.NewBinding(
-		key.WithKeys("ctrl+s"),
+		key.WithKeys("ctrl+s", "alt+s"),
 		key.WithHelp("ctrl+s", "save to file"),
 	),
-	SaveSourceBlocksToFile: key.NewBinding(
-		key.WithKeys("alt+s"),
-		key.WithHelp("alt+s", "save source"),
-	),
+	//SaveSourceBlocksToFile: key.NewBinding(
+	//	key.WithKeys("alt+s"),
+	//	key.WithHelp("alt+s", "save source"),
+	//),
 
 	CopyToClipboard: key.NewBinding(
 		key.WithKeys("alt+c"),

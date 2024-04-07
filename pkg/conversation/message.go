@@ -62,9 +62,9 @@ type Message struct {
 	Content  MessageContent         `json:"content"`
 	Metadata map[string]interface{} `json:"metadata"` // Flexible metadata field
 
-	Children []*Message `json:"children,omitempty"`
-
 	// TODO(manuel, 2024-04-07) Add Parent and Sibling lists
+	// omit in json
+	Children []*Message `json:"-"`
 }
 
 type MessageOption func(*Message)
