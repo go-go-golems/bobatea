@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+
+echo "MAIN DOCUMENTATION - README.md"
+echo "---"
+cat pkg/chat/README.md
+echo "---"
+echo
+
+for i in backend; do
+  echo "Filename: pkg/chat/$i.go"
+  echo "---"
+
+  echo "package github.com/go-go-golems/bobatea/pkg/chat/$i"
+
+  oak go definitions pkg/$i.go
+  echo "---"
+  echo
+done
+
+echo "additional conversation-ui documentation:"
+echo "---"
+prompto get bobatea/conversation-ui
+echo "---"
+echo

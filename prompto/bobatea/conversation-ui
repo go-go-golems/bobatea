@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+
+prompto get bobatea/conversation
+cat pkg/chat/conversation/README.md
+
+for i in model; do
+  echo "Filename: pkg/chat/conversation/$i.go"
+  echo "---"
+
+  echo "package github.com/go-go-golems/bobatea/pkg/chat/conversation/$i"
+
+  oak go definitions pkg/conversation/$i.go
+  echo "---"
+  echo
+done
+
+echo "Filename: example program - cmd/conversation/main.go"
+cat cmd/conversation/main.go

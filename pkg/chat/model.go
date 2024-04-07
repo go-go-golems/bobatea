@@ -7,12 +7,15 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	"github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/go-go-golems/bobatea/pkg/chat/conversation"
+	conversationui "github.com/go-go-golems/bobatea/pkg/chat/conversation"
+	"github.com/go-go-golems/bobatea/pkg/conversation"
+	"github.com/go-go-golems/bobatea/pkg/filepicker"
 	mode_keymap "github.com/go-go-golems/bobatea/pkg/mode-keymap"
 	"github.com/go-go-golems/bobatea/pkg/textarea"
 	"github.com/go-go-golems/glazed/pkg/helpers/markdown"
 	"github.com/pkg/errors"
 	"golang.design/x/clipboard"
+	"os"
 	"strings"
 )
 
@@ -28,6 +31,7 @@ const (
 	StateUserInput        State = "user-input"
 	StateMovingAround     State = "moving-around"
 	StateStreamCompletion State = "stream-completion"
+	StateSavingToFile     State = "saving-to-file"
 
 	StateError State = "error"
 )
@@ -42,14 +46,16 @@ type model struct {
 	// or implement wrapping ourselves.
 	textArea textarea.Model
 
-	conversation conversation.Model
+	filepicker filepicker.Model
+
+	conversation conversationui.Model
 
 	help help.Model
 
 	err    error
 	keyMap KeyMap
 
-	style  *conversation.Style
+	style  *conversationui.Style
 	width  int
 	height int
 
@@ -69,11 +75,22 @@ func WithTitle(title string) ModelOption {
 	}
 }
 
+// TODO(manuel, 2024-04-07) Add options to configure filepicker
+
 func InitialModel(manager conversation.Manager, backend Backend, options ...ModelOption) model {
+	fp := filepicker.NewModel()
+
+	fp.Filepicker.DirAllowed = false
+	fp.Filepicker.FileAllowed = true
+	dir, _ := os.Getwd()
+	fp.Filepicker.CurrentDirectory = dir
+	fp.Filepicker.Height = 10
+
 	ret := model{
 		conversationManager: manager,
-		conversation:        conversation.NewModel(manager),
-		style:               conversation.DefaultStyles(),
+		conversation:        conversationui.NewModel(manager),
+		filepicker:          fp,
+		style:               conversationui.DefaultStyles(),
 		keyMap:              DefaultKeyMap,
 		backend:             backend,
 		viewport:            viewport.New(0, 0),
@@ -92,15 +109,6 @@ func InitialModel(manager conversation.Manager, backend Backend, options ...Mode
 	ret.textArea.MaxHeight = 500
 	ret.state = StateUserInput
 
-	ret.conversation.Init()
-
-	messages := ret.conversation.View()
-	ret.viewport.SetContent(messages)
-	ret.viewport.YPosition = 0
-	ret.viewport.GotoBottom()
-
-	ret.updateKeyBindings()
-
 	return ret
 }
 
@@ -114,6 +122,16 @@ func (m model) Init() tea.Cmd {
 			return errMsg(err)
 		})
 	}
+
+	cmds = append(cmds, m.filepicker.Init(), m.viewport.Init(), m.conversation.Init())
+
+	// TODO(manuel, 2024-04-07) this probably belongs into init, and maybe a separate init message?
+	messages := m.conversation.View()
+	m.viewport.SetContent(messages)
+	m.viewport.YPosition = 0
+	m.viewport.GotoBottom()
+
+	m.updateKeyBindings()
 
 	return tea.Batch(cmds...)
 }
@@ -288,13 +306,11 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case key.Matches(msg, m.keyMap.SaveToFile):
-		// TODO(manuel, 2023-11-14) Implement file chosing dialog
-		err := m.conversationManager.SaveToFile("/tmp/output.json")
-		if err != nil {
-			cmd = func() tea.Msg {
-				return errMsg(err)
-			}
-		}
+		m.state = StateSavingToFile
+		// need to reload the directory the filepicker is in
+		cmd = m.filepicker.Init()
+		m.recomputeSize()
+		m.updateKeyBindings()
 
 	// same keybinding for both
 	case key.Matches(msg, m.keyMap.CancelCompletion):
@@ -313,6 +329,8 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch m.state {
 		case StateUserInput:
 			m.textArea, cmd = m.textArea.Update(msg)
+		case StateSavingToFile:
+			m.filepicker, cmd = m.filepicker.Update(msg)
 		case StateMovingAround, StateStreamCompletion, StateError:
 			prevAtBottom := m.viewport.AtBottom()
 			m.viewport, cmd = m.viewport.Update(msg)
@@ -323,6 +341,21 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, cmd
+}
+
+func (m model) saveToFile(path string) (tea.Model, tea.Cmd) {
+	err := m.conversationManager.SaveToFile(path)
+	if err != nil {
+		return m, func() tea.Msg {
+			return errMsg(err)
+		}
+	}
+
+	m.state = StateUserInput
+	m.updateKeyBindings()
+	m.recomputeSize()
+
+	return m, nil
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -344,11 +377,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = msg_
 		return m, nil
 
-	case conversation.StreamCompletionMsg,
-		conversation.StreamStartMsg,
-		conversation.StreamStatusMsg,
-		conversation.StreamDoneMsg,
-		conversation.StreamCompletionError:
+	case conversationui.StreamCompletionMsg,
+		conversationui.StreamStartMsg,
+		conversationui.StreamStatusMsg,
+		conversationui.StreamDoneMsg,
+		conversationui.StreamCompletionError:
 		// is CompletionMsg, we need to getNextCompletion
 		m.conversation, cmd = m.conversation.Update(msg)
 		if m.scrollToBottom {
@@ -370,9 +403,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport.GotoBottom()
 		}
 
+	case filepicker.SelectFileMsg:
+		return m.saveToFile(msg_.Path)
+
+	case filepicker.CancelFilePickerMsg:
+		m.state = StateUserInput
+		m.updateKeyBindings()
+
 	default:
-		m.viewport, cmd = m.viewport.Update(msg_)
-		cmds = append(cmds, cmd)
+		switch m.state {
+		case StateUserInput, StateError, StateMovingAround, StateStreamCompletion:
+			m.viewport, cmd = m.viewport.Update(msg_)
+			cmds = append(cmds, cmd)
+		case StateSavingToFile:
+			m.filepicker, cmd = m.filepicker.Update(msg_)
+			cmds = append(cmds, cmd)
+		}
 	}
 
 	return m, tea.Batch(cmds...)
@@ -401,11 +447,17 @@ func (m *model) recomputeSize() {
 	if headerView == "" {
 		headerHeight = 0
 	}
-	textAreaView := m.textAreaView()
-	textAreaHeight := lipgloss.Height(textAreaView)
 
 	helpView := m.help.View(m.keyMap)
 	helpViewHeight := lipgloss.Height(helpView)
+
+	if m.state == StateSavingToFile {
+		m.filepicker.Filepicker.Height = m.height - headerHeight - helpViewHeight
+		return
+	}
+
+	textAreaView := m.textAreaView()
+	textAreaHeight := lipgloss.Height(textAreaView)
 
 	newHeight := m.height - textAreaHeight - headerHeight - helpViewHeight
 	if newHeight < 0 {
@@ -448,7 +500,7 @@ func (m model) textAreaView() string {
 		v = m.style.FocusedMessage.Render(v)
 	case StateMovingAround, StateStreamCompletion:
 		v = m.style.UnselectedMessage.Render(v)
-	case StateError:
+	case StateError, StateSavingToFile:
 	}
 
 	return v
@@ -464,6 +516,7 @@ func (m model) View() string {
 	textAreaView := m.textAreaView()
 	helpView := m.help.View(m.keyMap)
 
+	// debugging heights
 	viewportHeight := lipgloss.Height(viewportView)
 	_ = viewportHeight
 	textAreaHeight := lipgloss.Height(textAreaView)
@@ -472,11 +525,19 @@ func (m model) View() string {
 	_ = headerHeight
 	helpViewHeight := lipgloss.Height(helpView)
 	_ = helpViewHeight
+
 	ret := ""
 	if headerView != "" {
-		ret = headerView + "\n"
+		ret = headerView + "\n" + helpView
 	}
-	ret += viewportView + "\n" + textAreaView + "\n" + helpView
+
+	switch m.state {
+	case StateUserInput, StateError, StateMovingAround, StateStreamCompletion:
+		ret += viewportView + "\n" + textAreaView + "\n" + helpView
+
+	case StateSavingToFile:
+		ret += m.filepicker.View()
+	}
 
 	return ret
 }
