@@ -67,9 +67,9 @@ func NewModel() Model {
 	}
 }
 
-func newConfirmCreateDialog(filename string) buttons.Model {
+func newConfirmCreateDialog(questionname string) buttons.Model {
 	return buttons.NewModel(
-		buttons.WithQuestion(fmt.Sprintf("Create new file %s?", filename)),
+		buttons.WithQuestion(question),
 		buttons.WithButtons("No", "Yes"),
 		buttons.WithActiveButton("Yes"),
 	)
@@ -120,7 +120,11 @@ func (m *Model) enterNewFile(creatingDirectory bool) tea.Cmd {
 
 func (m *Model) enterConfirmNew() tea.Cmd {
 	fileName := path.Base(m.SelectedPath)
-	m.confirmDialog = newConfirmCreateDialog(fileName)
+	question := fmt.Sprintf("Create new file %s?", fileName)
+	if m.creatingDirectory {
+		question = fmt.Sprintf("Create new directory %s?", fileName)
+	}
+	m.confirmDialog = newConfirmCreateDialog(question)
 	m.state = stateConfirmNew
 	return m.resize()
 }
