@@ -162,15 +162,18 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		//cmd = m.setError(msg.Err)
 
 	case StreamStartMsg:
+		metadata := map[string]interface{}{
+			"id":        uuid.UUID(msg.ID).String(),
+			"parent_id": uuid.UUID(msg.ParentID).String(),
+		}
+		if msg.Step != nil {
+			metadata["step"] = msg.Step.ToMap()
+		}
 		msg_ := conversation.NewChatMessage(
 			conversation.RoleAssistant, "",
 			conversation.WithID(msg.ID),
 			conversation.WithParentID(msg.ParentID),
-			conversation.WithMetadata(map[string]interface{}{
-				"id":        uuid.UUID(msg.ID).String(),
-				"parent_id": uuid.UUID(msg.ParentID).String(),
-				"step":      msg.Step.ToMap(),
-			}))
+			conversation.WithMetadata(metadata))
 		m.manager.AppendMessages(msg_)
 
 		m.updateCache(msg_)

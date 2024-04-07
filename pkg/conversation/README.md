@@ -1,6 +1,7 @@
 # Conversation Package
 
-The `conversation` package provides a tree-like structure for storing and managing conversation messages in an LLM chatbot. It allows for traversing the conversation in various ways and supports different types of message content.
+The `conversation` package provides a tree-like structure for storing and managing conversation messages in an LLM
+chatbot. It allows for traversing the conversation in various ways and supports different types of message content.
 
 ## Features
 
@@ -14,7 +15,7 @@ The `conversation` package provides a tree-like structure for storing and managi
 ## Installation
 
 ```bash
-go get github.com/your/package/conversation
+go get github.com/go-go-golems/bobatea/pkg/conversation
 ```
 
 ## Usage
@@ -80,11 +81,3 @@ The package supports different types of message content. Currently, the followin
 - `ChatMessageContent`: Represents a chat message with a role (system, assistant, user) and text content.
 
 You can define your own message content types by implementing the `MessageContent` interface.
-
-## Contributing
-
-Contributions are welcome! If you find any issues or have suggestions for improvement, please open an issue or submit a pull request.
-
-## License
-
-This package is licensed under the [MIT License](LICENSE).
