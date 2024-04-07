@@ -342,7 +342,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			})
 			cmds = append(cmds, cmd)
 
-		case stateConfirmNew, stateConfirmOverwrite:
+		case stateConfirmNew, stateConfirmOverwrite, stateNewFile:
 			m.confirmDialog, cmd = m.confirmDialog.Update(tea.WindowSizeMsg{
 				Width:  msg.Width,
 				Height: msg.Height - helpViewHeight - errorViewHeight,
