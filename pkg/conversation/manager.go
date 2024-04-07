@@ -17,6 +17,9 @@ type Manager interface {
 
 // CreateManager creates a concrete Manager implementation.
 //
+// NOTE(manuel, 2024-04-07) This currently seems to only be used by the codegen tests,
+// while the main geppetto command uses NewManager. Unclear if this is just a legacy helper.
+//
 // The systemPrompt and prompt templates are rendered using the params.
 // Messages are also rendered using the params before being added to the manager.
 //
