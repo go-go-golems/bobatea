@@ -12,7 +12,7 @@ for i in backend; do
 
   echo "package github.com/go-go-golems/bobatea/pkg/chat/$i"
 
-  oak go definitions pkg/$i.go
+  oak go definitions pkg/chat/$i.go
   echo "---"
   echo
 done
