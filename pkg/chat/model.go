@@ -2,6 +2,7 @@ package chat
 
 import (
 	context2 "context"
+	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -14,7 +15,6 @@ import (
 	"github.com/go-go-golems/bobatea/pkg/textarea"
 	"github.com/go-go-golems/glazed/pkg/helpers/markdown"
 	"github.com/pkg/errors"
-	"golang.design/x/clipboard"
 	"os"
 	"strings"
 )
@@ -116,12 +116,12 @@ func (m model) Init() tea.Cmd {
 	cmds := []tea.Cmd{
 		textarea.Blink,
 	}
-	err := clipboard.Init()
-	if err != nil {
-		cmds = append(cmds, func() tea.Msg {
-			return errMsg(err)
-		})
-	}
+	//err := clipboard.Init()
+	//if err != nil {
+	//	cmds = append(cmds, func() tea.Msg {
+	//		return errMsg(err)
+	//	})
+	//}
 
 	cmds = append(cmds, m.filepicker.Init(), m.viewport.Init(), m.conversation.Init())
 
@@ -215,7 +215,12 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				selectedIdx := m.conversation.SelectedIdx()
 				if selectedIdx < len(msgs) && selectedIdx >= 0 {
 					msg_ := msgs[selectedIdx]
-					clipboard.Write(clipboard.FmtText, []byte(msg_.Content.String()))
+					err := clipboard.WriteAll(msg_.Content.String())
+					if err != nil {
+						cmd = func() tea.Msg {
+							return errMsg(err)
+						}
+					}
 				}
 			} else {
 				text := ""
@@ -226,7 +231,12 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 						}
 					}
 				}
-				clipboard.Write(clipboard.FmtText, []byte(text))
+				err := clipboard.WriteAll(text)
+				if err != nil {
+					cmd = func() tea.Msg {
+						return errMsg(err)
+					}
+				}
 			}
 		}
 
@@ -238,14 +248,24 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				if selectedIdx < len(msgs) && selectedIdx >= 0 {
 					msg_ := msgs[selectedIdx]
 					if content, ok := msg_.Content.(*conversation.ChatMessageContent); ok {
-						clipboard.Write(clipboard.FmtText, []byte(content.Text))
+						err := clipboard.WriteAll(content.Text)
+						if err != nil {
+							cmd = func() tea.Msg {
+								return errMsg(err)
+							}
+						}
 					}
 				}
 			} else {
 				if m.state == StateUserInput {
 					lastMsg := msgs[len(msgs)-1]
 					if content, ok := lastMsg.Content.(*conversation.ChatMessageContent); ok {
-						clipboard.Write(clipboard.FmtText, []byte(content.Text))
+						err := clipboard.WriteAll(content.Text)
+						if err != nil {
+							cmd = func() tea.Msg {
+								return errMsg(err)
+							}
+						}
 					}
 				}
 			}
@@ -260,7 +280,12 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					msg_ := msgs[selectedIdx]
 					if content, ok := msg_.Content.(*conversation.ChatMessageContent); ok {
 						code := markdown.ExtractQuotedBlocks(content.Text, false)
-						clipboard.Write(clipboard.FmtText, []byte(strings.Join(code, "\n")))
+						err := clipboard.WriteAll(strings.Join(code, "\n"))
+						if err != nil {
+							cmd = func() tea.Msg {
+								return errMsg(err)
+							}
+						}
 					}
 				}
 			} else {
@@ -274,7 +299,12 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 						}
 					}
 					code := markdown.ExtractQuotedBlocks(text, false)
-					clipboard.Write(clipboard.FmtText, []byte(strings.Join(code, "\n")))
+					err := clipboard.WriteAll(strings.Join(code, "\n"))
+					if err != nil {
+						cmd = func() tea.Msg {
+							return errMsg(err)
+						}
+					}
 				}
 			}
 		}
@@ -288,7 +318,12 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					msg_ := msgs[selectedIdx]
 					if content, ok := msg_.Content.(*conversation.ChatMessageContent); ok {
 						code := markdown.ExtractQuotedBlocks(content.Text, false)
-						clipboard.Write(clipboard.FmtText, []byte(strings.Join(code, "\n")))
+						err := clipboard.WriteAll(strings.Join(code, "\n"))
+						if err != nil {
+							cmd = func() tea.Msg {
+								return errMsg(err)
+							}
+						}
 					}
 				}
 			} else {
@@ -301,7 +336,12 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					}
 				}
 				code := markdown.ExtractQuotedBlocks(text, false)
-				clipboard.Write(clipboard.FmtText, []byte(strings.Join(code, "\n")))
+				err := clipboard.WriteAll(strings.Join(code, "\n"))
+				if err != nil {
+					cmd = func() tea.Msg {
+						return errMsg(err)
+					}
+				}
 			}
 		}
 
