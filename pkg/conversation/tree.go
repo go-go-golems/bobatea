@@ -60,6 +60,12 @@ func (mn *Message) UnmarshalJSON(data []byte) error {
 			return err
 		}
 		mn.Content = content
+	case ContentTypeToolResult:
+		var content *ToolResultContent
+		if err := json.Unmarshal(mna.Content, &content); err != nil {
+			return err
+		}
+		mn.Content = content
 	default:
 		return errors.New("unknown content type")
 	}

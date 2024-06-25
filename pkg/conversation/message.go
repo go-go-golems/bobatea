@@ -14,7 +14,8 @@ const (
 	ContentTypeChatMessage ContentType = "chat-message"
 	// TODO(manuel, 2024-06-04) This needs to also handle tool call and tool response blocks (tool use block in claude API)
 	// See also the comment to refactor this in openai/helpers.go, where tool use information is actually stored in the metadata of the message
-	ContentTypeToolUse ContentType = "tool-use"
+	ContentTypeToolUse    ContentType = "tool-use"
+	ContentTypeToolResult ContentType = "tool-result"
 )
 
 // MessageContent is an interface for different types of node content.
@@ -59,7 +60,6 @@ type ToolUseContent struct {
 	ToolID string          `json:"toolID"`
 	Name   string          `json:"name"`
 	Input  json.RawMessage `json:"input"`
-	Result json.RawMessage `json:"result"`
 }
 
 func (t *ToolUseContent) ContentType() ContentType {
@@ -67,14 +67,33 @@ func (t *ToolUseContent) ContentType() ContentType {
 }
 
 func (t *ToolUseContent) String() string {
-	return fmt.Sprintf("ToolUseContent{ToolID: %s, Name: %s, Result}, %s -> %s", t.ToolID, t.Name, t.Input, t.Result)
+	return fmt.Sprintf("ToolUseContent{ToolID: %s, Name: %s, Result}, %s", t.ToolID, t.Name, t.Input)
 }
 
 func (t *ToolUseContent) View() string {
-	return fmt.Sprintf("ToolUseContent{ToolID: %s, Name: %s, Result}, %s -> %s", t.ToolID, t.Name, t.Input, t.Result)
+	return fmt.Sprintf("ToolUseContent{ToolID: %s, Name: %s, Result}, %s", t.ToolID, t.Name, t.Input)
 }
 
 var _ MessageContent = (*ToolUseContent)(nil)
+
+type ToolResultContent struct {
+	ToolID string          `json:"toolID"`
+	Result json.RawMessage `json:"result"`
+}
+
+func (t *ToolResultContent) ContentType() ContentType {
+	return ContentTypeToolResult
+}
+
+func (t *ToolResultContent) String() string {
+	return fmt.Sprintf("ToolResultContent{ToolID: %s, Result}, %s", t.ToolID, t.Result)
+}
+
+func (t *ToolResultContent) View() string {
+	return fmt.Sprintf("ToolResultContent{ToolID: %s, Result}, %s", t.ToolID, t.Result)
+}
+
+var _ MessageContent = (*ToolResultContent)(nil)
 
 // Message represents a single message node in the conversation tree.
 type Message struct {
