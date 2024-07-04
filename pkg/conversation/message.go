@@ -31,6 +31,7 @@ const (
 	RoleSystem    Role = "system"
 	RoleAssistant Role = "assistant"
 	RoleUser      Role = "user"
+	RoleTool      Role = "tool"
 )
 
 type ChatMessageContent struct {
@@ -60,6 +61,8 @@ type ToolUseContent struct {
 	ToolID string          `json:"toolID"`
 	Name   string          `json:"name"`
 	Input  json.RawMessage `json:"input"`
+	// used by openai currently (only function)
+	Type string `json:"type"`
 }
 
 func (t *ToolUseContent) ContentType() ContentType {
@@ -67,11 +70,11 @@ func (t *ToolUseContent) ContentType() ContentType {
 }
 
 func (t *ToolUseContent) String() string {
-	return fmt.Sprintf("ToolUseContent{ToolID: %s, Name: %s, Result}, %s", t.ToolID, t.Name, t.Input)
+	return fmt.Sprintf("ToolUseContent{ToolID: %s, Name: %s, Input: %s}", t.ToolID, t.Name, t.Input)
 }
 
 func (t *ToolUseContent) View() string {
-	return fmt.Sprintf("ToolUseContent{ToolID: %s, Name: %s, Result}, %s", t.ToolID, t.Name, t.Input)
+	return fmt.Sprintf("ToolUseContent{ToolID: %s, Name: %s, Input: %s}", t.ToolID, t.Name, t.Input)
 }
 
 var _ MessageContent = (*ToolUseContent)(nil)
@@ -86,11 +89,11 @@ func (t *ToolResultContent) ContentType() ContentType {
 }
 
 func (t *ToolResultContent) String() string {
-	return fmt.Sprintf("ToolResultContent{ToolID: %s, Result}, %s", t.ToolID, t.Result)
+	return fmt.Sprintf("ToolResultContent{ToolID: %s, Result: %s}", t.ToolID, t.Result)
 }
 
 func (t *ToolResultContent) View() string {
-	return fmt.Sprintf("ToolResultContent{ToolID: %s, Result}, %s", t.ToolID, t.Result)
+	return fmt.Sprintf("ToolResultContent{ToolID: %s, Result: %s}", t.ToolID, t.Result)
 }
 
 var _ MessageContent = (*ToolResultContent)(nil)
