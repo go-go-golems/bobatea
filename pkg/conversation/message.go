@@ -10,6 +10,7 @@ import (
 
 type ContentType string
 
+// TODO(manuel, 2024-07-04) Unify this with the events types that we added for the claude API
 const (
 	ContentTypeChatMessage ContentType = "chat-message"
 	// TODO(manuel, 2024-06-04) This needs to also handle tool call and tool response blocks (tool use block in claude API)
@@ -80,8 +81,8 @@ func (t *ToolUseContent) View() string {
 var _ MessageContent = (*ToolUseContent)(nil)
 
 type ToolResultContent struct {
-	ToolID string          `json:"toolID"`
-	Result json.RawMessage `json:"result"`
+	ToolID string `json:"toolID"`
+	Result string `json:"result"`
 }
 
 func (t *ToolResultContent) ContentType() ContentType {
