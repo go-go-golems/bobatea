@@ -26,6 +26,10 @@ func (id *NodeID) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+func (id NodeID) String() string {
+	return uuid.UUID(id).String()
+}
+
 func NewNodeID() NodeID {
 	return NodeID(uuid.New())
 }

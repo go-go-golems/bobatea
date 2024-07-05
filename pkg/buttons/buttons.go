@@ -86,7 +86,7 @@ var (
 			Padding(0, 3).
 			Margin(0, 1)
 
-	activeButtonStyle = buttonStyle.Copy().
+	activeButtonStyle = buttonStyle.
 				Foreground(lipgloss.Color("#FFF7DB")).
 				Background(lipgloss.Color("#F25D94")).
 				Underline(true)
