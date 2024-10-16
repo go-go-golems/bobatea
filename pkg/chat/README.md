@@ -1,9 +1,6 @@
 # Bobatea Chat UI
 
-[![Go Report Card](https://goreportcard.com/badge/github.com/go-go-golems/bobatea)](https://goreportcard.com/report/github.com/go-go-golems/bobatea)
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-
-Bobatea Chat UI is a Go library for building interactive terminal-based chat interfaces that communicate with language model (LLM) stream completion endpoints. It provides a high-level abstraction for handling the chat UI and manages the conversation state, allowing developers to focus on implementing the backend interaction with the LLM API.
+Bobatea Chat UI is a Go library for building interactive terminal-based chat interfaces that communicate with language model (LLM) stream completion endpoints.
 
 ## Features
 

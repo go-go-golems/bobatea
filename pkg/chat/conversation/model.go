@@ -2,13 +2,14 @@ package conversation
 
 import (
 	"fmt"
-	"github.com/charmbracelet/bubbletea"
+	"strings"
+	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/go-go-golems/bobatea/pkg/conversation"
 	"github.com/google/uuid"
 	"github.com/muesli/reflow/wordwrap"
-	"strings"
-	"time"
 )
 
 type cacheEntry struct {
@@ -303,7 +304,9 @@ type StreamStatusMsg struct {
 // updates the message content and the last update timestamp.
 type StreamCompletionMsg struct {
 	StreamMetadata
-	Delta      string
+	// Delta is the delta that was added to the message
+	Delta string
+	// Completion is the full completion text
 	Completion string
 }
 
@@ -315,6 +318,7 @@ type StreamCompletionMsg struct {
 // content and the last update timestamp to reflect the final text.
 type StreamDoneMsg struct {
 	StreamMetadata
+	// Completion is the full completion text
 	Completion string
 }
 

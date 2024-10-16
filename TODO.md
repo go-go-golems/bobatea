@@ -1,0 +1,1 @@
+- [ ] Add a logging pane to cmd/chat to show the backend workings

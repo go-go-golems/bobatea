@@ -3,12 +3,13 @@ package conversation
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/google/uuid"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 type ContentType string
@@ -21,6 +22,7 @@ const (
 	ContentTypeToolUse    ContentType = "tool-use"
 	ContentTypeToolResult ContentType = "tool-result"
 	ContentTypeImage      ContentType = "image"
+	// TODO(manuel, 2024-10-16) Add "ui" type which is only used for ui elements and should be filtered out of the LLM conversation
 )
 
 // MessageContent is an interface for different types of node content.
