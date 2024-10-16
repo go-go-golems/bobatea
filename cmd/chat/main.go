@@ -2,11 +2,13 @@ package main
 
 import (
 	"fmt"
+	"net/http"
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/go-go-golems/bobatea/pkg/chat"
 	conversation2 "github.com/go-go-golems/bobatea/pkg/conversation"
+	"github.com/gorilla/mux"
 	"github.com/spf13/cobra"
 )
 
@@ -52,7 +54,7 @@ func runFakeBackend(cmd *cobra.Command, args []string) {
 
 func runHTTPBackend(cmd *cobra.Command, args []string) {
 	runChat(func() chat.Backend {
-		return NewHTTPBackend(httpAddr)
+		return NewHTTPBackend("/backend", WithLogFile("/tmp/http-backend.log"))
 	})
 }
 
@@ -69,6 +71,27 @@ func runChat(backendFactory func() chat.Backend) {
 	}
 
 	p := tea.NewProgram(chat.InitialModel(manager, backend), options...)
+
+	// Set up the HTTP server
+	r := mux.NewRouter()
+
+	// Set up the user backend
+	userBackend := chat.NewUserBackend(chat.WithLogFile("/tmp/http-backend.log"))
+	userBackend.SetProgram(p)
+	r.PathPrefix("/user").Handler(http.StripPrefix("/user", userBackend.Router()))
+
+	// Set up the HTTP backend
+	if httpBackend, ok := backend.(*HTTPBackend); ok {
+		httpBackend.SetRouter(r.PathPrefix("/backend").Subrouter())
+	}
+
+	// Start the HTTP server
+	go func() {
+		if err := http.ListenAndServe(httpAddr, r); err != nil {
+			fmt.Printf("Error running HTTP server: %v\n", err)
+			os.Exit(1)
+		}
+	}()
 
 	// Set the program for the backend after initialization
 	if setterBackend, ok := backend.(interface{ SetProgram(*tea.Program) }); ok {

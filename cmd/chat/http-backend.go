@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"os"
 	"sync"
@@ -25,46 +26,40 @@ type HTTPBackend struct {
 	lastMessage     *conversationui.StreamCompletionMsg
 	lastError       error
 	mu              sync.Mutex
-	server          *http.Server
 	completion      string
 	logger          zerolog.Logger
 	currentMetadata conversationui.StreamMetadata
 }
 
-var _ chat.Backend = &HTTPBackend{}
+type HTTPBackendOption func(*HTTPBackend)
 
-func NewHTTPBackend(addr string) *HTTPBackend {
-	// Set up zerolog
-	logFile, err := os.OpenFile("/tmp/http-backend.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
-	if err != nil {
-		panic(err)
+func WithLogger(logger zerolog.Logger) HTTPBackendOption {
+	return func(hb *HTTPBackend) {
+		hb.logger = logger
 	}
-	logger := zerolog.New(logFile).With().Timestamp().Logger()
+}
 
-	backend := &HTTPBackend{
-		status: "idle",
-		logger: logger,
-	}
-
-	r := mux.NewRouter()
-	r.HandleFunc("/status", backend.handleStatus).Methods("GET")
-	r.HandleFunc("/start", backend.handleStart).Methods("POST")
-	r.HandleFunc("/completion", backend.handleCompletion).Methods("POST")
-	r.HandleFunc("/status-update", backend.handleStatusUpdate).Methods("POST")
-	r.HandleFunc("/done", backend.handleDone).Methods("POST")
-	r.HandleFunc("/error", backend.handleError).Methods("POST")
-	r.HandleFunc("/finish", backend.handleFinish).Methods("POST")
-
-	backend.server = &http.Server{
-		Addr:    addr,
-		Handler: r,
-	}
-
-	go func() {
-		if err := backend.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+func WithLogFile(path string) HTTPBackendOption {
+	return func(hb *HTTPBackend) {
+		logFile, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+		if err != nil {
 			panic(err)
 		}
-	}()
+		hb.logger = zerolog.New(logFile).With().Timestamp().Logger()
+	}
+}
+
+var _ chat.Backend = &HTTPBackend{}
+
+func NewHTTPBackend(prefix string, options ...HTTPBackendOption) *HTTPBackend {
+	backend := &HTTPBackend{
+		status: "idle",
+		logger: zerolog.New(io.Discard), // Default to a no-op logger
+	}
+
+	for _, option := range options {
+		option(backend)
+	}
 
 	backend.logger.Info().Msg("HTTPBackend initialized")
 	return backend
@@ -423,4 +418,15 @@ func (h *HTTPBackend) handleFinish(w http.ResponseWriter, r *http.Request) {
 	h.logger.Info().Msg("Sending BackendFinishedMsg to program")
 	h.p.Send(chat.BackendFinishedMsg{})
 	w.WriteHeader(http.StatusOK)
+}
+
+// Add this method to the HTTPBackend struct
+func (h *HTTPBackend) SetRouter(r *mux.Router) {
+	r.HandleFunc("/status", h.handleStatus).Methods("GET")
+	r.HandleFunc("/start", h.handleStart).Methods("POST")
+	r.HandleFunc("/completion", h.handleCompletion).Methods("POST")
+	r.HandleFunc("/status-update", h.handleStatusUpdate).Methods("POST")
+	r.HandleFunc("/done", h.handleDone).Methods("POST")
+	r.HandleFunc("/error", h.handleError).Methods("POST")
+	r.HandleFunc("/finish", h.handleFinish).Methods("POST")
 }

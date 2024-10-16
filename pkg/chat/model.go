@@ -137,41 +137,6 @@ func (m model) Init() tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-// New message types for user actions
-type UserActionMsg interface {
-	isUserAction()
-}
-
-type ToggleHelpMsg struct{}
-type UnfocusMessageMsg struct{}
-type QuitMsg struct{}
-type FocusMessageMsg struct{}
-type SelectNextMessageMsg struct{}
-type SelectPrevMessageMsg struct{}
-type SubmitMessageMsg struct{}
-type CopyToClipboardMsg struct{}
-type CopyLastResponseToClipboardMsg struct{}
-type CopyLastSourceBlocksToClipboardMsg struct{}
-type CopySourceBlocksToClipboardMsg struct{}
-type SaveToFileMsg struct{}
-type CancelCompletionMsg struct{}
-type DismissErrorMsg struct{}
-
-func (ToggleHelpMsg) isUserAction()                      {}
-func (UnfocusMessageMsg) isUserAction()                  {}
-func (QuitMsg) isUserAction()                            {}
-func (FocusMessageMsg) isUserAction()                    {}
-func (SelectNextMessageMsg) isUserAction()               {}
-func (SelectPrevMessageMsg) isUserAction()               {}
-func (SubmitMessageMsg) isUserAction()                   {}
-func (CopyToClipboardMsg) isUserAction()                 {}
-func (CopyLastResponseToClipboardMsg) isUserAction()     {}
-func (CopyLastSourceBlocksToClipboardMsg) isUserAction() {}
-func (CopySourceBlocksToClipboardMsg) isUserAction()     {}
-func (SaveToFileMsg) isUserAction()                      {}
-func (CancelCompletionMsg) isUserAction()                {}
-func (DismissErrorMsg) isUserAction()                    {}
-
 func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
@@ -493,7 +458,7 @@ func (m *model) finishCompletion() tea.Cmd {
 func (m model) handleUserAction(msg UserActionMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
-	switch msg.(type) {
+	switch msg_ := msg.(type) {
 	case ToggleHelpMsg:
 		m.help.ShowAll = !m.help.ShowAll
 
@@ -713,6 +678,14 @@ func (m model) handleUserAction(msg UserActionMsg) (tea.Model, tea.Cmd) {
 			m.state = StateUserInput
 			m.updateKeyBindings()
 		}
+
+	case InputTextMsg:
+		m.textArea.SetValue(msg_.Text)
+		m.state = StateUserInput
+		m.updateKeyBindings()
+		m.recomputeSize()
+		return m, nil
+
 	}
 
 	return m, cmd
