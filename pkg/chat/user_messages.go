@@ -23,6 +23,21 @@ type InputTextMsg struct {
 	Text string
 }
 
+// Add these new message types
+type ReplaceInputTextMsg struct {
+	Text string
+}
+
+type AppendInputTextMsg struct {
+	Text string
+}
+
+type PrependInputTextMsg struct {
+	Text string
+}
+
+type GetInputTextMsg struct{}
+
 func (ToggleHelpMsg) isUserAction()                      {}
 func (UnfocusMessageMsg) isUserAction()                  {}
 func (QuitMsg) isUserAction()                            {}
@@ -38,3 +53,9 @@ func (SaveToFileMsg) isUserAction()                      {}
 func (CancelCompletionMsg) isUserAction()                {}
 func (DismissErrorMsg) isUserAction()                    {}
 func (InputTextMsg) isUserAction()                       {}
+
+// Add isUserAction() methods for the new types
+func (ReplaceInputTextMsg) isUserAction() {}
+func (AppendInputTextMsg) isUserAction()  {}
+func (PrependInputTextMsg) isUserAction() {}
+func (GetInputTextMsg) isUserAction()     {}

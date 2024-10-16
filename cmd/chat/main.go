@@ -59,6 +59,8 @@ func runHTTPBackend(cmd *cobra.Command, args []string) {
 }
 
 func runChat(backendFactory func() chat.Backend) {
+	status := &chat.Status{}
+
 	manager := conversation2.NewManager(conversation2.WithMessages(
 		conversation2.NewChatMessage(conversation2.RoleSystem, "Welcome to the chat application!"),
 	))
@@ -70,13 +72,13 @@ func runChat(backendFactory func() chat.Backend) {
 		tea.WithAltScreen(),
 	}
 
-	p := tea.NewProgram(chat.InitialModel(manager, backend), options...)
+	p := tea.NewProgram(chat.InitialModel(manager, backend, chat.WithStatus(status)), options...)
 
 	// Set up the HTTP server
 	r := mux.NewRouter()
 
 	// Set up the user backend
-	userBackend := chat.NewUserBackend(chat.WithLogFile("/tmp/http-backend.log"))
+	userBackend := chat.NewUserBackend(status, chat.WithLogFile("/tmp/http-backend.log"))
 	userBackend.SetProgram(p)
 	r.PathPrefix("/user").Handler(http.StripPrefix("/user", userBackend.Router()))
 

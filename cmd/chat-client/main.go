@@ -62,6 +62,11 @@ func main() {
 	userCmd.AddCommand(newCancelCompletionCmd())
 	userCmd.AddCommand(newDismissErrorCmd())
 	userCmd.AddCommand(newInputTextCmd())
+	userCmd.AddCommand(newReplaceInputTextCmd())
+	userCmd.AddCommand(newAppendInputTextCmd())
+	userCmd.AddCommand(newPrependInputTextCmd())
+	userCmd.AddCommand(newGetInputTextCmd())
+	userCmd.AddCommand(newGetUIStateCmd())
 
 	rootCmd.AddCommand(backendCmd)
 	rootCmd.AddCommand(userCmd)
@@ -350,6 +355,114 @@ func newInputTextCmd() *cobra.Command {
 	}
 }
 
+func newReplaceInputTextCmd() *cobra.Command {
+	var filePaths []string
+	cmd := &cobra.Command{
+		Use:   "replace-input-text [text...]",
+		Short: "Replace the input text",
+		Run: func(cmd *cobra.Command, args []string) {
+			text := strings.Join(args, " ")
+			if len(filePaths) > 0 {
+				fileContents := readFiles(filePaths)
+				text += "\n" + strings.Join(fileContents, "\n")
+			}
+			sendUserRequest("replace-input-text", map[string]string{"text": text})
+		},
+	}
+	cmd.Flags().StringSliceVarP(&filePaths, "file", "f", []string{}, "Path to file(s) to append to input")
+	return cmd
+}
+
+func newAppendInputTextCmd() *cobra.Command {
+	var filePaths []string
+	cmd := &cobra.Command{
+		Use:   "append-input-text [text...]",
+		Short: "Append text to the input",
+		Run: func(cmd *cobra.Command, args []string) {
+			text := strings.Join(args, " ")
+			if len(filePaths) > 0 {
+				fileContents := readFiles(filePaths)
+				text += "\n" + strings.Join(fileContents, "\n")
+			}
+			sendUserRequest("append-input-text", map[string]string{"text": text})
+		},
+	}
+	cmd.Flags().StringSliceVarP(&filePaths, "file", "f", []string{}, "Path to file(s) to append to input")
+	return cmd
+}
+
+func newPrependInputTextCmd() *cobra.Command {
+	var filePaths []string
+	cmd := &cobra.Command{
+		Use:   "prepend-input-text [text...]",
+		Short: "Prepend text to the input",
+		Run: func(cmd *cobra.Command, args []string) {
+			text := strings.Join(args, " ")
+			if len(filePaths) > 0 {
+				fileContents := readFiles(filePaths)
+				text = strings.Join(fileContents, "\n") + "\n" + text
+			}
+			sendUserRequest("prepend-input-text", map[string]string{"text": text})
+		},
+	}
+	cmd.Flags().StringSliceVarP(&filePaths, "file", "f", []string{}, "Path to file(s) to prepend to input")
+	return cmd
+}
+
+func newGetInputTextCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "get-input-text",
+		Short: "Get the current input text",
+		Run: func(cmd *cobra.Command, args []string) {
+			sendUserRequest("get-input-text", nil)
+		},
+	}
+}
+
+func newGetUIStateCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "get-ui-state",
+		Short: "Get the current UI state",
+		Run: func(cmd *cobra.Command, args []string) {
+			getUIState()
+		},
+	}
+}
+
+func getUIState() {
+	resp, err := http.Get(fmt.Sprintf("%s/user/get-ui-state", serverAddr))
+	if err != nil {
+		fmt.Printf("Error sending request: %v\n", err)
+		return
+	}
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
+
+	if resp.StatusCode != http.StatusOK {
+		fmt.Printf("Error: Server returned status code %d\n", resp.StatusCode)
+		return
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Printf("Error reading response body: %v\n", err)
+		return
+	}
+
+	var state map[string]interface{}
+	err = json.Unmarshal(body, &state)
+	if err != nil {
+		fmt.Printf("Error unmarshaling JSON: %v\n", err)
+		return
+	}
+
+	fmt.Println("UI State:")
+	for k, v := range state {
+		fmt.Printf("%s: %v\n", k, v)
+	}
+}
+
 func sendRequest(endpoint string, msg interface{}) {
 	jsonData, err := json.Marshal(msg)
 	if err != nil {
@@ -454,4 +567,18 @@ func stringToNodeID(s string) conversation.NodeID {
 		return conversation.NullNode
 	}
 	return conversation.NodeID(id)
+}
+
+// Helper function to read file contents
+func readFiles(filePaths []string) []string {
+	var contents []string
+	for _, path := range filePaths {
+		content, err := os.ReadFile(path)
+		if err != nil {
+			fmt.Printf("Error reading file %s: %v\n", path, err)
+			continue
+		}
+		contents = append(contents, string(content))
+	}
+	return contents
 }

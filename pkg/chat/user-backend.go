@@ -16,6 +16,7 @@ type UserBackend struct {
 	p      *tea.Program
 	mu     sync.Mutex
 	logger zerolog.Logger
+	status *Status // Add this field
 }
 
 type UserBackendOption func(*UserBackend)
@@ -36,9 +37,10 @@ func WithLogFile(path string) UserBackendOption {
 	}
 }
 
-func NewUserBackend(options ...UserBackendOption) *UserBackend {
+func NewUserBackend(status *Status, options ...UserBackendOption) *UserBackend {
 	ub := &UserBackend{
 		logger: zerolog.New(io.Discard), // Default to a no-op logger
+		status: status,
 	}
 
 	for _, option := range options {
@@ -73,6 +75,11 @@ func (u *UserBackend) Router() *mux.Router {
 	r.HandleFunc("/cancel-completion", u.handleCancelCompletion).Methods("POST")
 	r.HandleFunc("/dismiss-error", u.handleDismissError).Methods("POST")
 	r.HandleFunc("/input-text", u.handleInputText).Methods("POST")
+	r.HandleFunc("/replace-input-text", u.handleReplaceInputText).Methods("POST")
+	r.HandleFunc("/append-input-text", u.handleAppendInputText).Methods("POST")
+	r.HandleFunc("/prepend-input-text", u.handlePrependInputText).Methods("POST")
+	r.HandleFunc("/get-input-text", u.handleGetInputText).Methods("GET")
+	r.HandleFunc("/get-ui-state", u.handleGetUIState).Methods("GET")
 	u.logger.Debug().Msg("Router set up for UserBackend")
 	return r
 }
@@ -173,4 +180,77 @@ func (u *UserBackend) handleInputText(w http.ResponseWriter, r *http.Request) {
 	u.logger.Debug().Str("text", input.Text).Msg("Input text received")
 	u.sendUserAction(InputTextMsg{Text: input.Text})
 	w.WriteHeader(http.StatusOK)
+}
+
+func (u *UserBackend) handleReplaceInputText(w http.ResponseWriter, r *http.Request) {
+	u.logger.Debug().Msg("Handling replace input text request")
+	var input struct {
+		Text string `json:"text"`
+	}
+	err := json.NewDecoder(r.Body).Decode(&input)
+	if err != nil {
+		u.logger.Error().Err(err).Msg("Failed to decode input text")
+		http.Error(w, "Invalid input", http.StatusBadRequest)
+		return
+	}
+	u.logger.Debug().Str("text", input.Text).Msg("Replace input text received")
+	u.sendUserAction(ReplaceInputTextMsg{Text: input.Text})
+	w.WriteHeader(http.StatusOK)
+}
+
+func (u *UserBackend) handleAppendInputText(w http.ResponseWriter, r *http.Request) {
+	u.logger.Debug().Msg("Handling append input text request")
+	var input struct {
+		Text string `json:"text"`
+	}
+	err := json.NewDecoder(r.Body).Decode(&input)
+	if err != nil {
+		u.logger.Error().Err(err).Msg("Failed to decode input text")
+		http.Error(w, "Invalid input", http.StatusBadRequest)
+		return
+	}
+	u.logger.Debug().Str("text", input.Text).Msg("Append input text received")
+	u.sendUserAction(AppendInputTextMsg{Text: input.Text})
+	w.WriteHeader(http.StatusOK)
+}
+
+func (u *UserBackend) handlePrependInputText(w http.ResponseWriter, r *http.Request) {
+	u.logger.Debug().Msg("Handling prepend input text request")
+	var input struct {
+		Text string `json:"text"`
+	}
+	err := json.NewDecoder(r.Body).Decode(&input)
+	if err != nil {
+		u.logger.Error().Err(err).Msg("Failed to decode input text")
+		http.Error(w, "Invalid input", http.StatusBadRequest)
+		return
+	}
+	u.logger.Debug().Str("text", input.Text).Msg("Prepend input text received")
+	u.sendUserAction(PrependInputTextMsg{Text: input.Text})
+	w.WriteHeader(http.StatusOK)
+}
+
+func (u *UserBackend) handleGetInputText(w http.ResponseWriter, r *http.Request) {
+	u.logger.Debug().Msg("Handling get input text request")
+	u.sendUserAction(GetInputTextMsg{})
+	// Note: The actual text retrieval and response will need to be handled in the model
+	w.WriteHeader(http.StatusOK)
+}
+
+func (u *UserBackend) handleGetUIState(w http.ResponseWriter, r *http.Request) {
+	u.logger.Debug().Msg("Handling get UI state request")
+	u.mu.Lock()
+	defer u.mu.Unlock()
+
+	if u.status == nil {
+		u.logger.Error().Msg("Status not set for UserBackend")
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(u.status); err != nil {
+		u.logger.Error().Err(err).Msg("Failed to encode UI state")
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+	}
 }

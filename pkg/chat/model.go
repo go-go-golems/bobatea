@@ -37,6 +37,14 @@ const (
 	StateError State = "error"
 )
 
+type Status struct {
+	State        State  `json:"state"`
+	InputText    string `json:"inputText"`
+	SelectedIdx  int    `json:"selectedIdx"`
+	MessageCount int    `json:"messageCount"`
+	Error        error  `json:"error,omitempty"`
+}
+
 type model struct {
 	conversationManager conversation.Manager
 
@@ -66,6 +74,8 @@ type model struct {
 	quitReceived bool
 
 	title string
+
+	status *Status
 }
 
 type ModelOption func(*model)
@@ -73,6 +83,12 @@ type ModelOption func(*model)
 func WithTitle(title string) ModelOption {
 	return func(m *model) {
 		m.title = title
+	}
+}
+
+func WithStatus(status *Status) ModelOption {
+	return func(m *model) {
+		m.status = status
 	}
 }
 
@@ -266,6 +282,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.filepicker, cmd = m.filepicker.Update(msg_)
 			cmds = append(cmds, cmd)
 		}
+	}
+
+	// Update status if it's not nil
+	if m.status != nil {
+		m.status.State = m.state
+		m.status.InputText = m.textArea.Value()
+		m.status.SelectedIdx = m.conversation.SelectedIdx()
+		m.status.MessageCount = len(m.conversation.Conversation())
+		m.status.Error = m.err
 	}
 
 	return m, tea.Batch(cmds...)
@@ -679,14 +704,68 @@ func (m model) handleUserAction(msg UserActionMsg) (tea.Model, tea.Cmd) {
 			m.updateKeyBindings()
 		}
 
-	case InputTextMsg:
-		m.textArea.SetValue(msg_.Text)
+	case ReplaceInputTextMsg:
+		m.replaceInputText(msg_.Text)
 		m.state = StateUserInput
 		m.updateKeyBindings()
 		m.recomputeSize()
 		return m, nil
 
+	case AppendInputTextMsg:
+		m.appendInputText(msg_.Text)
+		m.state = StateUserInput
+		m.updateKeyBindings()
+		m.recomputeSize()
+		return m, nil
+
+	case PrependInputTextMsg:
+		m.prependInputText(msg_.Text)
+		m.state = StateUserInput
+		m.updateKeyBindings()
+		m.recomputeSize()
+		return m, nil
+
+	case GetInputTextMsg:
+		// This should be handled in the UserBackend, not here
+		// But we'll return the current input text just in case
+		return m, func() tea.Msg {
+			return m.getInputText()
+		}
+
 	}
 
 	return m, cmd
+}
+
+// Add these new methods to the model struct
+
+func (m *model) replaceInputText(text string) {
+	m.textArea.SetValue(text)
+}
+
+func (m *model) appendInputText(text string) {
+	currentText := m.textArea.Value()
+	m.textArea.SetValue(currentText + text)
+}
+
+func (m *model) prependInputText(text string) {
+	currentText := m.textArea.Value()
+	m.textArea.SetValue(text + currentText)
+}
+
+func (m *model) getInputText() string {
+	return m.textArea.Value()
+}
+
+func (m *model) GetUIState() map[string]interface{} {
+	if m.status != nil {
+		return map[string]interface{}{
+			"state":        m.status.State,
+			"inputText":    m.status.InputText,
+			"selectedIdx":  m.status.SelectedIdx,
+			"messageCount": m.status.MessageCount,
+			"error":        m.status.Error,
+		}
+	}
+	return nil
 }
