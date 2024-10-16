@@ -7,6 +7,7 @@ import (
 	"strings"
 )
 
+// Manager defines the interface for high-level conversation management operations.
 type Manager interface {
 	GetConversation() Conversation
 	AppendMessages(msgs ...*Message)
@@ -15,7 +16,8 @@ type Manager interface {
 	SaveToFile(filename string) error
 }
 
-// CreateManager creates a concrete Manager implementation.
+// CreateManager initializes a Manager implementation with system prompts, initial messages,
+// and customizable options. It handles template rendering for prompts and messages.
 //
 // NOTE(manuel, 2024-04-07) This currently seems to only be used by the codegen tests,
 // while the main geppetto command uses NewManager. Unclear if this is just a legacy helper.

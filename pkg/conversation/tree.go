@@ -7,10 +7,6 @@ import (
 	"os"
 )
 
-// SaveToFile saves the conversation tree to a JSON file.
-
-// LoadFromFile loads the conversation tree from a JSON file.
-
 type NodeID uuid.UUID
 
 func (id NodeID) MarshalJSON() ([]byte, error) {
@@ -101,7 +97,6 @@ type ConversationTree struct {
 	LastID NodeID
 }
 
-// NewConversationTree creates a new conversation tree.
 func NewConversationTree() *ConversationTree {
 	return &ConversationTree{
 		Nodes: make(map[NodeID]*Message),
@@ -201,7 +196,6 @@ func (ct *ConversationTree) FindSiblings(id NodeID) []NodeID {
 }
 
 // FindChildren returns the IDs of all child messages for a given message ID.
-// Child messages are the nodes directly connected to the given message as its children.
 func (ct *ConversationTree) FindChildren(id NodeID) []NodeID {
 	node, exists := ct.Nodes[id]
 	if !exists {
@@ -216,9 +210,7 @@ func (ct *ConversationTree) FindChildren(id NodeID) []NodeID {
 	return children
 }
 
-// GetConversationThread returns the linear conversation thread starting from a given message ID.
-// It traverses the tree upwards, following the parent links, to retrieve the complete thread.
-// The returned conversation is a linear sequence of messages from the root to the given message.
+// GetConversationThread retrieves the linear conversation thread from root to the specified message.
 func (ct *ConversationTree) GetConversationThread(id NodeID) Conversation {
 	var thread Conversation
 	for uuid.UUID(id) != uuid.Nil {
@@ -252,7 +244,6 @@ func (ct *ConversationTree) GetLeftMostThread(id NodeID) Conversation {
 	return thread
 }
 
-// SaveToFile saves the conversation tree to a JSON file.
 func (ct *ConversationTree) SaveToFile(filename string) error {
 	data, err := json.MarshalIndent(ct, "", "  ")
 	if err != nil {
@@ -261,7 +252,6 @@ func (ct *ConversationTree) SaveToFile(filename string) error {
 	return os.WriteFile(filename, data, 0644)
 }
 
-// LoadFromFile loads the conversation tree from a JSON file.
 func (ct *ConversationTree) LoadFromFile(filename string) error {
 	data, err := os.ReadFile(filename)
 	if err != nil {
@@ -270,9 +260,7 @@ func (ct *ConversationTree) LoadFromFile(filename string) error {
 	return json.Unmarshal(data, ct)
 }
 
-// GetMessageByID returns a message by its ID from the conversation tree.
 func (ct *ConversationTree) GetMessageByID(id NodeID) (*Message, bool) {
 	ret, exists := ct.Nodes[id]
-
 	return ret, exists
 }

@@ -7,7 +7,8 @@ import (
 	"strings"
 )
 
-// LoadFromFile loads messages from a json file or yaml file
+// LoadFromFile reads messages from a JSON or YAML file, facilitating conversation initialization
+// from saved states.
 func LoadFromFile(filename string) ([]*Message, error) {
 	if strings.HasSuffix(filename, ".json") {
 		return loadFromJSONFile(filename)
@@ -66,6 +67,8 @@ func (c *ManagerImpl) PrependMessages(messages ...*Message) {
 	c.Tree.PrependThread(messages)
 }
 
+// SaveToFile persists the current conversation state to a JSON file, enabling
+// conversation continuity across sessions.
 func (c *ManagerImpl) SaveToFile(s string) error {
 	// TODO(manuel, 2023-11-14) For now only json
 	msgs := c.GetConversation()
