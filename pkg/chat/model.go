@@ -2,11 +2,14 @@ package chat
 
 import (
 	context2 "context"
+	"os"
+	"strings"
+
 	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/viewport"
-	"github.com/charmbracelet/bubbletea"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	conversationui "github.com/go-go-golems/bobatea/pkg/chat/conversation"
 	"github.com/go-go-golems/bobatea/pkg/conversation"
@@ -15,8 +18,6 @@ import (
 	"github.com/go-go-golems/bobatea/pkg/textarea"
 	"github.com/go-go-golems/glazed/pkg/helpers/markdown"
 	"github.com/pkg/errors"
-	"os"
-	"strings"
 )
 
 type errMsg error
@@ -136,235 +137,73 @@ func (m model) Init() tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	k := msg.String()
-	_ = k
+// New message types for user actions
+type UserActionMsg interface {
+	isUserAction()
+}
 
+type ToggleHelpMsg struct{}
+type UnfocusMessageMsg struct{}
+type QuitMsg struct{}
+type FocusMessageMsg struct{}
+type SelectNextMessageMsg struct{}
+type SelectPrevMessageMsg struct{}
+type SubmitMessageMsg struct{}
+type CopyToClipboardMsg struct{}
+type CopyLastResponseToClipboardMsg struct{}
+type CopyLastSourceBlocksToClipboardMsg struct{}
+type CopySourceBlocksToClipboardMsg struct{}
+type SaveToFileMsg struct{}
+type CancelCompletionMsg struct{}
+type DismissErrorMsg struct{}
+
+func (ToggleHelpMsg) isUserAction()                      {}
+func (UnfocusMessageMsg) isUserAction()                  {}
+func (QuitMsg) isUserAction()                            {}
+func (FocusMessageMsg) isUserAction()                    {}
+func (SelectNextMessageMsg) isUserAction()               {}
+func (SelectPrevMessageMsg) isUserAction()               {}
+func (SubmitMessageMsg) isUserAction()                   {}
+func (CopyToClipboardMsg) isUserAction()                 {}
+func (CopyLastResponseToClipboardMsg) isUserAction()     {}
+func (CopyLastSourceBlocksToClipboardMsg) isUserAction() {}
+func (CopySourceBlocksToClipboardMsg) isUserAction()     {}
+func (SaveToFileMsg) isUserAction()                      {}
+func (CancelCompletionMsg) isUserAction()                {}
+func (DismissErrorMsg) isUserAction()                    {}
+
+func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
 	switch {
 	case key.Matches(msg, m.keyMap.Help):
-		m.help.ShowAll = !m.help.ShowAll
-
+		cmd = func() tea.Msg { return ToggleHelpMsg{} }
 	case key.Matches(msg, m.keyMap.UnfocusMessage):
-		if m.state == StateUserInput {
-			m.textArea.Blur()
-			m.state = StateMovingAround
-			m.conversation.SetActive(true)
-			if m.scrollToBottom {
-				m.conversation.SetSelectedIdx(len(m.conversation.Conversation()) - 1)
-			}
-			m.scrollToSelected()
-			m.updateKeyBindings()
-		}
-
+		cmd = func() tea.Msg { return UnfocusMessageMsg{} }
 	case key.Matches(msg, m.keyMap.Quit):
-		if !m.quitReceived {
-			m.quitReceived = true
-			// on first quit, try to cancel completion if running.
-			// NOTE(manuel, 2024-01-15) Maybe we should also check for the state here, add some invariants.
-			if !m.backend.IsFinished() {
-				m.backend.Interrupt()
-			}
-		}
-
-		// force save completion before quitting
-		// TODO(manuel, 2024-01-15) Actually we just need to kill and then append the current response, right?
-		// But if we kill we might get another completion response and then we would have two messages.
-		// Maybe we should just do the right thing and implementing a Quitting state...
-		m.finishCompletion()
-
-		cmd = tea.Quit
-
+		cmd = func() tea.Msg { return QuitMsg{} }
 	case key.Matches(msg, m.keyMap.FocusMessage):
-		// TODO(manuel, 2024-01-06) This could potentially focus on a previous message
-		// and allow us to regenerate.
-		cmd = m.textArea.Focus()
-
-		m.scrollToBottom = true
-		m.viewport.GotoBottom()
-
-		m.conversation.SetActive(false)
-		m.state = StateUserInput
-		m.updateKeyBindings()
-
+		cmd = func() tea.Msg { return FocusMessageMsg{} }
 	case key.Matches(msg, m.keyMap.SelectNextMessage):
-		messages := m.conversation.Conversation()
-		if m.conversation.SelectedIdx() < len(messages)-1 {
-			m.conversation.SetSelectedIdx(m.conversation.SelectedIdx() + 1)
-			m.scrollToSelected()
-		} else if m.conversation.SelectedIdx() == len(messages)-1 {
-			m.scrollToBottom = true
-			m.viewport.GotoBottom()
-		}
-
+		cmd = func() tea.Msg { return SelectNextMessageMsg{} }
 	case key.Matches(msg, m.keyMap.SelectPrevMessage):
-		if m.conversation.SelectedIdx() > 0 {
-			m.conversation.SetSelectedIdx(m.conversation.SelectedIdx() - 1)
-			m.scrollToSelected()
-			m.scrollToBottom = false
-		}
-
+		cmd = func() tea.Msg { return SelectPrevMessageMsg{} }
 	case key.Matches(msg, m.keyMap.SubmitMessage):
-		cmd = m.submit()
-
+		cmd = func() tea.Msg { return SubmitMessageMsg{} }
 	case key.Matches(msg, m.keyMap.CopyToClipboard):
-		msgs := m.conversation.Conversation()
-		if len(msgs) > 0 {
-			if m.state == StateMovingAround {
-				selectedIdx := m.conversation.SelectedIdx()
-				if selectedIdx < len(msgs) && selectedIdx >= 0 {
-					msg_ := msgs[selectedIdx]
-					err := clipboard.WriteAll(msg_.Content.String())
-					if err != nil {
-						cmd = func() tea.Msg {
-							return errMsg(err)
-						}
-					}
-				}
-			} else {
-				text := ""
-				for _, m := range msgs {
-					if content, ok := m.Content.(*conversation.ChatMessageContent); ok {
-						if content.Role == conversation.RoleAssistant {
-							text += content.Text + "\n"
-						}
-					}
-				}
-				err := clipboard.WriteAll(text)
-				if err != nil {
-					cmd = func() tea.Msg {
-						return errMsg(err)
-					}
-				}
-			}
-		}
-
+		cmd = func() tea.Msg { return CopyToClipboardMsg{} }
 	case key.Matches(msg, m.keyMap.CopyLastResponseToClipboard):
-		msgs := m.conversation.Conversation()
-		if len(msgs) > 0 {
-			if m.state == StateMovingAround {
-				selectedIdx := m.conversation.SelectedIdx()
-				if selectedIdx < len(msgs) && selectedIdx >= 0 {
-					msg_ := msgs[selectedIdx]
-					if content, ok := msg_.Content.(*conversation.ChatMessageContent); ok {
-						err := clipboard.WriteAll(content.Text)
-						if err != nil {
-							cmd = func() tea.Msg {
-								return errMsg(err)
-							}
-						}
-					}
-				}
-			} else {
-				if m.state == StateUserInput {
-					lastMsg := msgs[len(msgs)-1]
-					if content, ok := lastMsg.Content.(*conversation.ChatMessageContent); ok {
-						err := clipboard.WriteAll(content.Text)
-						if err != nil {
-							cmd = func() tea.Msg {
-								return errMsg(err)
-							}
-						}
-					}
-				}
-			}
-		}
-
+		cmd = func() tea.Msg { return CopyLastResponseToClipboardMsg{} }
 	case key.Matches(msg, m.keyMap.CopyLastSourceBlocksToClipboard):
-		msgs := m.conversation.Conversation()
-		if len(msgs) > 0 {
-			if m.state == StateMovingAround {
-				selectedIdx := m.conversation.SelectedIdx()
-				if selectedIdx < len(msgs) && selectedIdx >= 0 {
-					msg_ := msgs[selectedIdx]
-					if content, ok := msg_.Content.(*conversation.ChatMessageContent); ok {
-						code := markdown.ExtractQuotedBlocks(content.Text, false)
-						err := clipboard.WriteAll(strings.Join(code, "\n"))
-						if err != nil {
-							cmd = func() tea.Msg {
-								return errMsg(err)
-							}
-						}
-					}
-				}
-			} else {
-				if m.state == StateUserInput {
-					text := ""
-					for _, m := range msgs {
-						if content, ok := m.Content.(*conversation.ChatMessageContent); ok {
-							if content.Role == conversation.RoleAssistant {
-								text += content.Text + "\n"
-							}
-						}
-					}
-					code := markdown.ExtractQuotedBlocks(text, false)
-					err := clipboard.WriteAll(strings.Join(code, "\n"))
-					if err != nil {
-						cmd = func() tea.Msg {
-							return errMsg(err)
-						}
-					}
-				}
-			}
-		}
-
+		cmd = func() tea.Msg { return CopyLastSourceBlocksToClipboardMsg{} }
 	case key.Matches(msg, m.keyMap.CopySourceBlocksToClipboard):
-		msgs := m.conversation.Conversation()
-		if len(msgs) > 0 {
-			if m.state == StateMovingAround {
-				selectedIdx := m.conversation.SelectedIdx()
-				if selectedIdx < len(msgs) && selectedIdx >= 0 {
-					msg_ := msgs[selectedIdx]
-					if content, ok := msg_.Content.(*conversation.ChatMessageContent); ok {
-						code := markdown.ExtractQuotedBlocks(content.Text, false)
-						err := clipboard.WriteAll(strings.Join(code, "\n"))
-						if err != nil {
-							cmd = func() tea.Msg {
-								return errMsg(err)
-							}
-						}
-					}
-				}
-			} else {
-				text := ""
-				for _, m := range msgs {
-					if content, ok := m.Content.(*conversation.ChatMessageContent); ok {
-						if content.Role == conversation.RoleAssistant {
-							text += content.Text + "\n"
-						}
-					}
-				}
-				code := markdown.ExtractQuotedBlocks(text, false)
-				err := clipboard.WriteAll(strings.Join(code, "\n"))
-				if err != nil {
-					cmd = func() tea.Msg {
-						return errMsg(err)
-					}
-				}
-			}
-		}
-
+		cmd = func() tea.Msg { return CopySourceBlocksToClipboardMsg{} }
 	case key.Matches(msg, m.keyMap.SaveToFile):
-		m.state = StateSavingToFile
-		// need to reload the directory the filepicker is in
-		cmd = m.filepicker.Init()
-		m.recomputeSize()
-		m.updateKeyBindings()
-
-	// same keybinding for both
+		cmd = func() tea.Msg { return SaveToFileMsg{} }
 	case key.Matches(msg, m.keyMap.CancelCompletion):
-		if m.state == StateStreamCompletion {
-			m.backend.Interrupt()
-		}
-
+		cmd = func() tea.Msg { return CancelCompletionMsg{} }
 	case key.Matches(msg, m.keyMap.DismissError):
-		if m.state == StateError {
-			m.err = nil
-			m.state = StateUserInput
-			m.updateKeyBindings()
-		}
-
+		cmd = func() tea.Msg { return DismissErrorMsg{} }
 	default:
 		switch m.state {
 		case StateUserInput:
@@ -449,6 +288,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case filepicker.CancelFilePickerMsg:
 		m.state = StateUserInput
 		m.updateKeyBindings()
+
+	case UserActionMsg:
+		return m.handleUserAction(msg_)
 
 	default:
 		switch m.state {
@@ -646,4 +488,232 @@ func (m *model) finishCompletion() tea.Cmd {
 	}
 
 	return refreshCommand
+}
+
+func (m model) handleUserAction(msg UserActionMsg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+
+	switch msg.(type) {
+	case ToggleHelpMsg:
+		m.help.ShowAll = !m.help.ShowAll
+
+	case UnfocusMessageMsg:
+		if m.state == StateUserInput {
+			m.textArea.Blur()
+			m.state = StateMovingAround
+			m.conversation.SetActive(true)
+			if m.scrollToBottom {
+				m.conversation.SetSelectedIdx(len(m.conversation.Conversation()) - 1)
+			}
+			m.scrollToSelected()
+			m.updateKeyBindings()
+		}
+
+	case QuitMsg:
+		if !m.quitReceived {
+			m.quitReceived = true
+			// on first quit, try to cancel completion if running.
+			// NOTE(manuel, 2024-01-15) Maybe we should also check for the state here, add some invariants.
+			if !m.backend.IsFinished() {
+				m.backend.Interrupt()
+			}
+		}
+
+		// force save completion before quitting
+		// TODO(manuel, 2024-01-15) Actually we just need to kill and then append the current response, right?
+		// But if we kill we might get another completion response and then we would have two messages.
+		// Maybe we should just do the right thing and implementing a Quitting state...
+		m.finishCompletion()
+
+		cmd = tea.Quit
+
+	case FocusMessageMsg:
+		// TODO(manuel, 2024-01-06) This could potentially focus on a previous message
+		// and allow us to regenerate.
+		cmd = m.textArea.Focus()
+
+		m.scrollToBottom = true
+		m.viewport.GotoBottom()
+
+		m.conversation.SetActive(false)
+		m.state = StateUserInput
+		m.updateKeyBindings()
+
+	case SelectNextMessageMsg:
+		messages := m.conversation.Conversation()
+		if m.conversation.SelectedIdx() < len(messages)-1 {
+			m.conversation.SetSelectedIdx(m.conversation.SelectedIdx() + 1)
+			m.scrollToSelected()
+		} else if m.conversation.SelectedIdx() == len(messages)-1 {
+			m.scrollToBottom = true
+			m.viewport.GotoBottom()
+		}
+
+	case SelectPrevMessageMsg:
+		if m.conversation.SelectedIdx() > 0 {
+			m.conversation.SetSelectedIdx(m.conversation.SelectedIdx() - 1)
+			m.scrollToSelected()
+			m.scrollToBottom = false
+		}
+
+	case SubmitMessageMsg:
+		cmd = m.submit()
+
+	case CopyToClipboardMsg:
+		msgs := m.conversation.Conversation()
+		if len(msgs) > 0 {
+			if m.state == StateMovingAround {
+				selectedIdx := m.conversation.SelectedIdx()
+				if selectedIdx < len(msgs) && selectedIdx >= 0 {
+					msg_ := msgs[selectedIdx]
+					err := clipboard.WriteAll(msg_.Content.String())
+					if err != nil {
+						cmd = func() tea.Msg {
+							return errMsg(err)
+						}
+					}
+				}
+			} else {
+				text := ""
+				for _, m := range msgs {
+					if content, ok := m.Content.(*conversation.ChatMessageContent); ok {
+						if content.Role == conversation.RoleAssistant {
+							text += content.Text + "\n"
+						}
+					}
+				}
+				err := clipboard.WriteAll(text)
+				if err != nil {
+					cmd = func() tea.Msg {
+						return errMsg(err)
+					}
+				}
+			}
+		}
+
+	case CopyLastResponseToClipboardMsg:
+		msgs := m.conversation.Conversation()
+		if len(msgs) > 0 {
+			if m.state == StateMovingAround {
+				selectedIdx := m.conversation.SelectedIdx()
+				if selectedIdx < len(msgs) && selectedIdx >= 0 {
+					msg_ := msgs[selectedIdx]
+					if content, ok := msg_.Content.(*conversation.ChatMessageContent); ok {
+						err := clipboard.WriteAll(content.Text)
+						if err != nil {
+							cmd = func() tea.Msg {
+								return errMsg(err)
+							}
+						}
+					}
+				}
+			} else {
+				if m.state == StateUserInput {
+					lastMsg := msgs[len(msgs)-1]
+					if content, ok := lastMsg.Content.(*conversation.ChatMessageContent); ok {
+						err := clipboard.WriteAll(content.Text)
+						if err != nil {
+							cmd = func() tea.Msg {
+								return errMsg(err)
+							}
+						}
+					}
+				}
+			}
+		}
+
+	case CopyLastSourceBlocksToClipboardMsg:
+		msgs := m.conversation.Conversation()
+		if len(msgs) > 0 {
+			if m.state == StateMovingAround {
+				selectedIdx := m.conversation.SelectedIdx()
+				if selectedIdx < len(msgs) && selectedIdx >= 0 {
+					msg_ := msgs[selectedIdx]
+					if content, ok := msg_.Content.(*conversation.ChatMessageContent); ok {
+						code := markdown.ExtractQuotedBlocks(content.Text, false)
+						err := clipboard.WriteAll(strings.Join(code, "\n"))
+						if err != nil {
+							cmd = func() tea.Msg {
+								return errMsg(err)
+							}
+						}
+					}
+				}
+			} else {
+				if m.state == StateUserInput {
+					text := ""
+					for _, m := range msgs {
+						if content, ok := m.Content.(*conversation.ChatMessageContent); ok {
+							if content.Role == conversation.RoleAssistant {
+								text += content.Text + "\n"
+							}
+						}
+					}
+					code := markdown.ExtractQuotedBlocks(text, false)
+					err := clipboard.WriteAll(strings.Join(code, "\n"))
+					if err != nil {
+						cmd = func() tea.Msg {
+							return errMsg(err)
+						}
+					}
+				}
+			}
+		}
+
+	case CopySourceBlocksToClipboardMsg:
+		msgs := m.conversation.Conversation()
+		if len(msgs) > 0 {
+			if m.state == StateMovingAround {
+				selectedIdx := m.conversation.SelectedIdx()
+				if selectedIdx < len(msgs) && selectedIdx >= 0 {
+					msg_ := msgs[selectedIdx]
+					if content, ok := msg_.Content.(*conversation.ChatMessageContent); ok {
+						code := markdown.ExtractQuotedBlocks(content.Text, false)
+						err := clipboard.WriteAll(strings.Join(code, "\n"))
+						if err != nil {
+							cmd = func() tea.Msg {
+								return errMsg(err)
+							}
+						}
+					}
+				}
+			} else {
+				text := ""
+				for _, m := range msgs {
+					if content, ok := m.Content.(*conversation.ChatMessageContent); ok {
+						if content.Role == conversation.RoleAssistant {
+							text += content.Text + "\n"
+						}
+					}
+				}
+				code := markdown.ExtractQuotedBlocks(text, false)
+				err := clipboard.WriteAll(strings.Join(code, "\n"))
+				if err != nil {
+					cmd = func() tea.Msg {
+						return errMsg(err)
+					}
+				}
+			}
+		}
+
+	case SaveToFileMsg:
+		m.state = StateSavingToFile
+		cmd = m.filepicker.Init()
+		m.recomputeSize()
+		m.updateKeyBindings()
+
+	case CancelCompletionMsg:
+		if m.state == StateStreamCompletion {
+			m.backend.Interrupt()
+		}
+
+	case DismissErrorMsg:
+		if m.state == StateError {
+			m.err = nil
+			m.state = StateUserInput
+			m.updateKeyBindings()
+		}
+	}
+
+	return m, cmd
 }
