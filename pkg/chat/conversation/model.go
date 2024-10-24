@@ -2,44 +2,45 @@ package conversation
 
 import (
 	"fmt"
-	"github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/go-go-golems/bobatea/pkg/conversation"
-	"github.com/google/uuid"
-	"github.com/muesli/reflow/wordwrap"
+	conversation2 "github.com/go-go-golems/geppetto/pkg/conversation"
 	"strings"
 	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/google/uuid"
+	"github.com/muesli/reflow/wordwrap"
 )
 
 type cacheEntry struct {
-	msg         *conversation.Message
+	msg         *conversation2.Message
 	rendered    string
 	selected    bool
 	lastUpdated time.Time
 }
 
 type Model struct {
-	manager conversation.Manager
+	manager conversation2.Manager
 	style   *Style
 	active  bool
 	width   int
 
-	cache map[conversation.NodeID]cacheEntry
+	cache map[conversation2.NodeID]cacheEntry
 
 	selectedIdx int
-	selectedID  conversation.NodeID
+	selectedID  conversation2.NodeID
 }
 
-func NewModel(manager conversation.Manager) Model {
+func NewModel(manager conversation2.Manager) Model {
 	return Model{
 		manager:    manager,
 		style:      DefaultStyles(),
-		cache:      make(map[conversation.NodeID]cacheEntry),
-		selectedID: conversation.NullNode,
+		cache:      make(map[conversation2.NodeID]cacheEntry),
+		selectedID: conversation2.NullNode,
 	}
 }
 
-func (m Model) Conversation() conversation.Conversation {
+func (m Model) Conversation() conversation2.Conversation {
 	return m.manager.GetConversation()
 }
 
@@ -50,7 +51,7 @@ func (m Model) Init() tea.Cmd {
 	return nil
 }
 
-func (m Model) updateCache(c ...*conversation.Message) {
+func (m Model) updateCache(c ...*conversation2.Message) {
 	for idx, msg := range c {
 		c_, ok := m.cache[msg.ID]
 		selected := idx == m.selectedIdx && m.active
@@ -80,7 +81,7 @@ func (m *Model) SetActive(active bool) {
 func (m *Model) SetWidth(width int) {
 	m.width = width
 
-	m.cache = make(map[conversation.NodeID]cacheEntry)
+	m.cache = make(map[conversation2.NodeID]cacheEntry)
 }
 
 func (m *Model) SelectedIdx() int {
@@ -88,7 +89,7 @@ func (m *Model) SelectedIdx() int {
 }
 
 func (m *Model) SetSelectedIdx(idx int) {
-	m.selectedID = conversation.NullNode
+	m.selectedID = conversation2.NullNode
 	m.selectedIdx = idx
 	conversation := m.manager.GetConversation()
 	if idx > len(conversation) {
@@ -102,7 +103,7 @@ func (m *Model) SetSelectedIdx(idx int) {
 	m.selectedID = conversation[m.selectedIdx].ID
 }
 
-func (m Model) renderMessage(selected bool, msg *conversation.Message) string {
+func (m Model) renderMessage(selected bool, msg *conversation2.Message) string {
 	v := msg.Content.View()
 	v = strings.TrimRight(v, "\n")
 
@@ -133,7 +134,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			return m, nil
 		}
 
-		textMsg, ok := msg_.Content.(*conversation.ChatMessageContent)
+		textMsg, ok := msg_.Content.(*conversation2.ChatMessageContent)
 		if !ok {
 			return m, nil
 		}
@@ -148,7 +149,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			return m, nil
 		}
 
-		textMsg, ok := msg_.Content.(*conversation.ChatMessageContent)
+		textMsg, ok := msg_.Content.(*conversation2.ChatMessageContent)
 		if !ok {
 			return m, nil
 		}
@@ -169,11 +170,11 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		if msg.Step != nil {
 			metadata["step"] = msg.Step.ToMap()
 		}
-		msg_ := conversation.NewChatMessage(
-			conversation.RoleAssistant, "",
-			conversation.WithID(msg.ID),
-			conversation.WithParentID(msg.ParentID),
-			conversation.WithMetadata(metadata))
+		msg_ := conversation2.NewChatMessage(
+			conversation2.RoleAssistant, "",
+			conversation2.WithID(msg.ID),
+			conversation2.WithParentID(msg.ParentID),
+			conversation2.WithMetadata(metadata))
 		m.manager.AppendMessages(msg_)
 
 		m.updateCache(msg_)
@@ -269,8 +270,8 @@ func (sm *StepMetadata) ToMap() map[string]interface{} {
 }
 
 type StreamMetadata struct {
-	ID       conversation.NodeID    `json:"id" yaml:"id"`
-	ParentID conversation.NodeID    `json:"parent_id" yaml:"parent_id"`
+	ID       conversation2.NodeID   `json:"id" yaml:"id"`
+	ParentID conversation2.NodeID   `json:"parent_id" yaml:"parent_id"`
 	Metadata map[string]interface{} `json:"metadata" yaml:"metadata"`
 	Step     *StepMetadata          `json:"step_metadata,omitempty"`
 }
@@ -303,7 +304,9 @@ type StreamStatusMsg struct {
 // updates the message content and the last update timestamp.
 type StreamCompletionMsg struct {
 	StreamMetadata
-	Delta      string
+	// Delta is the delta that was added to the message
+	Delta string
+	// Completion is the full completion text
 	Completion string
 }
 
@@ -315,6 +318,7 @@ type StreamCompletionMsg struct {
 // content and the last update timestamp to reflect the final text.
 type StreamDoneMsg struct {
 	StreamMetadata
+	// Completion is the full completion text
 	Completion string
 }
 

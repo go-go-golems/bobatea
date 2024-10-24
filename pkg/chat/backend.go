@@ -3,7 +3,7 @@ package chat
 import (
 	"context"
 	"github.com/charmbracelet/bubbletea"
-	"github.com/go-go-golems/bobatea/pkg/conversation"
+	"github.com/go-go-golems/geppetto/pkg/conversation"
 )
 
 // Backend abstracts initiating and stopping the backend process that is responsible

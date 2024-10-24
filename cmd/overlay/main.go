@@ -187,13 +187,6 @@ var (
 	docStyle = lipgloss.NewStyle().Padding(1, 2, 1, 2)
 )
 
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
 func main() {
 	physicalWidth, _, _ := term.GetSize(int(os.Stdout.Fd()))
 	doc := strings.Builder{}

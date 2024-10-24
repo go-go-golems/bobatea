@@ -2,33 +2,48 @@ package main
 
 import (
 	"context"
-	"github.com/charmbracelet/bubbletea"
+	conversation2 "github.com/go-go-golems/geppetto/pkg/conversation"
+	"strings"
+	"sync"
+	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/go-go-golems/bobatea/pkg/chat"
 	conversationui "github.com/go-go-golems/bobatea/pkg/chat/conversation"
-	"github.com/go-go-golems/bobatea/pkg/conversation"
 	"github.com/pkg/errors"
-	"strings"
-	"time"
 )
 
 type FakeBackend struct {
 	p         *tea.Program
 	cancel    context.CancelFunc
 	isRunning bool
+	mu        sync.Mutex
 }
 
 var _ chat.Backend = &FakeBackend{}
 
-func NewBackend(p *tea.Program) *FakeBackend {
-	return &FakeBackend{
-		p: p,
-	}
+func NewFakeBackend() *FakeBackend {
+	return &FakeBackend{}
 }
 
-func (f *FakeBackend) Start(ctx context.Context, msgs []*conversation.Message) (tea.Cmd, error) {
+func (f *FakeBackend) SetProgram(p *tea.Program) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.p = p
+}
+
+func (f *FakeBackend) Start(ctx context.Context, msgs []*conversation2.Message) (tea.Cmd, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	if f.isRunning {
 		return nil, errors.New("Step is already running")
 	}
+
+	if f.p == nil {
+		return nil, errors.New("Program not set")
+	}
+
 	return func() tea.Msg {
 		ctx, f.cancel = context.WithCancel(ctx)
 		if len(msgs) == 0 {
@@ -40,7 +55,7 @@ func (f *FakeBackend) Start(ctx context.Context, msgs []*conversation.Message) (
 		msg := strings.Join(reversedWords, " ")
 
 		metadata := conversationui.StreamMetadata{
-			ID:       conversation.NewNodeID(),
+			ID:       conversation2.NewNodeID(),
 			ParentID: lastMsg.ID,
 		}
 

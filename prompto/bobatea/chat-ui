@@ -6,7 +6,7 @@ cat pkg/chat/README.md
 echo "---"
 echo
 
-for i in backend; do
+for i in backend model; do
   echo "Filename: pkg/chat/$i.go"
   echo "---"
 

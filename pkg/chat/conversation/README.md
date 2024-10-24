@@ -1,17 +1,6 @@
 # Bobatea Conversation UI
 
-[![Go Report Card](https://goreportcard.com/badge/github.com/go-go-golems/bobatea)](https://goreportcard.com/report/github.com/go-go-golems/bobatea)
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-
 Bobatea Conversation UI is a Go library for rendering a conversation tree as a [Bubble Tea](https://github.com/charmbracelet/bubbletea) text UI. It provides a simple way to display conversation messages in a terminal-based interface, intended to be nested within another model.
-
-## Installation
-
-To use the Bobatea Conversation UI library in your Go project, run:
-
-```bash
-go get github.com/go-go-golems/bobatea/pkg/chat/conversation
-```
 
 ## Message Types
 
@@ -28,4 +17,3 @@ These message types are used to communicate between the backend and the UI durin
 ## Usage
 
 There is an example on how to use the library in `cmd/conversation/main.go`.
-
