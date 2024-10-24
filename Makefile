@@ -35,4 +35,5 @@ release:
 
 bump-glazed:
 	go get github.com/go-go-golems/glazed@latest
+	go get github.com/go-go-golems/geppetto@latest
 	go mod tidy
