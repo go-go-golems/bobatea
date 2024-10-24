@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
-prompto get bobatea/conversation
+prompto get geppetto/conversation-api
+echo "---"
 cat pkg/chat/conversation/README.md
 
 for i in model; do
@@ -8,11 +9,9 @@ for i in model; do
   echo "---"
 
   echo "package github.com/go-go-golems/bobatea/pkg/chat/conversation/$i"
-
-  oak go definitions pkg/conversation/$i.go
-  echo "---"
-  echo
+  oak go definitions pkg/chat/conversation/$i.go
 done
 
-echo "Filename: example program - cmd/conversation/main.go"
-cat cmd/conversation/main.go
+echo "---"
+echo "Demo program"
+catter cmd/conversation

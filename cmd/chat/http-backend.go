@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	conversation2 "github.com/go-go-golems/geppetto/pkg/conversation"
 	"io"
 	"net/http"
 	"os"
@@ -11,7 +12,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/go-go-golems/bobatea/pkg/chat"
 	conversationui "github.com/go-go-golems/bobatea/pkg/chat/conversation"
-	"github.com/go-go-golems/bobatea/pkg/conversation"
 	"github.com/gorilla/mux"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog"
@@ -21,7 +21,7 @@ type HTTPBackend struct {
 	p               *tea.Program
 	cancel          context.CancelFunc
 	isRunning       bool
-	messages        []*conversation.Message
+	messages        []*conversation2.Message
 	status          string
 	lastMessage     *conversationui.StreamCompletionMsg
 	lastError       error
@@ -72,7 +72,7 @@ func (h *HTTPBackend) SetProgram(p *tea.Program) {
 	h.logger.Debug().Msg("Program set for HTTPBackend")
 }
 
-func (h *HTTPBackend) Start(ctx context.Context, msgs []*conversation.Message) (tea.Cmd, error) {
+func (h *HTTPBackend) Start(ctx context.Context, msgs []*conversation2.Message) (tea.Cmd, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
@@ -87,12 +87,12 @@ func (h *HTTPBackend) Start(ctx context.Context, msgs []*conversation.Message) (
 	h.status = "waiting"
 
 	// Update the currentMetadata
-	parentID := conversation.NullNode
+	parentID := conversation2.NullNode
 	if len(msgs) > 0 {
 		parentID = msgs[len(msgs)-1].ID
 	}
 	h.currentMetadata = conversationui.StreamMetadata{
-		ID:       conversation.NewNodeID(),
+		ID:       conversation2.NewNodeID(),
 		ParentID: parentID,
 	}
 
@@ -147,7 +147,7 @@ func (h *HTTPBackend) handleStatus(w http.ResponseWriter, r *http.Request) {
 
 	status := struct {
 		Status      string                              `json:"status"`
-		Messages    []*conversation.Message             `json:"messages"`
+		Messages    []*conversation2.Message            `json:"messages"`
 		LastMessage *conversationui.StreamCompletionMsg `json:"last_message,omitempty"`
 		LastError   string                              `json:"last_error,omitempty"`
 	}{

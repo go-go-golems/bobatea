@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	conversation2 "github.com/go-go-golems/geppetto/pkg/conversation"
 	"strings"
 	"sync"
 	"time"
@@ -9,7 +10,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/go-go-golems/bobatea/pkg/chat"
 	conversationui "github.com/go-go-golems/bobatea/pkg/chat/conversation"
-	"github.com/go-go-golems/bobatea/pkg/conversation"
 	"github.com/pkg/errors"
 )
 
@@ -32,7 +32,7 @@ func (f *FakeBackend) SetProgram(p *tea.Program) {
 	f.p = p
 }
 
-func (f *FakeBackend) Start(ctx context.Context, msgs []*conversation.Message) (tea.Cmd, error) {
+func (f *FakeBackend) Start(ctx context.Context, msgs []*conversation2.Message) (tea.Cmd, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
@@ -55,7 +55,7 @@ func (f *FakeBackend) Start(ctx context.Context, msgs []*conversation.Message) (
 		msg := strings.Join(reversedWords, " ")
 
 		metadata := conversationui.StreamMetadata{
-			ID:       conversation.NewNodeID(),
+			ID:       conversation2.NewNodeID(),
 			ParentID: lastMsg.ID,
 		}
 

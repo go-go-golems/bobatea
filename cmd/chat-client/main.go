@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	conversation2 "github.com/go-go-golems/geppetto/pkg/conversation"
 	"io"
 	"net/http"
 	"os"
@@ -11,7 +12,6 @@ import (
 
 	"github.com/go-go-golems/bobatea/pkg/chat"
 	conversationui "github.com/go-go-golems/bobatea/pkg/chat/conversation"
-	"github.com/go-go-golems/bobatea/pkg/conversation"
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 )
@@ -85,7 +85,7 @@ func newStartCmd() *cobra.Command {
 		Run: func(cmd *cobra.Command, args []string) {
 			msg := conversationui.StreamStartMsg{
 				StreamMetadata: conversationui.StreamMetadata{
-					ID:       conversation.NewNodeID(),
+					ID:       conversation2.NewNodeID(),
 					ParentID: stringToNodeID(parentID),
 				},
 			}
@@ -104,7 +104,7 @@ func newCompletionCmd() *cobra.Command {
 			delta := strings.Join(args, " ")
 			msg := conversationui.StreamCompletionMsg{
 				StreamMetadata: conversationui.StreamMetadata{
-					ID:       conversation.NewNodeID(),
+					ID:       conversation2.NewNodeID(),
 					ParentID: stringToNodeID(parentID),
 				},
 				Delta: delta,
@@ -129,7 +129,7 @@ func newStatusCmd() *cobra.Command {
 		Run: func(cmd *cobra.Command, args []string) {
 			msg := conversationui.StreamStatusMsg{
 				StreamMetadata: conversationui.StreamMetadata{
-					ID:       conversation.NewNodeID(),
+					ID:       conversation2.NewNodeID(),
 					ParentID: stringToNodeID(parentID),
 				},
 				Text: status,
@@ -149,7 +149,7 @@ func newDoneCmd() *cobra.Command {
 		Run: func(cmd *cobra.Command, args []string) {
 			msg := conversationui.StreamDoneMsg{
 				StreamMetadata: conversationui.StreamMetadata{
-					ID:       conversation.NewNodeID(),
+					ID:       conversation2.NewNodeID(),
 					ParentID: stringToNodeID(parentID),
 				},
 				Completion: completion,
@@ -169,7 +169,7 @@ func newErrorCmd() *cobra.Command {
 		Run: func(cmd *cobra.Command, args []string) {
 			msg := conversationui.StreamCompletionError{
 				StreamMetadata: conversationui.StreamMetadata{
-					ID:       conversation.NewNodeID(),
+					ID:       conversation2.NewNodeID(),
 					ParentID: stringToNodeID(parentID),
 				},
 				Err: fmt.Errorf("%s", errMsg),
@@ -534,7 +534,7 @@ func getStatus() {
 
 	var status struct {
 		Status      string                              `json:"status"`
-		Messages    []*conversation.Message             `json:"messages"`
+		Messages    []*conversation2.Message            `json:"messages"`
 		LastMessage *conversationui.StreamCompletionMsg `json:"last_message,omitempty"`
 		LastError   string                              `json:"last_error,omitempty"`
 	}
@@ -557,16 +557,16 @@ func getStatus() {
 }
 
 // Helper function to convert string to NodeID
-func stringToNodeID(s string) conversation.NodeID {
+func stringToNodeID(s string) conversation2.NodeID {
 	if s == "" {
-		return conversation.NullNode
+		return conversation2.NullNode
 	}
 	id, err := uuid.Parse(s)
 	if err != nil {
 		fmt.Printf("Warning: Invalid UUID format for parent ID. Using NullNode instead.\n")
-		return conversation.NullNode
+		return conversation2.NullNode
 	}
-	return conversation.NodeID(id)
+	return conversation2.NodeID(id)
 }
 
 // Helper function to read file contents

@@ -2,12 +2,12 @@ package main
 
 import (
 	"fmt"
+	"github.com/go-go-golems/geppetto/pkg/conversation"
 	"net/http"
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/go-go-golems/bobatea/pkg/chat"
-	conversation2 "github.com/go-go-golems/bobatea/pkg/conversation"
 	"github.com/gorilla/mux"
 	"github.com/spf13/cobra"
 )
@@ -61,8 +61,8 @@ func runHTTPBackend(cmd *cobra.Command, args []string) {
 func runChat(backendFactory func() chat.Backend) {
 	status := &chat.Status{}
 
-	manager := conversation2.NewManager(conversation2.WithMessages(
-		conversation2.NewChatMessage(conversation2.RoleSystem, "Welcome to the chat application!"),
+	manager := conversation.NewManager(conversation.WithMessages(
+		conversation.NewChatMessage(conversation.RoleSystem, "Welcome to the chat application!"),
 	))
 
 	backend := backendFactory()

@@ -3,7 +3,7 @@ package main
 import (
 	"github.com/charmbracelet/bubbletea"
 	ui "github.com/go-go-golems/bobatea/pkg/chat/conversation"
-	"github.com/go-go-golems/bobatea/pkg/conversation"
+	conversation2 "github.com/go-go-golems/geppetto/pkg/conversation"
 	"time"
 )
 
@@ -33,11 +33,11 @@ func (m model) View() string {
 var _ tea.Model = model{}
 
 func main() {
-	manager := conversation.NewManager()
+	manager := conversation2.NewManager()
 
 	// Add some initial messages to the manager
-	msg1 := conversation.NewChatMessage(conversation.RoleUser, "Hello!")
-	msg2 := conversation.NewChatMessage(conversation.RoleAssistant, "Hi there! Streaming will start soon...")
+	msg1 := conversation2.NewChatMessage(conversation2.RoleUser, "Hello!")
+	msg2 := conversation2.NewChatMessage(conversation2.RoleAssistant, "Hi there! Streaming will start soon...")
 	manager.AppendMessages(msg1, msg2)
 
 	m := model{
@@ -52,7 +52,7 @@ func main() {
 
 		startMsg := ui.StreamStartMsg{
 			StreamMetadata: ui.StreamMetadata{
-				ID:       conversation.NewNodeID(),
+				ID:       conversation2.NewNodeID(),
 				ParentID: msg2.ID,
 			},
 		}
