@@ -1,5 +1,17 @@
 package chat
 
+// UserBackend provides an HTTP REST API to control the chat application.
+// It acts as a bridge between external HTTP requests and the bubbletea program's
+// message system. Each endpoint triggers specific actions in the chat UI, such as:
+//   - Managing the input text (append, prepend, replace)
+//   - Controlling message navigation and focus
+//   - Handling clipboard operations
+//   - Managing UI state and help visibility
+//   - Retrieving current application state
+//
+// The backend uses gorilla/mux for routing and includes comprehensive logging
+// via zerolog. All operations are thread-safe through mutex protection.
+
 import (
 	"encoding/json"
 	"io"

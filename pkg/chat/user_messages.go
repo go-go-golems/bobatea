@@ -1,5 +1,17 @@
 package chat
 
+// These are the bubbletea messages for controlling the bubbletea-based bobatea chat widget.
+//
+// These UserActionMsg types represent different actions that can be triggered within the chat interface.
+// While typically invoked through keyboard shortcuts in the TUI, these messages can also be sent
+// programmatically, for example via HTTP requests to enable remote control of the chat application.
+//
+// Common actions include:
+// - Text input manipulation (append, prepend, replace)
+// - Navigation (focus/unfocus, select next/previous)
+// - Clipboard operations (copy responses, source blocks)
+// - Application control (quit, toggle help, cancel completion)
+
 // New message types for user actions
 type UserActionMsg interface {
 	isUserAction()
