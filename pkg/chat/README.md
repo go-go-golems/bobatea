@@ -43,12 +43,11 @@ The chat interface has three main modes:
 #### General
 - `ctrl-?` - Show help dialog
 - `alt+q` - Quit application
-- `ctrl+s` - Save conversation to file
-- `alt+s` - Save code blocks to file
+- `ctrl+s`, `alt+s` - Save conversation to file
 
 #### Message Input
 - `tab` - Submit your message
-- `esc` or `ctrl+g` - Cancel current operation or clear error
+- `esc` or `ctrl+g` - Cancel current operation, unfocus message, or dismiss error
 - `alt+l` - Copy last AI response
 - `alt+k` - Copy code blocks from last response
 
@@ -60,6 +59,8 @@ The chat interface has three main modes:
 - `enter` - Focus selected message
 - `alt+c` - Copy selected message
 - `alt+d` - Copy code blocks from selected message
+- `left` - Previous conversation thread
+- `right` - Next conversation thread
 
 #### Coming Soon
 - Message regeneration
