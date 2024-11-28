@@ -2,7 +2,7 @@ package chat
 
 import (
 	context2 "context"
-	conversation2 "github.com/go-go-golems/geppetto/pkg/conversation"
+	geppetto_conversation "github.com/go-go-golems/geppetto/pkg/conversation"
 	"os"
 	"strings"
 
@@ -46,7 +46,7 @@ type Status struct {
 }
 
 type model struct {
-	conversationManager conversation2.Manager
+	conversationManager geppetto_conversation.Manager
 
 	viewport       viewport.Model
 	scrollToBottom bool
@@ -94,7 +94,7 @@ func WithStatus(status *Status) ModelOption {
 
 // TODO(manuel, 2024-04-07) Add options to configure filepicker
 
-func InitialModel(manager conversation2.Manager, backend Backend, options ...ModelOption) model {
+func InitialModel(manager geppetto_conversation.Manager, backend Backend, options ...ModelOption) model {
 	fp := filepicker.NewModel()
 
 	fp.Filepicker.DirAllowed = false
@@ -422,7 +422,7 @@ func (m *model) submit() tea.Cmd {
 	}
 
 	m.conversationManager.AppendMessages(
-		conversation2.NewChatMessage(conversation2.RoleUser, m.textArea.Value()))
+		geppetto_conversation.NewChatMessage(geppetto_conversation.RoleUser, m.textArea.Value()))
 	m.textArea.SetValue("")
 
 	m.state = StateStreamCompletion
@@ -566,8 +566,8 @@ func (m model) handleUserAction(msg UserActionMsg) (tea.Model, tea.Cmd) {
 			} else {
 				text := ""
 				for _, m := range msgs {
-					if content, ok := m.Content.(*conversation2.ChatMessageContent); ok {
-						if content.Role == conversation2.RoleAssistant {
+					if content, ok := m.Content.(*geppetto_conversation.ChatMessageContent); ok {
+						if content.Role == geppetto_conversation.RoleAssistant {
 							text += content.Text + "\n"
 						}
 					}
@@ -588,7 +588,7 @@ func (m model) handleUserAction(msg UserActionMsg) (tea.Model, tea.Cmd) {
 				selectedIdx := m.conversation.SelectedIdx()
 				if selectedIdx < len(msgs) && selectedIdx >= 0 {
 					msg_ := msgs[selectedIdx]
-					if content, ok := msg_.Content.(*conversation2.ChatMessageContent); ok {
+					if content, ok := msg_.Content.(*geppetto_conversation.ChatMessageContent); ok {
 						err := clipboard.WriteAll(content.Text)
 						if err != nil {
 							cmd = func() tea.Msg {
@@ -600,7 +600,7 @@ func (m model) handleUserAction(msg UserActionMsg) (tea.Model, tea.Cmd) {
 			} else {
 				if m.state == StateUserInput {
 					lastMsg := msgs[len(msgs)-1]
-					if content, ok := lastMsg.Content.(*conversation2.ChatMessageContent); ok {
+					if content, ok := lastMsg.Content.(*geppetto_conversation.ChatMessageContent); ok {
 						err := clipboard.WriteAll(content.Text)
 						if err != nil {
 							cmd = func() tea.Msg {
@@ -619,7 +619,7 @@ func (m model) handleUserAction(msg UserActionMsg) (tea.Model, tea.Cmd) {
 				selectedIdx := m.conversation.SelectedIdx()
 				if selectedIdx < len(msgs) && selectedIdx >= 0 {
 					msg_ := msgs[selectedIdx]
-					if content, ok := msg_.Content.(*conversation2.ChatMessageContent); ok {
+					if content, ok := msg_.Content.(*geppetto_conversation.ChatMessageContent); ok {
 						code := markdown.ExtractQuotedBlocks(content.Text, false)
 						err := clipboard.WriteAll(strings.Join(code, "\n"))
 						if err != nil {
@@ -633,8 +633,8 @@ func (m model) handleUserAction(msg UserActionMsg) (tea.Model, tea.Cmd) {
 				if m.state == StateUserInput {
 					text := ""
 					for _, m := range msgs {
-						if content, ok := m.Content.(*conversation2.ChatMessageContent); ok {
-							if content.Role == conversation2.RoleAssistant {
+						if content, ok := m.Content.(*geppetto_conversation.ChatMessageContent); ok {
+							if content.Role == geppetto_conversation.RoleAssistant {
 								text += content.Text + "\n"
 							}
 						}
@@ -657,7 +657,7 @@ func (m model) handleUserAction(msg UserActionMsg) (tea.Model, tea.Cmd) {
 				selectedIdx := m.conversation.SelectedIdx()
 				if selectedIdx < len(msgs) && selectedIdx >= 0 {
 					msg_ := msgs[selectedIdx]
-					if content, ok := msg_.Content.(*conversation2.ChatMessageContent); ok {
+					if content, ok := msg_.Content.(*geppetto_conversation.ChatMessageContent); ok {
 						code := markdown.ExtractQuotedBlocks(content.Text, false)
 						err := clipboard.WriteAll(strings.Join(code, "\n"))
 						if err != nil {
@@ -670,8 +670,8 @@ func (m model) handleUserAction(msg UserActionMsg) (tea.Model, tea.Cmd) {
 			} else {
 				text := ""
 				for _, m := range msgs {
-					if content, ok := m.Content.(*conversation2.ChatMessageContent); ok {
-						if content.Role == conversation2.RoleAssistant {
+					if content, ok := m.Content.(*geppetto_conversation.ChatMessageContent); ok {
+						if content.Role == geppetto_conversation.RoleAssistant {
 							text += content.Text + "\n"
 						}
 					}
