@@ -2,9 +2,10 @@ package chat
 
 import (
 	context2 "context"
-	geppetto_conversation "github.com/go-go-golems/geppetto/pkg/conversation"
 	"os"
 	"strings"
+
+	geppetto_conversation "github.com/go-go-golems/geppetto/pkg/conversation"
 
 	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/help"
@@ -428,26 +429,23 @@ func (m *model) submit() tea.Cmd {
 	m.state = StateStreamCompletion
 	m.updateKeyBindings()
 
-	m.textArea.SetValue("")
 	m.viewport.GotoBottom()
-	cmds := []tea.Cmd{
+
+	return tea.Batch(
 		func() tea.Msg {
 			return refreshMessageMsg{
 				GoToBottom: true,
 			}
 		},
-	}
-	ctx := context2.Background()
-	cmd, err := m.backend.Start(ctx, m.conversationManager.GetConversation())
-	if err != nil {
-		cmds = append(cmds, func() tea.Msg {
-			return errMsg(err)
-		})
-	} else {
-		cmds = append(cmds, cmd)
-	}
-
-	return tea.Batch(cmds...)
+		func() tea.Msg {
+			ctx := context2.Background()
+			cmd, err := m.backend.Start(ctx, m.conversationManager.GetConversation())
+			if err != nil {
+				return errMsg(err)
+			}
+			return cmd()
+		},
+	)
 }
 
 type refreshMessageMsg struct {
