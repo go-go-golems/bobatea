@@ -116,14 +116,37 @@ func (m Model) renderMessage(selected bool, msg *conversation2.Message) string {
 		style = m.style.SelectedMessage
 	}
 	w, _ := style.GetFrameSize()
-	v_ := wrapWords(v, m.width-w-style.GetHorizontalPadding())
+	contentWidth := m.width - w - style.GetHorizontalPadding()
+	v_ := wrapWords(v, contentWidth)
+
+	// Add LLM metadata if available
+	if msg.LLMMessageMetadata != nil {
+		metadataStr := ""
+		if msg.LLMMessageMetadata.Engine != "" {
+			metadataStr += msg.LLMMessageMetadata.Engine
+		}
+		if msg.LLMMessageMetadata.Temperature != 0 {
+			if metadataStr != "" {
+				metadataStr += " "
+			}
+			metadataStr += fmt.Sprintf("t: %.2f", msg.LLMMessageMetadata.Temperature)
+		}
+		if msg.LLMMessageMetadata.Usage != nil {
+			if metadataStr != "" {
+				metadataStr += " "
+			}
+			metadataStr += fmt.Sprintf("in: %d out: %d", msg.LLMMessageMetadata.Usage.InputTokens, msg.LLMMessageMetadata.Usage.OutputTokens)
+		}
+		if metadataStr != "" {
+			v_ += "\n\n" + m.style.MetadataStyle.Width(contentWidth).Render(metadataStr)
+		}
+	}
 
 	v_ = style.
 		Width(m.width - style.GetHorizontalPadding()).
 		Render(v_)
 
 	return v_
-
 }
 
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
@@ -147,6 +170,9 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		msg_.LastUpdate = time.Now()
 		msg_.Metadata["step_metadata"] = msg.StepMetadata
 		msg_.Metadata["event_metadata"] = msg.EventMetadata
+		if msg.EventMetadata != nil {
+			msg_.LLMMessageMetadata = &msg.EventMetadata.LLMMessageMetadata
+		}
 		m.updateCache(msg_)
 
 	case StreamDoneMsg:
@@ -166,6 +192,9 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		msg_.LastUpdate = time.Now()
 		msg_.Metadata["step_metadata"] = msg.StepMetadata
 		msg_.Metadata["event_metadata"] = msg.EventMetadata
+		if msg.EventMetadata != nil {
+			msg_.LLMMessageMetadata = &msg.EventMetadata.LLMMessageMetadata
+		}
 		m.updateCache(msg_)
 
 	case StreamCompletionError:

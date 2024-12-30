@@ -46,3 +46,27 @@ Added a new command to retrieve and display the current status of the chat backe
 - The command sends a GET request to the `/status` endpoint of the HTTP backend
 - Displays status information including current status, number of messages, last message, and last error
 - Updated main.go to include the new command in the CLI options
+
+# Enhanced Message Display with LLM Metadata
+
+Added display of LLM metadata (engine, temperature, token usage) at the bottom of messages in the chat UI to provide more transparency about model usage and performance.
+
+- Added metadata line showing engine name, temperature, and token usage
+- Used dark grey color for metadata to keep it subtle but informative
+- Only displays metadata when LLMMessageMetadata is available
+
+# Refactor LLM Metadata Styling
+
+Improved code organization by moving the LLM metadata styling into the Style struct.
+
+- Extracted metadata styling into Style struct for better maintainability
+- Added MetadataStyle field to centralize style definitions
+- Updated renderMessage to use the new style field
+
+# Improve LLM Metadata Display
+
+Enhanced the visual presentation of LLM metadata in chat messages.
+
+- Added double newline before metadata for better visual separation
+- Right-aligned metadata text for cleaner appearance
+- Fixed width handling to ensure proper alignment within message borders
