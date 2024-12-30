@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/google/uuid"
 	"github.com/muesli/reflow/wordwrap"
+	"github.com/rs/zerolog/log"
 )
 
 type cacheEntry struct {
@@ -144,6 +145,9 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 		textMsg.Text = msg.Completion
 		msg_.LastUpdate = time.Now()
+		msg_.Metadata["step_metadata"] = msg.StepMetadata
+		msg_.Metadata["event_metadata"] = msg.EventMetadata
+		m.updateCache(msg_)
 
 	case StreamDoneMsg:
 		// I don't think there is anything to do here, for now at least
@@ -160,10 +164,14 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		// update with the final text
 		textMsg.Text = msg.Completion
 		msg_.LastUpdate = time.Now()
+		msg_.Metadata["step_metadata"] = msg.StepMetadata
+		msg_.Metadata["event_metadata"] = msg.EventMetadata
+		m.updateCache(msg_)
 
 	case StreamCompletionError:
 		// TODO(manuel, 2024-01-15) Update error view...
 		//cmd = m.setError(msg.Err)
+		log.Error().Err(msg.Err).Msg("StreamCompletionError")
 
 	case StreamStartMsg:
 		metadata := map[string]interface{}{
@@ -171,8 +179,12 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			"parent_id": uuid.UUID(msg.ParentID).String(),
 		}
 		if msg.StepMetadata != nil {
-			metadata["step"] = msg.StepMetadata.ToMap()
+			metadata["step_metadata"] = msg.StepMetadata
 		}
+		if msg.EventMetadata != (chat.EventMetadata{}) {
+			metadata["event_metadata"] = msg.EventMetadata
+		}
+
 		msg_ := conversation2.NewChatMessage(
 			conversation2.RoleAssistant, "",
 			conversation2.WithID(msg.ID),
