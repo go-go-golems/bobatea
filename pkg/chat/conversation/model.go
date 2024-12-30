@@ -181,7 +181,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		if msg.StepMetadata != nil {
 			metadata["step_metadata"] = msg.StepMetadata
 		}
-		if msg.EventMetadata != (chat.EventMetadata{}) {
+		if msg.EventMetadata != nil {
 			metadata["event_metadata"] = msg.EventMetadata
 		}
 
@@ -259,7 +259,7 @@ func (m Model) ViewAndSelectedPosition() (string, MessagePosition) {
 type StreamMetadata struct {
 	ID            conversation2.NodeID `json:"id" yaml:"id"`
 	ParentID      conversation2.NodeID `json:"parent_id" yaml:"parent_id"`
-	EventMetadata chat.EventMetadata   `json:"metadata" yaml:"metadata"`
+	EventMetadata *chat.EventMetadata  `json:"metadata" yaml:"metadata"`
 	StepMetadata  *steps.StepMetadata  `json:"step_metadata,omitempty"`
 }
 
