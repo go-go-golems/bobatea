@@ -1,6 +1,8 @@
 module github.com/go-go-golems/bobatea
 
-go 1.21
+go 1.23
+
+toolchain go1.23.3
 
 require (
 	github.com/atotto/clipboard v0.1.4
@@ -8,8 +10,8 @@ require (
 	github.com/charmbracelet/bubbletea v1.1.1
 	github.com/charmbracelet/lipgloss v0.13.0
 	github.com/dustin/go-humanize v1.0.1
-	github.com/go-go-golems/geppetto v0.4.22
-	github.com/go-go-golems/glazed v0.5.19
+	github.com/go-go-golems/geppetto v0.4.26
+	github.com/go-go-golems/glazed v0.5.23
 	github.com/google/uuid v1.6.0
 	github.com/lucasb-eyer/go-colorful v1.2.0
 	github.com/mattn/go-runewidth v0.0.16
@@ -23,15 +25,16 @@ require (
 )
 
 require (
-	github.com/ThreeDotsLabs/watermill v1.3.5 // indirect
+	github.com/ThreeDotsLabs/watermill v1.3.7 // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/buger/jsonparser v1.1.1 // indirect
+	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/charmbracelet/x/ansi v0.2.3 // indirect
 	github.com/charmbracelet/x/term v0.2.0 // indirect
 	github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/invopop/jsonschema v0.12.0 // indirect
-	github.com/kr/text v0.2.0 // indirect
+	github.com/kr/pretty v0.3.1 // indirect
 	github.com/lithammer/shortuuid/v3 v3.0.7 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
