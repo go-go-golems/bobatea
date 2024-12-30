@@ -2,14 +2,18 @@ package conversation
 
 import (
 	"fmt"
-	conversation2 "github.com/go-go-golems/geppetto/pkg/conversation"
 	"strings"
 	"time"
+
+	conversation2 "github.com/go-go-golems/geppetto/pkg/conversation"
+	"github.com/go-go-golems/geppetto/pkg/steps"
+	"github.com/go-go-golems/geppetto/pkg/steps/ai/chat"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/google/uuid"
 	"github.com/muesli/reflow/wordwrap"
+	"github.com/rs/zerolog/log"
 )
 
 type cacheEntry struct {
@@ -112,14 +116,37 @@ func (m Model) renderMessage(selected bool, msg *conversation2.Message) string {
 		style = m.style.SelectedMessage
 	}
 	w, _ := style.GetFrameSize()
-	v_ := wrapWords(v, m.width-w-style.GetHorizontalPadding())
+	contentWidth := m.width - w - style.GetHorizontalPadding()
+	v_ := wrapWords(v, contentWidth)
+
+	// Add LLM metadata if available
+	if msg.LLMMessageMetadata != nil {
+		metadataStr := ""
+		if msg.LLMMessageMetadata.Engine != "" {
+			metadataStr += msg.LLMMessageMetadata.Engine
+		}
+		if msg.LLMMessageMetadata.Temperature != 0 {
+			if metadataStr != "" {
+				metadataStr += " "
+			}
+			metadataStr += fmt.Sprintf("t: %.2f", msg.LLMMessageMetadata.Temperature)
+		}
+		if msg.LLMMessageMetadata.Usage != nil {
+			if metadataStr != "" {
+				metadataStr += " "
+			}
+			metadataStr += fmt.Sprintf("in: %d out: %d", msg.LLMMessageMetadata.Usage.InputTokens, msg.LLMMessageMetadata.Usage.OutputTokens)
+		}
+		if metadataStr != "" {
+			v_ += "\n\n" + m.style.MetadataStyle.Width(contentWidth).Render(metadataStr)
+		}
+	}
 
 	v_ = style.
 		Width(m.width - style.GetHorizontalPadding()).
 		Render(v_)
 
 	return v_
-
 }
 
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
@@ -141,6 +168,12 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 		textMsg.Text = msg.Completion
 		msg_.LastUpdate = time.Now()
+		msg_.Metadata["step_metadata"] = msg.StepMetadata
+		msg_.Metadata["event_metadata"] = msg.EventMetadata
+		if msg.EventMetadata != nil {
+			msg_.LLMMessageMetadata = &msg.EventMetadata.LLMMessageMetadata
+		}
+		m.updateCache(msg_)
 
 	case StreamDoneMsg:
 		// I don't think there is anything to do here, for now at least
@@ -157,19 +190,30 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		// update with the final text
 		textMsg.Text = msg.Completion
 		msg_.LastUpdate = time.Now()
+		msg_.Metadata["step_metadata"] = msg.StepMetadata
+		msg_.Metadata["event_metadata"] = msg.EventMetadata
+		if msg.EventMetadata != nil {
+			msg_.LLMMessageMetadata = &msg.EventMetadata.LLMMessageMetadata
+		}
+		m.updateCache(msg_)
 
 	case StreamCompletionError:
 		// TODO(manuel, 2024-01-15) Update error view...
 		//cmd = m.setError(msg.Err)
+		log.Error().Err(msg.Err).Msg("StreamCompletionError")
 
 	case StreamStartMsg:
 		metadata := map[string]interface{}{
 			"id":        uuid.UUID(msg.ID).String(),
 			"parent_id": uuid.UUID(msg.ParentID).String(),
 		}
-		if msg.Step != nil {
-			metadata["step"] = msg.Step.ToMap()
+		if msg.StepMetadata != nil {
+			metadata["step_metadata"] = msg.StepMetadata
 		}
+		if msg.EventMetadata != nil {
+			metadata["event_metadata"] = msg.EventMetadata
+		}
+
 		msg_ := conversation2.NewChatMessage(
 			conversation2.RoleAssistant, "",
 			conversation2.WithID(msg.ID),
@@ -241,39 +285,11 @@ func (m Model) ViewAndSelectedPosition() (string, MessagePosition) {
 	}
 }
 
-// StepMetadata represents metadata about the step that issues the streaming messages.
-// There is not a real definition of what a streaming message right now, this will need to be
-// cleaned up as the agent framework is built out.
-// NOTE(manuel, 2024-01-17) This is a copy of the StepMetadata in geppetto, and we might want to extract this out into a separate steps package.
-type StepMetadata struct {
-	StepID     uuid.UUID `json:"step_id"`
-	Type       string    `json:"type"`
-	InputType  string    `json:"input_type"`
-	OutputType string    `json:"output_type"`
-
-	Metadata map[string]interface{} `json:"meta"`
-}
-
-func (sm *StepMetadata) ToMap() map[string]interface{} {
-	ret := map[string]interface{}{
-		"step_id":     sm.StepID,
-		"type":        sm.Type,
-		"input_type":  sm.InputType,
-		"output_type": sm.OutputType,
-	}
-
-	for k, v := range sm.Metadata {
-		ret[k] = v
-	}
-
-	return ret
-}
-
 type StreamMetadata struct {
-	ID       conversation2.NodeID   `json:"id" yaml:"id"`
-	ParentID conversation2.NodeID   `json:"parent_id" yaml:"parent_id"`
-	Metadata map[string]interface{} `json:"metadata" yaml:"metadata"`
-	Step     *StepMetadata          `json:"step_metadata,omitempty"`
+	ID            conversation2.NodeID `json:"id" yaml:"id"`
+	ParentID      conversation2.NodeID `json:"parent_id" yaml:"parent_id"`
+	EventMetadata *chat.EventMetadata  `json:"metadata" yaml:"metadata"`
+	StepMetadata  *steps.StepMetadata  `json:"step_metadata,omitempty"`
 }
 
 // StreamStartMsg is sent by the backend when a streaming operation begins.

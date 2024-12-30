@@ -6,6 +6,7 @@ type Style struct {
 	UnselectedMessage lipgloss.Style
 	SelectedMessage   lipgloss.Style
 	FocusedMessage    lipgloss.Style
+	MetadataStyle     lipgloss.Style
 }
 
 type BorderColors struct {
@@ -46,5 +47,8 @@ func DefaultStyles() *Style {
 				Light: lightModeColors.Focused,
 				Dark:  darkModeColors.Focused,
 			}),
+		MetadataStyle: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("240")).
+			Align(lipgloss.Right),
 	}
 }
