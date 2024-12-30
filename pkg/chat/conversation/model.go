@@ -2,9 +2,12 @@ package conversation
 
 import (
 	"fmt"
-	conversation2 "github.com/go-go-golems/geppetto/pkg/conversation"
 	"strings"
 	"time"
+
+	conversation2 "github.com/go-go-golems/geppetto/pkg/conversation"
+	"github.com/go-go-golems/geppetto/pkg/steps"
+	"github.com/go-go-golems/geppetto/pkg/steps/ai/chat"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -167,8 +170,8 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			"id":        uuid.UUID(msg.ID).String(),
 			"parent_id": uuid.UUID(msg.ParentID).String(),
 		}
-		if msg.Step != nil {
-			metadata["step"] = msg.Step.ToMap()
+		if msg.StepMetadata != nil {
+			metadata["step"] = msg.StepMetadata.ToMap()
 		}
 		msg_ := conversation2.NewChatMessage(
 			conversation2.RoleAssistant, "",
@@ -241,39 +244,11 @@ func (m Model) ViewAndSelectedPosition() (string, MessagePosition) {
 	}
 }
 
-// StepMetadata represents metadata about the step that issues the streaming messages.
-// There is not a real definition of what a streaming message right now, this will need to be
-// cleaned up as the agent framework is built out.
-// NOTE(manuel, 2024-01-17) This is a copy of the StepMetadata in geppetto, and we might want to extract this out into a separate steps package.
-type StepMetadata struct {
-	StepID     uuid.UUID `json:"step_id"`
-	Type       string    `json:"type"`
-	InputType  string    `json:"input_type"`
-	OutputType string    `json:"output_type"`
-
-	Metadata map[string]interface{} `json:"meta"`
-}
-
-func (sm *StepMetadata) ToMap() map[string]interface{} {
-	ret := map[string]interface{}{
-		"step_id":     sm.StepID,
-		"type":        sm.Type,
-		"input_type":  sm.InputType,
-		"output_type": sm.OutputType,
-	}
-
-	for k, v := range sm.Metadata {
-		ret[k] = v
-	}
-
-	return ret
-}
-
 type StreamMetadata struct {
-	ID       conversation2.NodeID   `json:"id" yaml:"id"`
-	ParentID conversation2.NodeID   `json:"parent_id" yaml:"parent_id"`
-	Metadata map[string]interface{} `json:"metadata" yaml:"metadata"`
-	Step     *StepMetadata          `json:"step_metadata,omitempty"`
+	ID            conversation2.NodeID `json:"id" yaml:"id"`
+	ParentID      conversation2.NodeID `json:"parent_id" yaml:"parent_id"`
+	EventMetadata chat.EventMetadata   `json:"metadata" yaml:"metadata"`
+	StepMetadata  *steps.StepMetadata  `json:"step_metadata,omitempty"`
 }
 
 // StreamStartMsg is sent by the backend when a streaming operation begins.
