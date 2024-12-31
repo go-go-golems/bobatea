@@ -356,7 +356,7 @@ func (m *model) recomputeSize() {
 }
 
 func (m model) headerView() string {
-	return m.title
+	return ""
 }
 
 func (m model) textAreaView() string {
@@ -401,7 +401,7 @@ func (m model) View() string {
 
 	ret := ""
 	if headerView != "" {
-		ret = headerView + "\n" + helpView
+		ret = headerView
 	}
 
 	switch m.state {
