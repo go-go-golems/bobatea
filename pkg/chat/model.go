@@ -151,6 +151,10 @@ func (m model) Init() tea.Cmd {
 
 	m.updateKeyBindings()
 
+	cmds = append(cmds, func() tea.Msg {
+		return StartBackendMsg{}
+	})
+
 	return tea.Batch(cmds...)
 }
 
@@ -270,6 +274,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case filepicker.CancelFilePickerMsg:
 		m.state = StateUserInput
 		m.updateKeyBindings()
+
+	case StartBackendMsg:
+		return m, m.startBackend()
 
 	case UserActionMsg:
 		return m.handleUserAction(msg_)
@@ -415,17 +422,7 @@ func (m model) View() string {
 	return ret
 }
 
-func (m *model) submit() tea.Cmd {
-	if !m.backend.IsFinished() {
-		return func() tea.Msg {
-			return errMsg(errors.New("already streaming"))
-		}
-	}
-
-	m.conversationManager.AppendMessages(
-		geppetto_conversation.NewChatMessage(geppetto_conversation.RoleUser, m.textArea.Value()))
-	m.textArea.SetValue("")
-
+func (m *model) startBackend() tea.Cmd {
 	m.state = StateStreamCompletion
 	m.updateKeyBindings()
 
@@ -446,6 +443,20 @@ func (m *model) submit() tea.Cmd {
 			return cmd()
 		},
 	)
+}
+
+func (m *model) submit() tea.Cmd {
+	if !m.backend.IsFinished() {
+		return func() tea.Msg {
+			return errMsg(errors.New("already streaming"))
+		}
+	}
+
+	m.conversationManager.AppendMessages(
+		geppetto_conversation.NewChatMessage(geppetto_conversation.RoleUser, m.textArea.Value()))
+	m.textArea.SetValue("")
+
+	return m.startBackend()
 }
 
 type refreshMessageMsg struct {

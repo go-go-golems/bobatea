@@ -24,6 +24,7 @@ type FocusMessageMsg struct{}
 type SelectNextMessageMsg struct{}
 type SelectPrevMessageMsg struct{}
 type SubmitMessageMsg struct{}
+type StartBackendMsg struct{}
 type CopyToClipboardMsg struct{}
 type CopyLastResponseToClipboardMsg struct{}
 type CopyLastSourceBlocksToClipboardMsg struct{}
