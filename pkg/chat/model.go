@@ -48,6 +48,7 @@ type Status struct {
 
 type model struct {
 	conversationManager geppetto_conversation.Manager
+	autoStartBackend    bool
 
 	viewport       viewport.Model
 	scrollToBottom bool
@@ -90,6 +91,12 @@ func WithTitle(title string) ModelOption {
 func WithStatus(status *Status) ModelOption {
 	return func(m *model) {
 		m.status = status
+	}
+}
+
+func WithAutoStartBackend(autoStartBackend bool) ModelOption {
+	return func(m *model) {
+		m.autoStartBackend = autoStartBackend
 	}
 }
 
@@ -151,9 +158,11 @@ func (m model) Init() tea.Cmd {
 
 	m.updateKeyBindings()
 
-	cmds = append(cmds, func() tea.Msg {
-		return StartBackendMsg{}
-	})
+	if m.autoStartBackend {
+		cmds = append(cmds, func() tea.Msg {
+			return StartBackendMsg{}
+		})
+	}
 
 	return tea.Batch(cmds...)
 }
