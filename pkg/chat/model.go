@@ -48,6 +48,7 @@ type Status struct {
 
 type model struct {
 	conversationManager geppetto_conversation.Manager
+	autoStartBackend    bool
 
 	viewport       viewport.Model
 	scrollToBottom bool
@@ -90,6 +91,12 @@ func WithTitle(title string) ModelOption {
 func WithStatus(status *Status) ModelOption {
 	return func(m *model) {
 		m.status = status
+	}
+}
+
+func WithAutoStartBackend(autoStartBackend bool) ModelOption {
+	return func(m *model) {
+		m.autoStartBackend = autoStartBackend
 	}
 }
 
@@ -150,6 +157,12 @@ func (m model) Init() tea.Cmd {
 	m.viewport.GotoBottom()
 
 	m.updateKeyBindings()
+
+	if m.autoStartBackend {
+		cmds = append(cmds, func() tea.Msg {
+			return StartBackendMsg{}
+		})
+	}
 
 	return tea.Batch(cmds...)
 }
@@ -271,6 +284,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.state = StateUserInput
 		m.updateKeyBindings()
 
+	case StartBackendMsg:
+		return m, m.startBackend()
+
 	case UserActionMsg:
 		return m.handleUserAction(msg_)
 
@@ -356,7 +372,7 @@ func (m *model) recomputeSize() {
 }
 
 func (m model) headerView() string {
-	return m.title
+	return ""
 }
 
 func (m model) textAreaView() string {
@@ -401,7 +417,7 @@ func (m model) View() string {
 
 	ret := ""
 	if headerView != "" {
-		ret = headerView + "\n" + helpView
+		ret = headerView
 	}
 
 	switch m.state {
@@ -415,17 +431,7 @@ func (m model) View() string {
 	return ret
 }
 
-func (m *model) submit() tea.Cmd {
-	if !m.backend.IsFinished() {
-		return func() tea.Msg {
-			return errMsg(errors.New("already streaming"))
-		}
-	}
-
-	m.conversationManager.AppendMessages(
-		geppetto_conversation.NewChatMessage(geppetto_conversation.RoleUser, m.textArea.Value()))
-	m.textArea.SetValue("")
-
+func (m *model) startBackend() tea.Cmd {
 	m.state = StateStreamCompletion
 	m.updateKeyBindings()
 
@@ -446,6 +452,20 @@ func (m *model) submit() tea.Cmd {
 			return cmd()
 		},
 	)
+}
+
+func (m *model) submit() tea.Cmd {
+	if !m.backend.IsFinished() {
+		return func() tea.Msg {
+			return errMsg(errors.New("already streaming"))
+		}
+	}
+
+	m.conversationManager.AppendMessages(
+		geppetto_conversation.NewChatMessage(geppetto_conversation.RoleUser, m.textArea.Value()))
+	m.textArea.SetValue("")
+
+	return m.startBackend()
 }
 
 type refreshMessageMsg struct {
