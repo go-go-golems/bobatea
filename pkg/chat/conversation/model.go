@@ -125,11 +125,11 @@ func (m Model) renderMessage(selected bool, msg *conversation2.Message) string {
 		if msg.LLMMessageMetadata.Engine != "" {
 			metadataStr += msg.LLMMessageMetadata.Engine
 		}
-		if msg.LLMMessageMetadata.Temperature != 0 {
+		if msg.LLMMessageMetadata.Temperature != nil {
 			if metadataStr != "" {
 				metadataStr += " "
 			}
-			metadataStr += fmt.Sprintf("t: %.2f", msg.LLMMessageMetadata.Temperature)
+			metadataStr += fmt.Sprintf("t: %.2f", *msg.LLMMessageMetadata.Temperature)
 		}
 		if msg.LLMMessageMetadata.Usage != nil {
 			if metadataStr != "" {
