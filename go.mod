@@ -10,7 +10,7 @@ require (
 	github.com/charmbracelet/bubbletea v1.2.4
 	github.com/charmbracelet/lipgloss v1.0.0
 	github.com/dustin/go-humanize v1.0.1
-	github.com/go-go-golems/geppetto v0.4.44
+	github.com/go-go-golems/geppetto v0.4.45
 	github.com/go-go-golems/glazed v0.5.39
 	github.com/google/uuid v1.6.0
 	github.com/lucasb-eyer/go-colorful v1.2.0
@@ -25,7 +25,7 @@ require (
 )
 
 require (
-	github.com/ThreeDotsLabs/watermill v1.3.7 // indirect
+	github.com/ThreeDotsLabs/watermill v1.4.6 // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/buger/jsonparser v1.1.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect

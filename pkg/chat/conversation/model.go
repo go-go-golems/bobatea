@@ -2,15 +2,14 @@ package conversation
 
 import (
 	"fmt"
+	"github.com/go-go-golems/geppetto/pkg/events"
 	"strings"
 	"time"
 
-	conversation2 "github.com/go-go-golems/geppetto/pkg/conversation"
-	"github.com/go-go-golems/geppetto/pkg/steps"
-	"github.com/go-go-golems/geppetto/pkg/steps/ai/chat"
-
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	conversation2 "github.com/go-go-golems/geppetto/pkg/conversation"
+	"github.com/go-go-golems/geppetto/pkg/steps"
 	"github.com/google/uuid"
 	"github.com/muesli/reflow/wordwrap"
 	"github.com/rs/zerolog/log"
@@ -286,10 +285,10 @@ func (m Model) ViewAndSelectedPosition() (string, MessagePosition) {
 }
 
 type StreamMetadata struct {
-	ID            conversation2.NodeID `json:"id" yaml:"id"`
-	ParentID      conversation2.NodeID `json:"parent_id" yaml:"parent_id"`
-	EventMetadata *chat.EventMetadata  `json:"metadata" yaml:"metadata"`
-	StepMetadata  *steps.StepMetadata  `json:"step_metadata,omitempty"`
+	ID            conversation2.NodeID  `json:"id" yaml:"id"`
+	ParentID      conversation2.NodeID  `json:"parent_id" yaml:"parent_id"`
+	EventMetadata *events.EventMetadata `json:"metadata" yaml:"metadata"`
+	StepMetadata  *steps.StepMetadata   `json:"step_metadata,omitempty"`
 }
 
 // StreamStartMsg is sent by the backend when a streaming operation begins.
