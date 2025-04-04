@@ -41,8 +41,8 @@ github.com/dustin/go-humanize v1.0.1 h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkp
 github.com/dustin/go-humanize v1.0.1/go.mod h1:Mu1zIs6XwVuF/gI1OepvI0qD18qycQx+mFykh5fBlto=
 github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f h1:Y/CXytFA4m6baUTXGLOoWe4PQhGxaX0KpnayAqC48p4=
 github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f/go.mod h1:vw97MGsxSvLiUE2X8qFplwetxpGLQrlU1Q9AUEIzCaM=
-github.com/go-go-golems/geppetto v0.4.45 h1:etlAfPwLtUaAvA0TSRiBv33VH7w/lMj+tUK81BlqR5k=
-github.com/go-go-golems/geppetto v0.4.45/go.mod h1:UM7EHQ9MzWBFq85BfzWu/nL3OInN2Cj7cCWL018EDbQ=
+github.com/go-go-golems/geppetto v0.4.46 h1:okmBUKGLrI71JrIKEjTO6lfM4MdnXlHLYy6Ar55pcEY=
+github.com/go-go-golems/geppetto v0.4.46/go.mod h1:/y+Md1wuCpwOJ7wDt6AV8vBd8tbepfpBCBIavEeAhaU=
 github.com/go-go-golems/glazed v0.5.40 h1:IE2XXsHrPhFfImKQPTzsuPEsMWK20voorka1ntPMkkw=
 github.com/go-go-golems/glazed v0.5.40/go.mod h1:X3lRZF4kR950+UAuLEQqxeBrHVdJKkBOJfVKsOJpom8=
 github.com/godbus/dbus/v5 v5.0.4/go.mod h1:xhWf0FNVPg57R7Z0UbKHbJfkEywrmjJnf7w5xrFpKfA=

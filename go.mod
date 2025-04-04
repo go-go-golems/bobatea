@@ -8,7 +8,7 @@ require (
 	github.com/charmbracelet/bubbletea v1.3.4
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/dustin/go-humanize v1.0.1
-	github.com/go-go-golems/geppetto v0.4.45
+	github.com/go-go-golems/geppetto v0.4.46
 	github.com/go-go-golems/glazed v0.5.40
 	github.com/google/uuid v1.6.0
 	github.com/lucasb-eyer/go-colorful v1.2.0
