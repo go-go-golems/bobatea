@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+
 	"github.com/charmbracelet/bubbletea"
 	"github.com/go-go-golems/bobatea/pkg/textarea"
 )
@@ -30,12 +31,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		switch {
-		case msg.Type == tea.KeyEsc:
+		//exhaustive:ignore
+		switch msg.Type {
+		case tea.KeyEsc:
 			if m.ta.Focused() {
 				m.ta.Blur()
 			}
-		case msg.Type == tea.KeyCtrlC:
+		case tea.KeyCtrlC:
 			return m, tea.Quit
 		default:
 			if !m.ta.Focused() {

@@ -41,7 +41,7 @@ func WithLogger(logger zerolog.Logger) UserBackendOption {
 
 func WithLogFile(path string) UserBackendOption {
 	return func(ub *UserBackend) {
-		logFile, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+		logFile, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 		if err != nil {
 			panic(err)
 		}

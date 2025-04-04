@@ -1,26 +1,27 @@
 package textarea
 
-import "github.com/charmbracelet/bubbles/key"
-
-// This is a clone of the textarea package from charmbracelet/bubbles.
-// It includes the memoization workaround to fix performance issues,
-// see:
-// - https://github.com/charmbracelet/bubbles/issues/301
-// - https://github.com/charmbracelet/bubbletea/issues/831
-
 import (
 	"crypto/sha256"
 	"fmt"
-	"github.com/go-go-golems/bobatea/pkg/textarea/memoization"
 	"strings"
 	"unicode"
 
 	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/cursor"
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/runeutil"
 	"github.com/charmbracelet/bubbles/viewport"
+	"github.com/go-go-golems/bobatea/pkg/textarea/memoization"
+
+	// This is a clone of the textarea package from charmbracelet/bubbles.
+	// It includes the memoization workaround to fix performance issues,
+	// see:
+	// - https://github.com/charmbracelet/bubbles/issues/301
+	// - https://github.com/charmbracelet/bubbletea/issues/831
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+
 	rw "github.com/mattn/go-runewidth"
 )
 
@@ -741,15 +742,12 @@ func (m *Model) wordLeft() {
 // cursor blink should be reset. If the input is masked, move input to the end
 // so as not to reveal word breaks in the masked input.
 func (m *Model) wordRight() {
-	m.doWordRight(func(int, int) { /* nothing */ })
+	m.doWordRight(func(charIdx int, pos int) { /* nothing */ })
 }
 
 func (m *Model) doWordRight(fn func(charIdx int, pos int)) {
 	// Skip spaces forward.
-	for {
-		if m.col < len(m.value[m.row]) && !unicode.IsSpace(m.value[m.row][m.col]) {
-			break
-		}
+	for m.col < len(m.value[m.row]) && unicode.IsSpace(m.value[m.row][m.col]) {
 		if m.row == len(m.value)-1 && m.col == len(m.value[m.row]) {
 			// End of text.
 			break
@@ -758,10 +756,7 @@ func (m *Model) doWordRight(fn func(charIdx int, pos int)) {
 	}
 
 	charIdx := 0
-	for m.col < len(m.value[m.row]) {
-		if unicode.IsSpace(m.value[m.row][m.col]) {
-			break
-		}
+	for m.col < len(m.value[m.row]) && !unicode.IsSpace(m.value[m.row][m.col]) {
 		fn(charIdx, m.col)
 		m.SetCursor(m.col + 1)
 		charIdx++

@@ -2,9 +2,10 @@ package main
 
 import (
 	"fmt"
+
 	"github.com/charmbracelet/bubbletea"
+	"github.com/go-go-golems/bobatea/pkg/filepicker"
 )
-import "github.com/go-go-golems/bobatea/pkg/filepicker"
 
 type Model struct {
 	fp           filepicker.Model
@@ -40,8 +41,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 
 	case tea.KeyMsg:
-		switch {
-		case msg.Type == tea.KeyCtrlC:
+		//exhaustive:ignore
+		switch msg.Type {
+		case tea.KeyCtrlC:
 			return m, tea.Quit
 		default:
 			m.fp, cmd = m.fp.Update(msg)

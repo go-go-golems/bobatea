@@ -2,9 +2,11 @@ package main
 
 import (
 	"fmt"
-	"github.com/go-go-golems/geppetto/pkg/conversation"
 	"net/http"
 	"os"
+	"time"
+
+	"github.com/go-go-golems/geppetto/pkg/conversation"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/go-go-golems/bobatea/pkg/chat"
@@ -87,9 +89,16 @@ func runChat(backendFactory func() chat.Backend) {
 		httpBackend.SetRouter(r.PathPrefix("/backend").Subrouter())
 	}
 
-	// Start the HTTP server
+	// Start the HTTP server with timeouts
 	go func() {
-		if err := http.ListenAndServe(httpAddr, r); err != nil {
+		server := &http.Server{
+			Addr:         httpAddr,
+			Handler:      r,
+			ReadTimeout:  10 * time.Second,
+			WriteTimeout: 10 * time.Second,
+			IdleTimeout:  120 * time.Second,
+		}
+		if err := server.ListenAndServe(); err != nil {
 			fmt.Printf("Error running HTTP server: %v\n", err)
 			os.Exit(1)
 		}

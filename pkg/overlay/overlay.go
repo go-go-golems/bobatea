@@ -1,18 +1,18 @@
 package overlay
 
-import "strings"
-
-// From https://github.com/mrusme/neonmodem/blob/master/ui/helpers/overlay.go and
-// https://github.com/charmbracelet/lipgloss/pull/102
-
 import (
 	"bytes"
+	"strings"
+
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-runewidth"
 	"github.com/muesli/ansi"
 	"github.com/muesli/reflow/truncate"
 	"github.com/muesli/termenv"
 )
+
+// From https://github.com/mrusme/neonmodem/blob/master/ui/helpers/overlay.go and
+// https://github.com/charmbracelet/lipgloss/pull/102
 
 // Most of this code is borrowed from
 // https://github.com/charmbracelet/lipgloss/pull/102
@@ -49,7 +49,7 @@ func PlaceOverlay(
 	fgHeight := len(fgLines)
 
 	if shadow {
-		var shadowbg string = ""
+		var shadowbg = ""
 		shadowchar := lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#333333")).
 			Render("░")

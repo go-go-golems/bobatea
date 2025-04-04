@@ -3,11 +3,12 @@ package main
 import (
 	"context"
 	"encoding/json"
-	conversation2 "github.com/go-go-golems/geppetto/pkg/conversation"
 	"io"
 	"net/http"
 	"os"
 	"sync"
+
+	conversation2 "github.com/go-go-golems/geppetto/pkg/conversation"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/go-go-golems/bobatea/pkg/chat"
@@ -41,7 +42,7 @@ func WithLogger(logger zerolog.Logger) HTTPBackendOption {
 
 func WithLogFile(path string) HTTPBackendOption {
 	return func(hb *HTTPBackend) {
-		logFile, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+		logFile, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 		if err != nil {
 			panic(err)
 		}

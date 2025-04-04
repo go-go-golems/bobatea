@@ -409,7 +409,13 @@ func (m Model) View() string {
 		var symlinkPath string
 		info, _ := f.Info()
 		isSymlink := info.Mode()&os.ModeSymlink != 0
-		size := humanize.Bytes(uint64(info.Size()))
+		var size string
+		fileSize := info.Size()
+		if fileSize < 0 {
+			size = humanize.Bytes(0)
+		} else {
+			size = humanize.Bytes(uint64(fileSize))
+		}
 		name := f.Name()
 
 		if isSymlink {
