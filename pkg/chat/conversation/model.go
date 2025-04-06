@@ -2,11 +2,13 @@ package conversation
 
 import (
 	"fmt"
-	"github.com/go-go-golems/geppetto/pkg/events"
 	"strings"
 	"time"
 
+	"github.com/go-go-golems/geppetto/pkg/events"
+
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 	conversation2 "github.com/go-go-golems/geppetto/pkg/conversation"
 	"github.com/go-go-golems/geppetto/pkg/steps"
@@ -23,10 +25,11 @@ type cacheEntry struct {
 }
 
 type Model struct {
-	manager conversation2.Manager
-	style   *Style
-	active  bool
-	width   int
+	manager  conversation2.Manager
+	style    *Style
+	active   bool
+	width    int
+	renderer *glamour.TermRenderer
 
 	cache map[conversation2.NodeID]cacheEntry
 
@@ -35,11 +38,19 @@ type Model struct {
 }
 
 func NewModel(manager conversation2.Manager) Model {
+	renderer, err := glamour.NewTermRenderer(
+		glamour.WithAutoStyle(),
+	)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to create initial markdown renderer")
+	}
+
 	return Model{
 		manager:    manager,
 		style:      DefaultStyles(),
 		cache:      make(map[conversation2.NodeID]cacheEntry),
 		selectedID: conversation2.NullNode,
+		renderer:   renderer,
 	}
 }
 
@@ -82,9 +93,29 @@ func (m *Model) SetActive(active bool) {
 }
 
 func (m *Model) SetWidth(width int) {
+	if m.width == width {
+		return
+	}
 	m.width = width
 
+	renderer, err := glamour.NewTermRenderer(
+		glamour.WithAutoStyle(),
+		glamour.WithWordWrap(m.getRendererContentWidth()),
+	)
+	if err != nil {
+		log.Error().Err(err).Int("width", m.width).Msg("Failed to recreate markdown renderer on SetWidth")
+		m.renderer = nil
+	} else {
+		m.renderer = renderer
+	}
+
 	m.cache = make(map[conversation2.NodeID]cacheEntry)
+}
+
+func (m Model) getRendererContentWidth() int {
+	style := m.style.UnselectedMessage
+	w, _ := style.GetFrameSize()
+	return m.width - w - style.GetHorizontalPadding()
 }
 
 func (m *Model) SelectedIdx() int {
@@ -116,9 +147,21 @@ func (m Model) renderMessage(selected bool, msg *conversation2.Message) string {
 	}
 	w, _ := style.GetFrameSize()
 	contentWidth := m.width - w - style.GetHorizontalPadding()
-	v_ := wrapWords(v, contentWidth)
 
-	// Add LLM metadata if available
+	var v_ string
+	if m.renderer == nil {
+		log.Warn().Msg("Markdown renderer is nil, falling back to basic wrapping")
+		v_ = wrapWords(v, contentWidth)
+	} else {
+		rendered, err := m.renderer.Render(v)
+		if err != nil {
+			log.Error().Err(err).Msg("Failed to render markdown")
+			v_ = wrapWords(v, contentWidth)
+		} else {
+			v_ = strings.TrimSpace(rendered)
+		}
+	}
+
 	if msg.LLMMessageMetadata != nil {
 		metadataStr := ""
 		if msg.LLMMessageMetadata.Engine != "" {
@@ -151,12 +194,9 @@ func (m Model) renderMessage(selected bool, msg *conversation2.Message) string {
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	var cmd tea.Cmd
 	switch msg := msg.(type) {
-	// handle chat streaming messages
 	case StreamCompletionMsg:
-		// update the respective message's text content with the new completion
 		msg_, ok := m.manager.GetMessage(msg.ID)
 		if !ok {
-			// TODO not sure if we need to handle the error here, or do some warning?
 			return m, nil
 		}
 
@@ -175,7 +215,6 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		m.updateCache(msg_)
 
 	case StreamDoneMsg:
-		// I don't think there is anything to do here, for now at least
 		msg_, ok := m.manager.GetMessage(msg.ID)
 		if !ok {
 			return m, nil
@@ -186,7 +225,6 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			return m, nil
 		}
 
-		// update with the final text
 		textMsg.Text = msg.Completion
 		msg_.LastUpdate = time.Now()
 		msg_.Metadata["step_metadata"] = msg.StepMetadata
@@ -197,8 +235,6 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		m.updateCache(msg_)
 
 	case StreamCompletionError:
-		// TODO(manuel, 2024-01-15) Update error view...
-		//cmd = m.setError(msg.Err)
 		log.Error().Err(msg.Err).Msg("StreamCompletionError")
 
 	case StreamStartMsg:
@@ -223,9 +259,6 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		m.updateCache(msg_)
 
 	case StreamStatusMsg:
-	// TODO(manuel, 2024-01-15) Implement message status view
-
-	//TODO(manuel, 2024-01-15) implement keyboard navigation and copy paste and all that
 
 	default:
 	}
@@ -291,57 +324,26 @@ type StreamMetadata struct {
 	StepMetadata  *steps.StepMetadata   `json:"step_metadata,omitempty"`
 }
 
-// StreamStartMsg is sent by the backend when a streaming operation begins.
-// The UI uses this message to append a new message to the conversation,
-// indicating that the assistant has started processing. The conversation
-// manager is responsible for adding this message to the conversation tree.
 type StreamStartMsg struct {
 	StreamMetadata
 }
 
-// StreamStatusMsg is sent by the backend to provide status updates during
-// a streaming operation. It includes the current text of the stream along
-// with the stream metadata.
-//
-// The UI typically does not need to update the
-// conversation view in response to this message, but it could be used to
-// show a loading indicator or similar temporary status.
 type StreamStatusMsg struct {
 	StreamMetadata
 	Text string
 }
 
-// StreamCompletionMsg is sent by the backend when new data, such as a message
-// completion, is available.
-//
-// The UI uses this message to update the text content
-// of the respective message in the conversation. The conversation manager
-// updates the message content and the last update timestamp.
 type StreamCompletionMsg struct {
 	StreamMetadata
-	// Delta is the delta that was added to the message
-	Delta string
-	// Completion is the full completion text
+	Delta      string
 	Completion string
 }
 
-// StreamDoneMsg is sent by the backend to signal the successful completion
-// of the streaming operation.
-//
-// The UI uses this message to finalize the content of the
-// message in the conversation. The conversation manager updates the message
-// content and the last update timestamp to reflect the final text.
 type StreamDoneMsg struct {
 	StreamMetadata
-	// Completion is the full completion text
 	Completion string
 }
 
-// StreamCompletionError is sent by the backend when an error occurs during
-// the streaming operation.
-//
-// The UI uses this message to display an error state or
-// message to the user.
 type StreamCompletionError struct {
 	StreamMetadata
 	Err error
