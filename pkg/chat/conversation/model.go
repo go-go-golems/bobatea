@@ -7,6 +7,8 @@ import (
 
 	"github.com/go-go-golems/geppetto/pkg/events"
 
+	"os"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
@@ -14,7 +16,9 @@ import (
 	"github.com/go-go-golems/geppetto/pkg/steps"
 	"github.com/google/uuid"
 	"github.com/muesli/reflow/wordwrap"
+	"github.com/muesli/termenv"
 	"github.com/rs/zerolog/log"
+	"golang.org/x/term"
 )
 
 type cacheEntry struct {
@@ -25,11 +29,12 @@ type cacheEntry struct {
 }
 
 type Model struct {
-	manager  conversation2.Manager
-	style    *Style
-	active   bool
-	width    int
-	renderer *glamour.TermRenderer
+	manager         conversation2.Manager
+	style           *Style
+	active          bool
+	width           int
+	renderer        *glamour.TermRenderer
+	determinedStyle string
 
 	cache map[conversation2.NodeID]cacheEntry
 
@@ -38,19 +43,43 @@ type Model struct {
 }
 
 func NewModel(manager conversation2.Manager) Model {
+	log.Debug().Msg("Creating initial glamour renderer in NewModel...")
+	start := time.Now()
+
+	// Determine the style once
+	var determinedStyle string
+	var initialStyleOption glamour.TermRendererOption
+
+	if !term.IsTerminal(int(os.Stdout.Fd())) {
+		determinedStyle = "notty"
+		initialStyleOption = glamour.WithStandardStyle(determinedStyle)
+	} else if termenv.HasDarkBackground() {
+		determinedStyle = "dark"
+		initialStyleOption = glamour.WithStandardStyle(determinedStyle)
+	} else {
+		determinedStyle = "light"
+		initialStyleOption = glamour.WithStandardStyle(determinedStyle)
+	}
+	log.Debug().Str("determinedStyle", determinedStyle).Msg("Determined initial style")
+
+	// Create renderer with the determined style
 	renderer, err := glamour.NewTermRenderer(
-		glamour.WithAutoStyle(),
+		initialStyleOption, // Use the determined style
 	)
+	duration := time.Since(start)
+	log.Debug().Dur("duration", duration).Msg("Initial glamour renderer creation complete")
+
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to create initial markdown renderer")
 	}
 
 	return Model{
-		manager:    manager,
-		style:      DefaultStyles(),
-		cache:      make(map[conversation2.NodeID]cacheEntry),
-		selectedID: conversation2.NullNode,
-		renderer:   renderer,
+		manager:         manager,
+		style:           DefaultStyles(),
+		cache:           make(map[conversation2.NodeID]cacheEntry),
+		selectedID:      conversation2.NullNode,
+		renderer:        renderer,
+		determinedStyle: determinedStyle,
 	}
 }
 
@@ -93,29 +122,59 @@ func (m *Model) SetActive(active bool) {
 }
 
 func (m *Model) SetWidth(width int) {
+	log.Debug().Int("newWidth", width).Int("currentWidth", m.width).Msg("SetWidth called")
+	startSetWidth := time.Now()
+
 	if m.width == width {
-		return
+		log.Debug().Int("width", width).Msg("SetWidth: Width unchanged, returning early")
+		return // No change
 	}
+	log.Debug().Int("newWidth", width).Int("oldWidth", m.width).Msg("SetWidth: Width changed, proceeding")
 	m.width = width
 
+	// Recreate renderer with the new width and the *pre-determined* style
+	log.Debug().Int("width", width).Str("style", m.determinedStyle).Msg("SetWidth: Preparing to recreate glamour renderer with determined style...")
+	startRenderer := time.Now()
+	// XXX: Restore WithWordWrap - NO, keep it here
 	renderer, err := glamour.NewTermRenderer(
-		glamour.WithAutoStyle(),
-		glamour.WithWordWrap(m.getRendererContentWidth()),
+		glamour.WithStandardStyle(m.determinedStyle),      // Use determined style
+		glamour.WithWordWrap(m.getRendererContentWidth()), // Use calculated width
 	)
+	durationRenderer := time.Since(startRenderer)
+	log.Debug().Dur("duration", durationRenderer).Int("width", width).Msg("SetWidth: glamour.NewTermRenderer call finished") // Restored log message
+
 	if err != nil {
-		log.Error().Err(err).Int("width", m.width).Msg("Failed to recreate markdown renderer on SetWidth")
-		m.renderer = nil
+		log.Error().Err(err).Int("width", m.width).Msg("SetWidth: Failed to recreate markdown renderer")
+		m.renderer = nil // Set to nil on error
 	} else {
+		log.Debug().Int("width", m.width).Msg("SetWidth: Successfully recreated renderer")
 		m.renderer = renderer
 	}
 
+	// Invalidate cache as rendering depends on width
+	log.Debug().Int("width", m.width).Msg("SetWidth: Invalidating cache...")
+	startCache := time.Now()
 	m.cache = make(map[conversation2.NodeID]cacheEntry)
+	durationCache := time.Since(startCache)
+	log.Debug().Dur("duration", durationCache).Int("width", m.width).Msg("SetWidth: Cache invalidated")
+
+	durationSetWidth := time.Since(startSetWidth)
+	log.Debug().Dur("totalDuration", durationSetWidth).Int("width", m.width).Msg("SetWidth finished")
 }
 
+// Helper to calculate the actual content width for the renderer
 func (m Model) getRendererContentWidth() int {
+	log.Debug().Msg("getRendererContentWidth called")
+	start := time.Now()
+	// Use UnselectedMessage style for width calculation consistency
 	style := m.style.UnselectedMessage
+
 	w, _ := style.GetFrameSize()
-	return m.width - w - style.GetHorizontalPadding()
+	padding := style.GetHorizontalPadding()
+	contentWidth := m.width - w - padding
+	duration := time.Since(start)
+	log.Debug().Dur("duration", duration).Int("frameWidth", w).Int("padding", padding).Int("resultWidth", contentWidth).Msg("getRendererContentWidth finished")
+	return contentWidth
 }
 
 func (m *Model) SelectedIdx() int {
