@@ -2,17 +2,23 @@ package conversation
 
 import (
 	"fmt"
-	"github.com/go-go-golems/geppetto/pkg/events"
 	"strings"
 	"time"
 
+	"github.com/go-go-golems/geppetto/pkg/events"
+
+	"os"
+
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 	conversation2 "github.com/go-go-golems/geppetto/pkg/conversation"
 	"github.com/go-go-golems/geppetto/pkg/steps"
 	"github.com/google/uuid"
 	"github.com/muesli/reflow/wordwrap"
+	"github.com/muesli/termenv"
 	"github.com/rs/zerolog/log"
+	"golang.org/x/term"
 )
 
 type cacheEntry struct {
@@ -23,10 +29,12 @@ type cacheEntry struct {
 }
 
 type Model struct {
-	manager conversation2.Manager
-	style   *Style
-	active  bool
-	width   int
+	manager         conversation2.Manager
+	style           *Style
+	active          bool
+	width           int
+	renderer        *glamour.TermRenderer
+	determinedStyle string
 
 	cache map[conversation2.NodeID]cacheEntry
 
@@ -35,11 +43,43 @@ type Model struct {
 }
 
 func NewModel(manager conversation2.Manager) Model {
+	log.Debug().Msg("Creating initial glamour renderer in NewModel...")
+	start := time.Now()
+
+	// Determine the style once
+	var determinedStyle string
+	var initialStyleOption glamour.TermRendererOption
+
+	if !term.IsTerminal(int(os.Stdout.Fd())) {
+		determinedStyle = "notty"
+		initialStyleOption = glamour.WithStandardStyle(determinedStyle)
+	} else if termenv.HasDarkBackground() {
+		determinedStyle = "dark"
+		initialStyleOption = glamour.WithStandardStyle(determinedStyle)
+	} else {
+		determinedStyle = "light"
+		initialStyleOption = glamour.WithStandardStyle(determinedStyle)
+	}
+	log.Debug().Str("determinedStyle", determinedStyle).Msg("Determined initial style")
+
+	// Create renderer with the determined style
+	renderer, err := glamour.NewTermRenderer(
+		initialStyleOption, // Use the determined style
+	)
+	duration := time.Since(start)
+	log.Debug().Dur("duration", duration).Msg("Initial glamour renderer creation complete")
+
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to create initial markdown renderer")
+	}
+
 	return Model{
-		manager:    manager,
-		style:      DefaultStyles(),
-		cache:      make(map[conversation2.NodeID]cacheEntry),
-		selectedID: conversation2.NullNode,
+		manager:         manager,
+		style:           DefaultStyles(),
+		cache:           make(map[conversation2.NodeID]cacheEntry),
+		selectedID:      conversation2.NullNode,
+		renderer:        renderer,
+		determinedStyle: determinedStyle,
 	}
 }
 
@@ -82,9 +122,59 @@ func (m *Model) SetActive(active bool) {
 }
 
 func (m *Model) SetWidth(width int) {
+	log.Debug().Int("newWidth", width).Int("currentWidth", m.width).Msg("SetWidth called")
+	startSetWidth := time.Now()
+
+	if m.width == width {
+		log.Debug().Int("width", width).Msg("SetWidth: Width unchanged, returning early")
+		return // No change
+	}
+	log.Debug().Int("newWidth", width).Int("oldWidth", m.width).Msg("SetWidth: Width changed, proceeding")
 	m.width = width
 
+	// Recreate renderer with the new width and the *pre-determined* style
+	log.Debug().Int("width", width).Str("style", m.determinedStyle).Msg("SetWidth: Preparing to recreate glamour renderer with determined style...")
+	startRenderer := time.Now()
+	// XXX: Restore WithWordWrap - NO, keep it here
+	renderer, err := glamour.NewTermRenderer(
+		glamour.WithStandardStyle(m.determinedStyle),      // Use determined style
+		glamour.WithWordWrap(m.getRendererContentWidth()), // Use calculated width
+	)
+	durationRenderer := time.Since(startRenderer)
+	log.Debug().Dur("duration", durationRenderer).Int("width", width).Msg("SetWidth: glamour.NewTermRenderer call finished") // Restored log message
+
+	if err != nil {
+		log.Error().Err(err).Int("width", m.width).Msg("SetWidth: Failed to recreate markdown renderer")
+		m.renderer = nil // Set to nil on error
+	} else {
+		log.Debug().Int("width", m.width).Msg("SetWidth: Successfully recreated renderer")
+		m.renderer = renderer
+	}
+
+	// Invalidate cache as rendering depends on width
+	log.Debug().Int("width", m.width).Msg("SetWidth: Invalidating cache...")
+	startCache := time.Now()
 	m.cache = make(map[conversation2.NodeID]cacheEntry)
+	durationCache := time.Since(startCache)
+	log.Debug().Dur("duration", durationCache).Int("width", m.width).Msg("SetWidth: Cache invalidated")
+
+	durationSetWidth := time.Since(startSetWidth)
+	log.Debug().Dur("totalDuration", durationSetWidth).Int("width", m.width).Msg("SetWidth finished")
+}
+
+// Helper to calculate the actual content width for the renderer
+func (m Model) getRendererContentWidth() int {
+	log.Debug().Msg("getRendererContentWidth called")
+	start := time.Now()
+	// Use UnselectedMessage style for width calculation consistency
+	style := m.style.UnselectedMessage
+
+	w, _ := style.GetFrameSize()
+	padding := style.GetHorizontalPadding()
+	contentWidth := m.width - w - padding
+	duration := time.Since(start)
+	log.Debug().Dur("duration", duration).Int("frameWidth", w).Int("padding", padding).Int("resultWidth", contentWidth).Msg("getRendererContentWidth finished")
+	return contentWidth
 }
 
 func (m *Model) SelectedIdx() int {
@@ -116,9 +206,21 @@ func (m Model) renderMessage(selected bool, msg *conversation2.Message) string {
 	}
 	w, _ := style.GetFrameSize()
 	contentWidth := m.width - w - style.GetHorizontalPadding()
-	v_ := wrapWords(v, contentWidth)
 
-	// Add LLM metadata if available
+	var v_ string
+	if m.renderer == nil {
+		log.Warn().Msg("Markdown renderer is nil, falling back to basic wrapping")
+		v_ = wrapWords(v, contentWidth)
+	} else {
+		rendered, err := m.renderer.Render(v)
+		if err != nil {
+			log.Error().Err(err).Msg("Failed to render markdown")
+			v_ = wrapWords(v, contentWidth)
+		} else {
+			v_ = strings.TrimSpace(rendered)
+		}
+	}
+
 	if msg.LLMMessageMetadata != nil {
 		metadataStr := ""
 		if msg.LLMMessageMetadata.Engine != "" {
@@ -151,12 +253,9 @@ func (m Model) renderMessage(selected bool, msg *conversation2.Message) string {
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	var cmd tea.Cmd
 	switch msg := msg.(type) {
-	// handle chat streaming messages
 	case StreamCompletionMsg:
-		// update the respective message's text content with the new completion
 		msg_, ok := m.manager.GetMessage(msg.ID)
 		if !ok {
-			// TODO not sure if we need to handle the error here, or do some warning?
 			return m, nil
 		}
 
@@ -175,7 +274,6 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		m.updateCache(msg_)
 
 	case StreamDoneMsg:
-		// I don't think there is anything to do here, for now at least
 		msg_, ok := m.manager.GetMessage(msg.ID)
 		if !ok {
 			return m, nil
@@ -186,7 +284,6 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			return m, nil
 		}
 
-		// update with the final text
 		textMsg.Text = msg.Completion
 		msg_.LastUpdate = time.Now()
 		msg_.Metadata["step_metadata"] = msg.StepMetadata
@@ -197,8 +294,6 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		m.updateCache(msg_)
 
 	case StreamCompletionError:
-		// TODO(manuel, 2024-01-15) Update error view...
-		//cmd = m.setError(msg.Err)
 		log.Error().Err(msg.Err).Msg("StreamCompletionError")
 
 	case StreamStartMsg:
@@ -223,9 +318,6 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		m.updateCache(msg_)
 
 	case StreamStatusMsg:
-	// TODO(manuel, 2024-01-15) Implement message status view
-
-	//TODO(manuel, 2024-01-15) implement keyboard navigation and copy paste and all that
 
 	default:
 	}
@@ -291,57 +383,26 @@ type StreamMetadata struct {
 	StepMetadata  *steps.StepMetadata   `json:"step_metadata,omitempty"`
 }
 
-// StreamStartMsg is sent by the backend when a streaming operation begins.
-// The UI uses this message to append a new message to the conversation,
-// indicating that the assistant has started processing. The conversation
-// manager is responsible for adding this message to the conversation tree.
 type StreamStartMsg struct {
 	StreamMetadata
 }
 
-// StreamStatusMsg is sent by the backend to provide status updates during
-// a streaming operation. It includes the current text of the stream along
-// with the stream metadata.
-//
-// The UI typically does not need to update the
-// conversation view in response to this message, but it could be used to
-// show a loading indicator or similar temporary status.
 type StreamStatusMsg struct {
 	StreamMetadata
 	Text string
 }
 
-// StreamCompletionMsg is sent by the backend when new data, such as a message
-// completion, is available.
-//
-// The UI uses this message to update the text content
-// of the respective message in the conversation. The conversation manager
-// updates the message content and the last update timestamp.
 type StreamCompletionMsg struct {
 	StreamMetadata
-	// Delta is the delta that was added to the message
-	Delta string
-	// Completion is the full completion text
+	Delta      string
 	Completion string
 }
 
-// StreamDoneMsg is sent by the backend to signal the successful completion
-// of the streaming operation.
-//
-// The UI uses this message to finalize the content of the
-// message in the conversation. The conversation manager updates the message
-// content and the last update timestamp to reflect the final text.
 type StreamDoneMsg struct {
 	StreamMetadata
-	// Completion is the full completion text
 	Completion string
 }
 
-// StreamCompletionError is sent by the backend when an error occurs during
-// the streaming operation.
-//
-// The UI uses this message to display an error state or
-// message to the user.
 type StreamCompletionError struct {
 	StreamMetadata
 	Err error
