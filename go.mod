@@ -9,8 +9,8 @@ require (
 	github.com/charmbracelet/glamour v0.9.1
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/dustin/go-humanize v1.0.1
-	github.com/go-go-golems/geppetto v0.4.46
-	github.com/go-go-golems/glazed v0.5.43
+	github.com/go-go-golems/geppetto v0.4.47
+	github.com/go-go-golems/glazed v0.5.44
 	github.com/google/uuid v1.6.0
 	github.com/lucasb-eyer/go-colorful v1.2.0
 	github.com/mattn/go-runewidth v0.0.16
