@@ -212,7 +212,7 @@ func (m Model) renderMessage(selected bool, msg *conversation2.Message) string {
 		log.Warn().Msg("Markdown renderer is nil, falling back to basic wrapping")
 		v_ = wrapWords(v, contentWidth)
 	} else {
-		rendered, err := m.renderer.Render(v)
+		rendered, err := m.renderer.Render(v + "\n")
 		if err != nil {
 			log.Error().Err(err).Msg("Failed to render markdown")
 			v_ = wrapWords(v, contentWidth)
@@ -294,7 +294,25 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		m.updateCache(msg_)
 
 	case StreamCompletionError:
-		log.Error().Err(msg.Err).Msg("StreamCompletionError")
+		msg_, ok := m.manager.GetMessage(msg.ID)
+		if !ok {
+			return m, nil
+		}
+
+		textMsg, ok := msg_.Content.(*conversation2.ChatMessageContent)
+		if !ok {
+			return m, nil
+		}
+
+		textMsg.Text = "**Error**\n\n" + msg.Err.Error()
+		msg_.LastUpdate = time.Now()
+		msg_.Metadata["step_metadata"] = msg.StepMetadata
+		msg_.Metadata["event_metadata"] = msg.EventMetadata
+		if msg.EventMetadata != nil {
+			msg_.LLMMessageMetadata = &msg.EventMetadata.LLMMessageMetadata
+		}
+
+		m.updateCache(msg_)
 
 	case StreamStartMsg:
 		metadata := map[string]interface{}{

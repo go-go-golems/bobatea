@@ -74,7 +74,10 @@ func runChat(backendFactory func() chat.Backend) {
 		tea.WithAltScreen(),
 	}
 
-	p := tea.NewProgram(chat.InitialModel(manager, backend, chat.WithStatus(status)), options...)
+	p := tea.NewProgram(
+		chat.InitialModel(manager, backend, chat.WithStatus(status)),
+		options...,
+	)
 
 	// Set up the HTTP server
 	r := mux.NewRouter()

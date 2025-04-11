@@ -21,7 +21,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-type errMsg error
+type ErrorMsg error
 
 type State string
 
@@ -221,7 +221,7 @@ func (m model) saveToFile(path string) (tea.Model, tea.Cmd) {
 	err := m.conversationManager.SaveToFile(path)
 	if err != nil {
 		return m, func() tea.Msg {
-			return errMsg(err)
+			return ErrorMsg(err)
 		}
 	}
 
@@ -247,7 +247,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.recomputeSize()
 
 	// We handle errors just like any other message
-	case errMsg:
+	case ErrorMsg:
 		m.err = msg_
 		return m, nil
 
@@ -447,7 +447,7 @@ func (m *model) startBackend() tea.Cmd {
 			ctx := context2.Background()
 			cmd, err := m.backend.Start(ctx, m.conversationManager.GetConversation())
 			if err != nil {
-				return errMsg(err)
+				return ErrorMsg(err)
 			}
 			return cmd()
 		},
@@ -457,7 +457,7 @@ func (m *model) startBackend() tea.Cmd {
 func (m *model) submit() tea.Cmd {
 	if !m.backend.IsFinished() {
 		return func() tea.Msg {
-			return errMsg(errors.New("already streaming"))
+			return ErrorMsg(errors.New("already streaming"))
 		}
 	}
 
@@ -577,7 +577,7 @@ func (m model) handleUserAction(msg UserActionMsg) (tea.Model, tea.Cmd) {
 					err := clipboard.WriteAll(msg_.Content.String())
 					if err != nil {
 						cmd = func() tea.Msg {
-							return errMsg(err)
+							return ErrorMsg(err)
 						}
 					}
 				}
@@ -593,7 +593,7 @@ func (m model) handleUserAction(msg UserActionMsg) (tea.Model, tea.Cmd) {
 				err := clipboard.WriteAll(text)
 				if err != nil {
 					cmd = func() tea.Msg {
-						return errMsg(err)
+						return ErrorMsg(err)
 					}
 				}
 			}
@@ -610,7 +610,7 @@ func (m model) handleUserAction(msg UserActionMsg) (tea.Model, tea.Cmd) {
 						err := clipboard.WriteAll(content.Text)
 						if err != nil {
 							cmd = func() tea.Msg {
-								return errMsg(err)
+								return ErrorMsg(err)
 							}
 						}
 					}
@@ -622,7 +622,7 @@ func (m model) handleUserAction(msg UserActionMsg) (tea.Model, tea.Cmd) {
 						err := clipboard.WriteAll(content.Text)
 						if err != nil {
 							cmd = func() tea.Msg {
-								return errMsg(err)
+								return ErrorMsg(err)
 							}
 						}
 					}
@@ -642,7 +642,7 @@ func (m model) handleUserAction(msg UserActionMsg) (tea.Model, tea.Cmd) {
 						err := clipboard.WriteAll(strings.Join(code, "\n"))
 						if err != nil {
 							cmd = func() tea.Msg {
-								return errMsg(err)
+								return ErrorMsg(err)
 							}
 						}
 					}
@@ -661,7 +661,7 @@ func (m model) handleUserAction(msg UserActionMsg) (tea.Model, tea.Cmd) {
 					err := clipboard.WriteAll(strings.Join(code, "\n"))
 					if err != nil {
 						cmd = func() tea.Msg {
-							return errMsg(err)
+							return ErrorMsg(err)
 						}
 					}
 				}
@@ -680,7 +680,7 @@ func (m model) handleUserAction(msg UserActionMsg) (tea.Model, tea.Cmd) {
 						err := clipboard.WriteAll(strings.Join(code, "\n"))
 						if err != nil {
 							cmd = func() tea.Msg {
-								return errMsg(err)
+								return ErrorMsg(err)
 							}
 						}
 					}
@@ -698,7 +698,7 @@ func (m model) handleUserAction(msg UserActionMsg) (tea.Model, tea.Cmd) {
 				err := clipboard.WriteAll(strings.Join(code, "\n"))
 				if err != nil {
 					cmd = func() tea.Msg {
-						return errMsg(err)
+						return ErrorMsg(err)
 					}
 				}
 			}
