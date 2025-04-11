@@ -57,10 +57,10 @@ github.com/dustin/go-humanize v1.0.1 h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkp
 github.com/dustin/go-humanize v1.0.1/go.mod h1:Mu1zIs6XwVuF/gI1OepvI0qD18qycQx+mFykh5fBlto=
 github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f h1:Y/CXytFA4m6baUTXGLOoWe4PQhGxaX0KpnayAqC48p4=
 github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f/go.mod h1:vw97MGsxSvLiUE2X8qFplwetxpGLQrlU1Q9AUEIzCaM=
-github.com/go-go-golems/geppetto v0.4.47 h1:+JGLUZJZEzGfb+MiGcceVv6y5Ye6P3/E/8nYp4Hi4PU=
-github.com/go-go-golems/geppetto v0.4.47/go.mod h1:Nlid0zl6WqEeUdO8SY9mIxOpXQD1x+BfuG6cUBsC6d4=
-github.com/go-go-golems/glazed v0.5.44 h1:qsFKlD9mH5B5LWkx/CyltHC0eGFsZI0NDzImSusC4+E=
-github.com/go-go-golems/glazed v0.5.44/go.mod h1:9BLzfCpwtvcf+JESxhT3QBCAPt2H2Yk3NDi0FBhCwQw=
+github.com/go-go-golems/geppetto v0.4.48 h1:hQUMOSDhCB56JjVPM19U1NI6NVfMMv5NxmVw3iqXv6I=
+github.com/go-go-golems/geppetto v0.4.48/go.mod h1:dH9wOY9uhLeZDmK2ltT+/aozWrhFoMKiDJdJFgXyrkE=
+github.com/go-go-golems/glazed v0.5.47 h1:e6nXWO4/j/odHfyp65A+KOGVE3U6ooLE6fbElxn1DrU=
+github.com/go-go-golems/glazed v0.5.47/go.mod h1:9BLzfCpwtvcf+JESxhT3QBCAPt2H2Yk3NDi0FBhCwQw=
 github.com/godbus/dbus/v5 v5.0.4/go.mod h1:xhWf0FNVPg57R7Z0UbKHbJfkEywrmjJnf7w5xrFpKfA=
 github.com/google/uuid v1.2.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
 github.com/google/uuid v1.6.0 h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=
