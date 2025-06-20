@@ -60,9 +60,12 @@ func (m ListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "up", "k", "ctrl+p":
 			if m.cursor > 0 {
 				m.cursor--
-				// Adjust offset if cursor moves out of visible window
-				if m.cursor < m.offset {
-					m.offset--
+				// Adjust offset to show optimal context
+				// Try to minimize offset while keeping cursor visible
+				if m.cursor >= m.maxVisible {
+					m.offset = m.cursor - m.maxVisible + 1
+				} else {
+					m.offset = 0
 				}
 			}
 			return m, nil
@@ -72,7 +75,7 @@ func (m ListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cursor++
 				// Adjust offset if cursor moves out of visible window
 				if m.cursor >= m.offset+m.maxVisible {
-					m.offset++
+					m.offset = m.cursor - m.maxVisible + 1
 				}
 			}
 			return m, nil
