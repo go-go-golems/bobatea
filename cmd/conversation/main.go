@@ -38,7 +38,9 @@ func main() {
 	// Add some initial messages to the manager
 	msg1 := conversation2.NewChatMessage(conversation2.RoleUser, "Hello!")
 	msg2 := conversation2.NewChatMessage(conversation2.RoleAssistant, "Hi there! Streaming will start soon...")
-	manager.AppendMessages(msg1, msg2)
+	if err := manager.AppendMessages(msg1, msg2); err != nil {
+		panic(err)
+	}
 
 	m := model{
 		ui: ui.NewModel(manager),

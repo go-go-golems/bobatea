@@ -247,7 +247,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	updateCallID := atomic.AddInt64(&updateCallCounter, 1)
 	updateStartTime := time.Now()
 	msgType := fmt.Sprintf("%T", msg)
-	
+
 	log.Trace().
 		Int64("update_call_id", updateCallID).
 		Str("msg_type", msgType).
@@ -292,14 +292,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		conversationui.StreamStatusMsg,
 		conversationui.StreamDoneMsg,
 		conversationui.StreamCompletionError:
-		
+
 		log.Trace().
 			Int64("update_call_id", updateCallID).
 			Str("stream_msg_type", msgType).
 			Msg("Stream message received - ENTERING STREAM PROCESSING")
-		
+
 		startTime := time.Now()
-		
+
 		switch streamMsg := msg.(type) {
 		case conversationui.StreamStartMsg:
 			log.Trace().
@@ -331,13 +331,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		log.Trace().
 			Int64("update_call_id", updateCallID).
 			Msg("CALLING conversation.Update() - POTENTIAL RECURSION POINT")
-		
+
 		convUpdateStart := time.Now()
 		oldConversationState := m.conversation.SelectedIdx()
 		m.conversation, cmd = m.conversation.Update(msg)
 		convUpdateDuration := time.Since(convUpdateStart)
 		newConversationState := m.conversation.SelectedIdx()
-		
+
 		log.Trace().
 			Int64("update_call_id", updateCallID).
 			Str("operation", "conversation_update_complete").
@@ -358,20 +358,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			log.Trace().
 				Int64("update_call_id", updateCallID).
 				Msg("SCROLL TO BOTTOM - Starting UI update sequence")
-			
+
 			// Log UI update operations with timing
 			viewStart := time.Now()
 			v, _ := m.conversation.ViewAndSelectedPosition()
 			viewDuration := time.Since(viewStart)
-			
+
 			setContentStart := time.Now()
 			m.viewport.SetContent(v)
 			setContentDuration := time.Since(setContentStart)
-			
+
 			gotoBottomStart := time.Now()
 			m.viewport.GotoBottom()
 			gotoBottomDuration := time.Since(gotoBottomStart)
-			
+
 			log.Trace().
 				Int64("update_call_id", updateCallID).
 				Str("operation", "ui_update_timing").
@@ -381,14 +381,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				Int("content_length", len(v)).
 				Msg("UI update operations completed")
 		}
-		
+
 		totalDuration := time.Since(startTime)
 		log.Trace().
 			Int64("update_call_id", updateCallID).
 			Str("operation", "stream_message_total").
 			Dur("total_duration", totalDuration).
 			Msg("Stream message processing completed")
-			
+
 		cmds = append(cmds, cmd)
 
 	case BackendFinishedMsg:
@@ -404,7 +404,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			Bool("go_to_bottom", msg_.GoToBottom).
 			Bool("scroll_to_bottom", m.scrollToBottom).
 			Msg("REFRESH MESSAGE - POTENTIAL TRIGGER FOR LOOPS")
-		
+
 		v, _ := m.conversation.ViewAndSelectedPosition()
 		m.viewport.SetContent(v)
 		m.recomputeSize()
@@ -445,7 +445,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			Str("msg_type", msgType).
 			Str("state", string(m.state)).
 			Msg("DEFAULT CASE - updating viewport or filepicker")
-		
+
 		switch m.state {
 		case StateUserInput, StateError, StateMovingAround, StateStreamCompletion:
 			log.Trace().
@@ -476,7 +476,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.status.SelectedIdx = m.conversation.SelectedIdx()
 		m.status.MessageCount = len(m.conversation.Conversation())
 		m.status.Error = m.err
-		
+
 		if oldMessageCount != m.status.MessageCount {
 			log.Trace().
 				Int64("update_call_id", updateCallID).
@@ -488,7 +488,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	updateDuration := time.Since(updateStartTime)
 	cmdCount := len(cmds)
-	
+
 	// Log all commands being returned
 	for i, cmd := range cmds {
 		if cmd != nil {
@@ -499,7 +499,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				Msg("COMMAND BEING RETURNED - POTENTIAL LOOP SOURCE")
 		}
 	}
-	
+
 	log.Trace().
 		Int64("update_call_id", updateCallID).
 		Str("msg_type", msgType).
@@ -523,11 +523,11 @@ func (m *model) scrollToSelected() {
 		Int("viewport_y_offset", m.viewport.YOffset).
 		Int("viewport_height", m.viewport.Height).
 		Msg("SCROLL TO SELECTED ENTRY - POTENTIAL VIEW TRIGGER")
-	
+
 	viewStart := time.Now()
 	v, pos := m.conversation.ViewAndSelectedPosition()
 	viewDuration := time.Since(viewStart)
-	
+
 	log.Trace().
 		Int64("scroll_call_id", scrollCallID).
 		Dur("view_generation", viewDuration).
@@ -535,15 +535,15 @@ func (m *model) scrollToSelected() {
 		Int("pos_offset", pos.Offset).
 		Int("pos_height", pos.Height).
 		Msg("View generated for scroll calculation")
-	
+
 	setContentStart := time.Now()
 	m.viewport.SetContent(v)
 	setContentDuration := time.Since(setContentStart)
-	
+
 	midScreenOffset := m.viewport.YOffset + m.viewport.Height/2
 	msgEndOffset := pos.Offset + pos.Height
 	bottomOffset := m.viewport.YOffset + m.viewport.Height
-	
+
 	if pos.Offset > midScreenOffset && msgEndOffset > bottomOffset {
 		newOffset := pos.Offset - max(m.viewport.Height-pos.Height-1, m.viewport.Height/2)
 		m.viewport.SetYOffset(newOffset)
@@ -558,7 +558,7 @@ func (m *model) scrollToSelected() {
 			Int("new_y_offset", pos.Offset).
 			Msg("Scrolled up to show message")
 	}
-	
+
 	log.Trace().
 		Int64("scroll_call_id", scrollCallID).
 		Dur("set_content_duration", setContentDuration).
@@ -693,7 +693,7 @@ func (m model) View() string {
 	// Track View calls and timing - CRITICAL FOR DETECTING EXCESSIVE RENDERS
 	viewCallID := atomic.AddInt64(&viewCallCounter, 1)
 	viewStartTime := time.Now()
-	
+
 	log.Trace().
 		Int64("view_call_id", viewCallID).
 		Str("state", string(m.state)).
@@ -716,7 +716,7 @@ func (m model) View() string {
 	conversationViewStart := time.Now()
 	view, position := m.conversation.ViewAndSelectedPosition()
 	conversationViewDuration := time.Since(conversationViewStart)
-	
+
 	log.Trace().
 		Int64("view_call_id", viewCallID).
 		Dur("conversation_view_duration", conversationViewDuration).
@@ -729,7 +729,7 @@ func (m model) View() string {
 	setContentStart := time.Now()
 	m.viewport.SetContent(view)
 	setContentDuration := time.Since(setContentStart)
-	
+
 	log.Trace().
 		Int64("view_call_id", viewCallID).
 		Dur("set_content_duration", setContentDuration).
@@ -741,11 +741,11 @@ func (m model) View() string {
 	viewportViewStart := time.Now()
 	viewportView := m.viewport.View()
 	viewportViewDuration := time.Since(viewportViewStart)
-	
+
 	textAreaStart := time.Now()
 	textAreaView := m.textAreaView()
 	textAreaDuration := time.Since(textAreaStart)
-	
+
 	helpStart := time.Now()
 	helpView := m.help.View(m.keyMap)
 	helpDuration := time.Since(helpStart)
@@ -762,7 +762,7 @@ func (m model) View() string {
 	textAreaHeight := lipgloss.Height(textAreaView)
 	headerHeight := lipgloss.Height(headerView)
 	helpViewHeight := lipgloss.Height(helpView)
-	
+
 	log.Trace().
 		Int64("view_call_id", viewCallID).
 		Int("viewport_height", viewportHeight).
@@ -877,8 +877,13 @@ func (m *model) submit() tea.Cmd {
 	}
 
 	userMessage := m.textArea.Value()
-	m.conversationManager.AppendMessages(
-		geppetto_conversation.NewChatMessage(geppetto_conversation.RoleUser, userMessage))
+	if err := m.conversationManager.AppendMessages(
+		geppetto_conversation.NewChatMessage(geppetto_conversation.RoleUser, userMessage)); err != nil {
+		log.Error().Err(err).Msg("Failed to append user message")
+		return func() tea.Msg {
+			return ErrorMsg(err)
+		}
+	}
 	m.textArea.SetValue("")
 
 	log.Trace().
@@ -916,7 +921,7 @@ func (m *model) finishCompletion() tea.Cmd {
 		log.Trace().
 			Int64("finish_call_id", finishCallID).
 			Msg("Stream completion state - performing cleanup")
-		
+
 		// WARN not sure if really necessary actually, this should only be called once at this point.
 		m.backend.Kill()
 

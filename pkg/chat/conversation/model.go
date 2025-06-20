@@ -33,7 +33,7 @@ type cacheEntry struct {
 func logMemoryUsage(operation string) {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
-	
+
 	log.Debug().
 		Str("operation", operation).
 		Uint64("alloc_mb", m.Alloc/1024/1024).
@@ -115,7 +115,7 @@ func (m Model) updateCache(c ...*conversation2.Message) {
 	totalCacheHits := 0
 	totalCacheMisses := 0
 	totalRedraws := 0
-	
+
 	log.Debug().
 		Str("operation", "cache_update_start").
 		Int("message_count", len(c)).
@@ -161,7 +161,7 @@ func (m Model) updateCache(c ...*conversation2.Message) {
 		v_ := m.renderMessage(selected, msg)
 		renderDuration := time.Since(renderStart)
 		totalRedraws++
-		
+
 		log.Debug().
 			Str("operation", "message_render").
 			Str("messageID", msg.ID.String()).
@@ -180,7 +180,7 @@ func (m Model) updateCache(c ...*conversation2.Message) {
 		}
 
 		m.cache[msg.ID] = c_
-		
+
 		msgDuration := time.Since(msgStart)
 		log.Debug().
 			Str("operation", "cache_entry_update").
@@ -188,10 +188,10 @@ func (m Model) updateCache(c ...*conversation2.Message) {
 			Dur("total_msg_duration", msgDuration).
 			Msg("Cache entry updated")
 	}
-	
+
 	totalDuration := time.Since(cacheStart)
 	logMemoryUsage("cache_update_complete")
-	
+
 	log.Info().
 		Str("operation", "cache_update_complete").
 		Dur("total_duration", totalDuration).
@@ -286,7 +286,7 @@ func (m Model) renderMessage(selected bool, msg *conversation2.Message) string {
 	v = strings.TrimRight(v, "\n")
 
 	var style lipgloss.Style
-	
+
 	// Check if this is an error message and apply special styling
 	if msg.Content.ContentType() == conversation2.ContentTypeError {
 		if selected {
@@ -415,10 +415,10 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	case StreamStartMsg:
 		startTime := time.Now()
 		logMemoryUsage("stream_start_begin")
-		
+
 		// Check if this is a duplicate message
 		existingMsg, isDuplicate := m.manager.GetMessage(msg.ID)
-		
+
 		log.Info().
 			Str("operation", "stream_start_processing").
 			Str("messageID", msg.ID.String()).
@@ -435,7 +435,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				Time("existing_last_update", existingMsg.LastUpdate).
 				Str("existing_content", existingMsg.Content.String()).
 				Msg("Duplicate StreamStartMsg detected - same ID already exists")
-			
+
 			// Skip duplicate processing to prevent tree corruption
 			log.Info().
 				Str("messageID", msg.ID.String()).
@@ -462,7 +462,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			conversation2.WithParentID(msg.ParentID),
 			conversation2.WithMetadata(metadata))
 		msgCreateDuration := time.Since(msgCreateStart)
-		
+
 		log.Debug().
 			Str("operation", "message_creation").
 			Str("messageID", msg.ID.String()).
@@ -476,7 +476,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				Err(err).
 				Str("messageID", msg.ID.String()).
 				Msg("Failed to append message - creating error message")
-			
+
 			// Create an error message to display to the user
 			errorContent := conversation2.NewErrorContentWithDetails(
 				conversation2.ErrorTypeTreeCorruption,
@@ -484,14 +484,14 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				fmt.Sprintf("Error details: %s", err.Error()),
 				false, // not recoverable
 			)
-			errorMsg := conversation2.NewMessage(errorContent, 
+			errorMsg := conversation2.NewMessage(errorContent,
 				conversation2.WithMetadata(map[string]interface{}{
 					"original_message_id": msg.ID.String(),
-					"parent_id": msg.ParentID.String(),
-					"error_type": "append_failure",
+					"parent_id":           msg.ParentID.String(),
+					"error_type":          "append_failure",
 				}),
 			)
-			
+
 			// Try to append the error message (this should succeed as it's a different ID)
 			if errAppend := m.manager.AppendMessages(errorMsg); errAppend != nil {
 				log.Error().
@@ -503,7 +503,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			return m, nil
 		}
 		appendDuration := time.Since(appendStart)
-		
+
 		log.Debug().
 			Str("operation", "message_append").
 			Str("messageID", msg.ID.String()).
@@ -515,17 +515,17 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		cacheStart := time.Now()
 		m.updateCache(msg_)
 		cacheDuration := time.Since(cacheStart)
-		
+
 		log.Debug().
 			Str("operation", "cache_update").
 			Str("messageID", msg.ID.String()).
 			Dur("duration", cacheDuration).
 			Int("cache_size", len(m.cache)).
 			Msg("Cache updated for new message")
-		
+
 		totalDuration := time.Since(startTime)
 		logMemoryUsage("stream_start_complete")
-		
+
 		log.Info().
 			Str("operation", "stream_start_complete").
 			Str("messageID", msg.ID.String()).
@@ -565,7 +565,7 @@ type MessagePosition struct {
 func (m Model) ViewAndSelectedPosition() (string, MessagePosition) {
 	viewStart := time.Now()
 	logMemoryUsage("view_generation_start")
-	
+
 	log.Debug().
 		Str("operation", "view_generation_start").
 		Int("cache_size", len(m.cache)).
@@ -577,7 +577,7 @@ func (m Model) ViewAndSelectedPosition() (string, MessagePosition) {
 	selectedHeight := 0
 
 	msgs_ := m.manager.GetConversation()
-	
+
 	log.Debug().
 		Str("operation", "conversation_retrieval").
 		Int("message_count", len(msgs_)).
@@ -587,7 +587,7 @@ func (m Model) ViewAndSelectedPosition() (string, MessagePosition) {
 	cacheUpdateStart := time.Now()
 	m.updateCache(msgs_...)
 	cacheUpdateDuration := time.Since(cacheUpdateStart)
-	
+
 	log.Debug().
 		Str("operation", "full_cache_update").
 		Dur("duration", cacheUpdateDuration).
@@ -599,7 +599,7 @@ func (m Model) ViewAndSelectedPosition() (string, MessagePosition) {
 	renderedMessages := 0
 	skippedMessages := 0
 	totalContentLength := 0
-	
+
 	for _, msg := range msgs_ {
 		c_, ok := m.cache[msg.ID]
 		if !ok {
@@ -610,12 +610,12 @@ func (m Model) ViewAndSelectedPosition() (string, MessagePosition) {
 				Msg("Skipping message - not in cache")
 			continue
 		}
-		
+
 		renderedMessages++
 		h := lipgloss.Height(c_.rendered)
 		contentLen := len(c_.rendered)
 		totalContentLength += contentLen
-		
+
 		if m.selectedID == msg.ID {
 			selectedOffset = height
 			selectedHeight = h
@@ -624,11 +624,11 @@ func (m Model) ViewAndSelectedPosition() (string, MessagePosition) {
 		ret += "\n"
 		height += h
 	}
-	
+
 	assemblyDuration := time.Since(assemblyStart)
 	totalDuration := time.Since(viewStart)
 	logMemoryUsage("view_generation_complete")
-	
+
 	log.Info().
 		Str("operation", "view_generation_complete").
 		Dur("total_duration", totalDuration).
