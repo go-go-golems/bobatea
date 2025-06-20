@@ -2,6 +2,7 @@ package conversation
 
 import (
 	"fmt"
+	"runtime"
 	"strings"
 	"time"
 
@@ -26,6 +27,20 @@ type cacheEntry struct {
 	rendered    string
 	selected    bool
 	lastUpdated time.Time
+}
+
+// logMemoryUsage logs current memory statistics
+func logMemoryUsage(operation string) {
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	
+	log.Debug().
+		Str("operation", operation).
+		Uint64("alloc_mb", m.Alloc/1024/1024).
+		Uint64("total_alloc_mb", m.TotalAlloc/1024/1024).
+		Uint64("sys_mb", m.Sys/1024/1024).
+		Uint32("num_gc", m.NumGC).
+		Msg("Memory usage")
 }
 
 type Model struct {
@@ -95,17 +110,68 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m Model) updateCache(c ...*conversation2.Message) {
+	cacheStart := time.Now()
+	logMemoryUsage("cache_update_start")
+	totalCacheHits := 0
+	totalCacheMisses := 0
+	totalRedraws := 0
+	
+	log.Debug().
+		Str("operation", "cache_update_start").
+		Int("message_count", len(c)).
+		Int("current_cache_size", len(m.cache)).
+		Msg("Starting cache update")
+
 	for idx, msg := range c {
+		msgStart := time.Now()
 		c_, ok := m.cache[msg.ID]
 		selected := idx == m.selectedIdx && m.active
 
+		cacheHit := false
 		if ok {
+			totalCacheHits++
+			cacheHit = true
 			if c_.lastUpdated.After(msg.LastUpdate) && c_.selected == selected {
+				log.Debug().
+					Str("operation", "cache_skip").
+					Str("messageID", msg.ID.String()).
+					Time("cached_time", c_.lastUpdated).
+					Time("msg_time", msg.LastUpdate).
+					Bool("selected_match", c_.selected == selected).
+					Msg("Skipping cache update - cached version is newer")
 				continue
 			}
+		} else {
+			totalCacheMisses++
 		}
 
+		// Log cache entry overwrite
+		if ok {
+			log.Debug().
+				Str("operation", "cache_overwrite").
+				Str("messageID", msg.ID.String()).
+				Time("old_cached_time", c_.lastUpdated).
+				Time("msg_time", msg.LastUpdate).
+				Bool("selected_changed", c_.selected != selected).
+				Msg("Overwriting existing cache entry")
+		}
+
+		// Expensive rendering operation
+		renderStart := time.Now()
 		v_ := m.renderMessage(selected, msg)
+		renderDuration := time.Since(renderStart)
+		totalRedraws++
+		
+		log.Debug().
+			Str("operation", "message_render").
+			Str("messageID", msg.ID.String()).
+			Dur("render_duration", renderDuration).
+			Int("content_length", len(msg.Content.String())).
+			Int("rendered_length", len(v_)).
+			Bool("was_cached", cacheHit).
+			Bool("selected", selected).
+			Msg("Message rendered")
+
 		c_ = cacheEntry{
 			msg:         msg,
 			rendered:    v_,
@@ -114,7 +180,26 @@ func (m Model) updateCache(c ...*conversation2.Message) {
 		}
 
 		m.cache[msg.ID] = c_
+		
+		msgDuration := time.Since(msgStart)
+		log.Debug().
+			Str("operation", "cache_entry_update").
+			Str("messageID", msg.ID.String()).
+			Dur("total_msg_duration", msgDuration).
+			Msg("Cache entry updated")
 	}
+	
+	totalDuration := time.Since(cacheStart)
+	logMemoryUsage("cache_update_complete")
+	
+	log.Info().
+		Str("operation", "cache_update_complete").
+		Dur("total_duration", totalDuration).
+		Int("cache_hits", totalCacheHits).
+		Int("cache_misses", totalCacheMisses).
+		Int("redraws_performed", totalRedraws).
+		Int("final_cache_size", len(m.cache)).
+		Msg("Cache update completed")
 }
 
 func (m *Model) SetActive(active bool) {
@@ -200,9 +285,22 @@ func (m Model) renderMessage(selected bool, msg *conversation2.Message) string {
 	v := msg.Content.View()
 	v = strings.TrimRight(v, "\n")
 
-	style := m.style.UnselectedMessage
-	if selected {
-		style = m.style.SelectedMessage
+	var style lipgloss.Style
+	
+	// Check if this is an error message and apply special styling
+	if msg.Content.ContentType() == conversation2.ContentTypeError {
+		if selected {
+			style = m.style.ErrorSelected
+		} else {
+			style = m.style.ErrorMessage
+		}
+		// Add error icon/prefix
+		v = "⚠️  " + v
+	} else {
+		style = m.style.UnselectedMessage
+		if selected {
+			style = m.style.SelectedMessage
+		}
 	}
 	w, _ := style.GetFrameSize()
 	contentWidth := m.width - w - style.GetHorizontalPadding()
@@ -315,6 +413,36 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		m.updateCache(msg_)
 
 	case StreamStartMsg:
+		startTime := time.Now()
+		logMemoryUsage("stream_start_begin")
+		
+		// Check if this is a duplicate message
+		existingMsg, isDuplicate := m.manager.GetMessage(msg.ID)
+		
+		log.Info().
+			Str("operation", "stream_start_processing").
+			Str("messageID", msg.ID.String()).
+			Str("parentID", msg.ParentID.String()).
+			Bool("is_duplicate", isDuplicate).
+			Int("conversation_size", len(m.manager.GetConversation())).
+			Time("timestamp", startTime).
+			Msg("Processing StreamStartMsg in conversation model")
+
+		if isDuplicate {
+			log.Warn().
+				Str("operation", "duplicate_message_detection").
+				Str("messageID", msg.ID.String()).
+				Time("existing_last_update", existingMsg.LastUpdate).
+				Str("existing_content", existingMsg.Content.String()).
+				Msg("Duplicate StreamStartMsg detected - same ID already exists")
+			
+			// Skip duplicate processing to prevent tree corruption
+			log.Info().
+				Str("messageID", msg.ID.String()).
+				Msg("Skipping duplicate StreamStartMsg to prevent tree corruption")
+			// return m, nil
+		}
+
 		metadata := map[string]interface{}{
 			"id":        uuid.UUID(msg.ID).String(),
 			"parent_id": uuid.UUID(msg.ParentID).String(),
@@ -326,14 +454,84 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			metadata["event_metadata"] = msg.EventMetadata
 		}
 
+		// Create new message (even if duplicate exists)
+		msgCreateStart := time.Now()
 		msg_ := conversation2.NewChatMessage(
 			conversation2.RoleAssistant, "",
 			conversation2.WithID(msg.ID),
 			conversation2.WithParentID(msg.ParentID),
 			conversation2.WithMetadata(metadata))
-		m.manager.AppendMessages(msg_)
+		msgCreateDuration := time.Since(msgCreateStart)
+		
+		log.Debug().
+			Str("operation", "message_creation").
+			Str("messageID", msg.ID.String()).
+			Dur("duration", msgCreateDuration).
+			Msg("New message object created")
 
+		// Append to manager
+		appendStart := time.Now()
+		if err := m.manager.AppendMessages(msg_); err != nil {
+			log.Error().
+				Err(err).
+				Str("messageID", msg.ID.String()).
+				Msg("Failed to append message - creating error message")
+			
+			// Create an error message to display to the user
+			errorContent := conversation2.NewErrorContentWithDetails(
+				conversation2.ErrorTypeTreeCorruption,
+				"Failed to add message to conversation",
+				fmt.Sprintf("Error details: %s", err.Error()),
+				false, // not recoverable
+			)
+			errorMsg := conversation2.NewMessage(errorContent, 
+				conversation2.WithMetadata(map[string]interface{}{
+					"original_message_id": msg.ID.String(),
+					"parent_id": msg.ParentID.String(),
+					"error_type": "append_failure",
+				}),
+			)
+			
+			// Try to append the error message (this should succeed as it's a different ID)
+			if errAppend := m.manager.AppendMessages(errorMsg); errAppend != nil {
+				log.Error().
+					Err(errAppend).
+					Msg("Failed to append error message - critical error")
+			} else {
+				m.updateCache(errorMsg)
+			}
+			return m, nil
+		}
+		appendDuration := time.Since(appendStart)
+		
+		log.Debug().
+			Str("operation", "message_append").
+			Str("messageID", msg.ID.String()).
+			Dur("duration", appendDuration).
+			Int("new_conversation_size", len(m.manager.GetConversation())).
+			Msg("Message appended to manager")
+
+		// Update cache
+		cacheStart := time.Now()
 		m.updateCache(msg_)
+		cacheDuration := time.Since(cacheStart)
+		
+		log.Debug().
+			Str("operation", "cache_update").
+			Str("messageID", msg.ID.String()).
+			Dur("duration", cacheDuration).
+			Int("cache_size", len(m.cache)).
+			Msg("Cache updated for new message")
+		
+		totalDuration := time.Since(startTime)
+		logMemoryUsage("stream_start_complete")
+		
+		log.Info().
+			Str("operation", "stream_start_complete").
+			Str("messageID", msg.ID.String()).
+			Dur("total_duration", totalDuration).
+			Bool("was_duplicate", isDuplicate).
+			Msg("StreamStartMsg processing completed")
 
 	case StreamStatusMsg:
 
@@ -365,20 +563,59 @@ type MessagePosition struct {
 }
 
 func (m Model) ViewAndSelectedPosition() (string, MessagePosition) {
+	viewStart := time.Now()
+	logMemoryUsage("view_generation_start")
+	
+	log.Debug().
+		Str("operation", "view_generation_start").
+		Int("cache_size", len(m.cache)).
+		Msg("Starting view generation")
+
 	ret := ""
 	height := 0
 	selectedOffset := 0
 	selectedHeight := 0
 
 	msgs_ := m.manager.GetConversation()
+	
+	log.Debug().
+		Str("operation", "conversation_retrieval").
+		Int("message_count", len(msgs_)).
+		Msg("Retrieved conversation messages")
 
+	// This triggers cache update for ALL messages
+	cacheUpdateStart := time.Now()
 	m.updateCache(msgs_...)
+	cacheUpdateDuration := time.Since(cacheUpdateStart)
+	
+	log.Debug().
+		Str("operation", "full_cache_update").
+		Dur("duration", cacheUpdateDuration).
+		Int("processed_messages", len(msgs_)).
+		Msg("Full cache update completed in view generation")
+
+	// Assemble the view
+	assemblyStart := time.Now()
+	renderedMessages := 0
+	skippedMessages := 0
+	totalContentLength := 0
+	
 	for _, msg := range msgs_ {
 		c_, ok := m.cache[msg.ID]
 		if !ok {
+			skippedMessages++
+			log.Debug().
+				Str("operation", "view_skip_message").
+				Str("messageID", msg.ID.String()).
+				Msg("Skipping message - not in cache")
 			continue
 		}
+		
+		renderedMessages++
 		h := lipgloss.Height(c_.rendered)
+		contentLen := len(c_.rendered)
+		totalContentLength += contentLen
+		
 		if m.selectedID == msg.ID {
 			selectedOffset = height
 			selectedHeight = h
@@ -387,6 +624,21 @@ func (m Model) ViewAndSelectedPosition() (string, MessagePosition) {
 		ret += "\n"
 		height += h
 	}
+	
+	assemblyDuration := time.Since(assemblyStart)
+	totalDuration := time.Since(viewStart)
+	logMemoryUsage("view_generation_complete")
+	
+	log.Info().
+		Str("operation", "view_generation_complete").
+		Dur("total_duration", totalDuration).
+		Dur("cache_update_duration", cacheUpdateDuration).
+		Dur("assembly_duration", assemblyDuration).
+		Int("rendered_messages", renderedMessages).
+		Int("skipped_messages", skippedMessages).
+		Int("total_content_length", totalContentLength).
+		Int("view_height", height).
+		Msg("View generation completed")
 
 	return ret, MessagePosition{
 		Offset: selectedOffset,
