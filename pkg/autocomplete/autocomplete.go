@@ -86,12 +86,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case tea.KeyMsg:
-		// Handle input updates
-		var cmd tea.Cmd
-		m.Input, cmd = m.Input.Update(msg)
+		// Save previous input to detect real edits
+		prevValue := m.Input.Value()
 
-		// Trigger completion after input changes
-		return m, tea.Batch(cmd, m.completionCmd(m.Input.Value()))
+		// Update text input first
+		var cmdInput tea.Cmd
+		m.Input, cmdInput = m.Input.Update(msg)
+
+		// Forward key event to list for navigation
+		newList, cmdList := m.List.Update(msg)
+		m.List = newList.(listbox.ListModel)
+
+		// Collect commands
+		cmds := []tea.Cmd{cmdInput, cmdList}
+
+		// Trigger completion only if the query actually changed (typing, deletion)
+		if m.Input.Value() != prevValue {
+			cmds = append(cmds, m.completionCmd(m.Input.Value()))
+		}
+
+		return m, tea.Batch(cmds...)
 
 	case SuggestionsMsg:
 		// Set items in the listbox
