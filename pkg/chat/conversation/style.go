@@ -7,6 +7,8 @@ type Style struct {
 	SelectedMessage   lipgloss.Style
 	FocusedMessage    lipgloss.Style
 	MetadataStyle     lipgloss.Style
+	ErrorMessage      lipgloss.Style
+	ErrorSelected     lipgloss.Style
 }
 
 type BorderColors struct {
@@ -26,6 +28,12 @@ func DefaultStyles() *Style {
 		Unselected: "#444444",
 		Selected:   "#DD7090", // Desaturated pink for dark mode
 		Focused:    "#DDDD77", // Desaturated yellow for dark mode
+	}
+
+	errorColors := BorderColors{
+		Unselected: "#FF6B6B", // Light red
+		Selected:   "#FF4444", // Darker red for selected
+		Focused:    "#FF8888", // Medium red for focused
 	}
 
 	return &Style{
@@ -50,5 +58,13 @@ func DefaultStyles() *Style {
 		MetadataStyle: lipgloss.NewStyle().
 			Foreground(lipgloss.Color("240")).
 			Align(lipgloss.Right),
+		ErrorMessage: lipgloss.NewStyle().Border(lipgloss.NormalBorder()).
+			Padding(0, 1).
+			BorderForeground(lipgloss.Color(errorColors.Unselected)).
+			Foreground(lipgloss.Color(errorColors.Unselected)),
+		ErrorSelected: lipgloss.NewStyle().Border(lipgloss.ThickBorder()).
+			Padding(0, 1).
+			BorderForeground(lipgloss.Color(errorColors.Selected)).
+			Foreground(lipgloss.Color(errorColors.Selected)),
 	}
 }
