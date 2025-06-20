@@ -1,0 +1,7 @@
+{
+    "amp.commands.allowlist": [
+        "npm",
+        "go build",
+        "make build"
+    ]
+}
