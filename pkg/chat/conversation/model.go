@@ -192,7 +192,7 @@ func (m Model) updateCache(c ...*conversation2.Message) {
 	totalDuration := time.Since(cacheStart)
 	logMemoryUsage("cache_update_complete")
 
-	log.Info().
+	log.Debug().
 		Str("operation", "cache_update_complete").
 		Dur("total_duration", totalDuration).
 		Int("cache_hits", totalCacheHits).
@@ -419,7 +419,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		// Check if this is a duplicate message
 		existingMsg, isDuplicate := m.manager.GetMessage(msg.ID)
 
-		log.Info().
+		log.Debug().
 			Str("operation", "stream_start_processing").
 			Str("messageID", msg.ID.String()).
 			Str("parentID", msg.ParentID.String()).
@@ -437,7 +437,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				Msg("Duplicate StreamStartMsg detected - same ID already exists")
 
 			// Skip duplicate processing to prevent tree corruption
-			log.Info().
+			log.Debug().
 				Str("messageID", msg.ID.String()).
 				Msg("Skipping duplicate StreamStartMsg to prevent tree corruption")
 			// return m, nil
@@ -526,7 +526,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		totalDuration := time.Since(startTime)
 		logMemoryUsage("stream_start_complete")
 
-		log.Info().
+		log.Debug().
 			Str("operation", "stream_start_complete").
 			Str("messageID", msg.ID.String()).
 			Dur("total_duration", totalDuration).
