@@ -46,6 +46,7 @@ const (
 	ViewStateCreateFile
 	ViewStateCreateDir
 	ViewStateSearch
+	ViewStateGlob
 )
 
 // Operation represents file operations
@@ -93,6 +94,7 @@ type AdvancedModel struct {
 	confirmFiles []string
 	textInput    textinput.Model
 	searchInput  textinput.Model
+	globInput    textinput.Model
 	help         help.Model
 	keys         advancedKeyMap
 
@@ -102,6 +104,7 @@ type AdvancedModel struct {
 	detailedView   bool
 	sortMode       SortMode
 	searchQuery    string
+	globPattern    string
 	previewContent string
 	previewWidth   int
 
@@ -109,6 +112,12 @@ type AdvancedModel struct {
 	history        []string // Stack of visited directories
 	historyIndex   int      // Current position in history (-1 means at the end)
 	maxHistorySize int      // Maximum history entries to keep
+
+	// Directory selection mode
+	directorySelectionMode bool
+
+	// Directory restriction (jail)
+	jailDirectory string // Absolute path of the jail directory, empty means no restriction
 }
 
 // advancedKeyMap defines the key bindings for the advanced file picker
@@ -145,9 +154,15 @@ type advancedKeyMap struct {
 	// Tier 4 features
 	TogglePreview key.Binding
 	Search        key.Binding
+	Glob          key.Binding
+	ClearGlob     key.Binding
 	ToggleHidden  key.Binding
 	ToggleDetail  key.Binding
 	CycleSort     key.Binding
+
+	// Directory selection
+	SelectCurrentDir   key.Binding
+	ToggleDirSelection key.Binding
 
 	// System
 	Help key.Binding
@@ -166,8 +181,9 @@ func (k advancedKeyMap) FullHelp() [][]key.Binding {
 		{k.Enter, k.Space, k.SelectAll, k.DeselectAll},
 		{k.Copy, k.Cut, k.Paste, k.Delete},
 		{k.Rename, k.NewFile, k.NewDir, k.Refresh},
-		{k.TogglePreview, k.Search, k.ToggleHidden, k.ToggleDetail},
+		{k.TogglePreview, k.Search, k.Glob, k.ClearGlob, k.ToggleHidden, k.ToggleDetail},
 		{k.CycleSort, k.Backspace, k.Back, k.Forward},
+		{k.SelectCurrentDir, k.ToggleDirSelection},
 		{k.Escape, k.Help, k.Quit},
 	}
 }
@@ -209,7 +225,7 @@ func defaultAdvancedKeyMap() advancedKeyMap {
 		),
 		SelectAllFiles: key.NewBinding(
 			key.WithKeys("ctrl+a"),
-			key.WithHelp("ctrl+a", "select all files"),
+			key.WithHelp("ctrl+a", "select all items"),
 		),
 		Delete: key.NewBinding(
 			key.WithKeys("d"),
@@ -260,12 +276,20 @@ func defaultAdvancedKeyMap() advancedKeyMap {
 			key.WithHelp("alt+→/l", "forward"),
 		),
 		TogglePreview: key.NewBinding(
-			key.WithKeys("tab"),
-			key.WithHelp("tab", "toggle preview"),
+			key.WithKeys("p"),
+			key.WithHelp("p", "toggle preview"),
 		),
 		Search: key.NewBinding(
 			key.WithKeys("/"),
 			key.WithHelp("/", "search"),
+		),
+		Glob: key.NewBinding(
+			key.WithKeys("g"),
+			key.WithHelp("g", "glob filter"),
+		),
+		ClearGlob: key.NewBinding(
+			key.WithKeys("G"),
+			key.WithHelp("G", "clear glob"),
 		),
 		ToggleHidden: key.NewBinding(
 			key.WithKeys("f2"),
@@ -278,6 +302,14 @@ func defaultAdvancedKeyMap() advancedKeyMap {
 		CycleSort: key.NewBinding(
 			key.WithKeys("f4"),
 			key.WithHelp("f4", "cycle sort"),
+		),
+		SelectCurrentDir: key.NewBinding(
+			key.WithKeys("s"),
+			key.WithHelp("s", "select current directory"),
+		),
+		ToggleDirSelection: key.NewBinding(
+			key.WithKeys("tab"),
+			key.WithHelp("tab", "toggle directory selection mode"),
 		),
 		Help: key.NewBinding(
 			key.WithKeys("?"),
@@ -318,6 +350,11 @@ var (
 			Foreground(lipgloss.Color("39")).
 			Bold(true)
 
+	dirSelectionStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("99")).
+			Background(lipgloss.Color("17")).
+			Bold(true)
+
 	hiddenStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("243"))
 
@@ -348,8 +385,111 @@ var (
 			Foreground(lipgloss.Color("196"))
 )
 
-// NewAdvancedModel creates a new advanced file picker
-func NewAdvancedModel(startPath string) *AdvancedModel {
+// Option represents a configuration option for the file picker
+type Option func(*AdvancedModel)
+
+// WithStartPath sets the starting directory path
+func WithStartPath(path string) Option {
+	return func(fp *AdvancedModel) {
+		fp.currentPath = path
+	}
+}
+
+// WithShowPreview sets whether to show file preview
+func WithShowPreview(show bool) Option {
+	return func(fp *AdvancedModel) {
+		fp.showPreview = show
+	}
+}
+
+// WithShowHidden sets whether to show hidden files
+func WithShowHidden(show bool) Option {
+	return func(fp *AdvancedModel) {
+		fp.showHidden = show
+	}
+}
+
+// WithCompatibilityMode enables compatibility mode (no additional effect currently)
+func WithCompatibilityMode(compat bool) Option {
+	return func(fp *AdvancedModel) {
+		// This is a placeholder for future compatibility mode features
+		// Currently, the Model type already provides compatibility wrapping
+	}
+}
+
+// WithShowIcons sets whether to show file icons
+func WithShowIcons(show bool) Option {
+	return func(fp *AdvancedModel) {
+		fp.showIcons = show
+	}
+}
+
+// WithShowSizes sets whether to show file sizes
+func WithShowSizes(show bool) Option {
+	return func(fp *AdvancedModel) {
+		fp.showSizes = show
+	}
+}
+
+// WithDetailedView sets whether to show detailed file information
+func WithDetailedView(detailed bool) Option {
+	return func(fp *AdvancedModel) {
+		fp.detailedView = detailed
+	}
+}
+
+// WithSortMode sets the initial sort mode
+func WithSortMode(mode SortMode) Option {
+	return func(fp *AdvancedModel) {
+		fp.sortMode = mode
+	}
+}
+
+// WithPreviewWidth sets the width of the preview panel
+func WithPreviewWidth(width int) Option {
+	return func(fp *AdvancedModel) {
+		fp.previewWidth = width
+	}
+}
+
+// WithMaxHistorySize sets the maximum number of history entries
+func WithMaxHistorySize(size int) Option {
+	return func(fp *AdvancedModel) {
+		fp.maxHistorySize = size
+	}
+}
+
+// WithDirectorySelection enables or disables directory selection mode
+func WithDirectorySelection(enabled bool) Option {
+	return func(fp *AdvancedModel) {
+		fp.directorySelectionMode = enabled
+	}
+}
+
+// WithGlobPattern sets the initial glob pattern filter
+func WithGlobPattern(pattern string) Option {
+	return func(fp *AdvancedModel) {
+		fp.globPattern = pattern
+	}
+}
+
+// WithJailDirectory sets a directory restriction boundary - navigation will be limited to this directory and subdirectories
+func WithJailDirectory(path string) Option {
+	return func(fp *AdvancedModel) {
+		if absPath, err := filepath.Abs(path); err == nil {
+			fp.jailDirectory = absPath
+		}
+	}
+}
+
+// New creates a new file picker with the specified options
+func New(options ...Option) *AdvancedModel {
+	// Get current working directory as default
+	wd, err := os.Getwd()
+	if err != nil {
+		wd = "."
+	}
+
 	ti := textinput.New()
 	ti.Placeholder = "Enter name..."
 	ti.CharLimit = 255
@@ -358,8 +498,12 @@ func NewAdvancedModel(startPath string) *AdvancedModel {
 	si.Placeholder = "Search files..."
 	si.CharLimit = 100
 
+	gi := textinput.New()
+	gi.Placeholder = "Enter glob pattern (e.g., *.go, test_*)..."
+	gi.CharLimit = 100
+
 	fp := &AdvancedModel{
-		currentPath:    startPath,
+		currentPath:    wd,
 		showIcons:      true,
 		showSizes:      true,
 		multiSelected:  make(map[string]bool),
@@ -368,6 +512,7 @@ func NewAdvancedModel(startPath string) *AdvancedModel {
 		viewState:      ViewStateNormal,
 		textInput:      ti,
 		searchInput:    si,
+		globInput:      gi,
 		help:           help.New(),
 		keys:           defaultAdvancedKeyMap(),
 		showPreview:    true,
@@ -380,16 +525,82 @@ func NewAdvancedModel(startPath string) *AdvancedModel {
 		maxHistorySize: 50,
 	}
 
+	// Apply options
+	for _, option := range options {
+		option(fp)
+	}
+
 	// Resolve the starting path
-	if absPath, err := filepath.Abs(startPath); err == nil {
+	if absPath, err := filepath.Abs(fp.currentPath); err == nil {
 		fp.currentPath = absPath
 	}
 
 	// Add initial directory to history
 	fp.addToHistory(fp.currentPath)
 
+	// Validate starting path against jail directory if set
+	if fp.jailDirectory != "" {
+		if !fp.isWithinJail(fp.currentPath) {
+			// If current path is outside jail, move to jail directory
+			fp.currentPath = fp.jailDirectory
+			fp.addToHistory(fp.currentPath)
+		}
+	}
+
 	fp.loadDirectory()
 	return fp
+}
+
+// NewAdvancedModel creates a new advanced file picker
+// Deprecated: Use New(WithStartPath(startPath)) instead
+func NewAdvancedModel(startPath string) *AdvancedModel {
+	return New(WithStartPath(startPath))
+}
+
+// isWithinJail checks if the given path is within the jail directory
+func (fp *AdvancedModel) isWithinJail(path string) bool {
+	if fp.jailDirectory == "" {
+		return true // No jail restriction
+	}
+
+	// Resolve to absolute path
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+
+	// Clean paths to handle .. and . components
+	cleanJail := filepath.Clean(fp.jailDirectory)
+	cleanPath := filepath.Clean(absPath)
+
+	// Check if path is within jail (must be equal or a subdirectory)
+	return cleanPath == cleanJail || strings.HasPrefix(cleanPath+string(filepath.Separator), cleanJail+string(filepath.Separator))
+}
+
+// isAtJailRoot checks if the current path is at the jail root
+func (fp *AdvancedModel) isAtJailRoot() bool {
+	if fp.jailDirectory == "" {
+		return false // No jail restriction
+	}
+	
+	cleanJail := filepath.Clean(fp.jailDirectory)
+	cleanCurrent := filepath.Clean(fp.currentPath)
+	return cleanJail == cleanCurrent
+}
+
+// validateNavigationPath checks if navigation to the given path is allowed
+func (fp *AdvancedModel) validateNavigationPath(path string) bool {
+	if fp.jailDirectory == "" {
+		return true // No jail restriction
+	}
+
+	// Resolve to absolute path
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+
+	return fp.isWithinJail(absPath)
 }
 
 // CompatFilepicker provides compatibility with the old bubbles filepicker interface
@@ -422,7 +633,7 @@ func NewModel() Model {
 		wd = "."
 	}
 
-	advModel := NewAdvancedModel(wd)
+	advModel := New(WithStartPath(wd))
 
 	return Model{
 		AdvancedModel: advModel,
@@ -430,6 +641,22 @@ func NewModel() Model {
 			DirAllowed:       true,
 			FileAllowed:      true,
 			CurrentDirectory: wd,
+			Height:           10,
+			advancedModel:    advModel,
+		},
+	}
+}
+
+// NewModelWithOptions creates a new file picker with backward compatibility using options
+func NewModelWithOptions(options ...Option) Model {
+	advModel := New(options...)
+
+	return Model{
+		AdvancedModel: advModel,
+		Filepicker: CompatFilepicker{
+			DirAllowed:       true,
+			FileAllowed:      true,
+			CurrentDirectory: advModel.currentPath,
 			Height:           10,
 			advancedModel:    advModel,
 		},
@@ -494,6 +721,11 @@ func (fp *AdvancedModel) Init() tea.Cmd {
 
 // addToHistory adds a directory to the navigation history
 func (fp *AdvancedModel) addToHistory(path string) {
+	// Don't add paths outside jail to history
+	if !fp.isWithinJail(path) {
+		return
+	}
+
 	// If we're in the middle of history (user went back), truncate forward history
 	if fp.historyIndex >= 0 && fp.historyIndex < len(fp.history)-1 {
 		fp.history = fp.history[:fp.historyIndex+1]
@@ -560,10 +792,18 @@ func (fp *AdvancedModel) navigateToHistoryIndex() {
 		return
 	}
 
-	fp.currentPath = fp.history[fp.historyIndex]
+	targetPath := fp.history[fp.historyIndex]
+	
+	// Validate against jail directory
+	if !fp.isWithinJail(targetPath) {
+		return
+	}
+
+	fp.currentPath = targetPath
 	fp.cursor = 0
 	fp.multiSelected = make(map[string]bool)
 	fp.searchQuery = ""
+	fp.globPattern = ""
 	fp.loadDirectory()
 }
 
@@ -587,6 +827,8 @@ func (fp *AdvancedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return fp.updateTextInput(msg)
 		case ViewStateSearch:
 			return fp.updateSearch(msg)
+		case ViewStateGlob:
+			return fp.updateGlob(msg)
 		}
 	}
 
@@ -603,6 +845,9 @@ func (fp *AdvancedModel) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, fp.keys.Escape):
 		if fp.searchQuery != "" {
 			fp.searchQuery = ""
+			fp.filterFiles()
+		} else if fp.globPattern != "" {
+			fp.globPattern = ""
 			fp.filterFiles()
 		} else {
 			fp.cancelled = true
@@ -621,6 +866,16 @@ func (fp *AdvancedModel) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		fp.viewState = ViewStateSearch
 		return fp, textinput.Blink
 
+	case key.Matches(msg, fp.keys.Glob):
+		fp.globInput.SetValue(fp.globPattern)
+		fp.globInput.Focus()
+		fp.viewState = ViewStateGlob
+		return fp, textinput.Blink
+
+	case key.Matches(msg, fp.keys.ClearGlob):
+		fp.globPattern = ""
+		fp.filterFiles()
+
 	case key.Matches(msg, fp.keys.ToggleHidden):
 		fp.showHidden = !fp.showHidden
 		fp.loadDirectory()
@@ -631,6 +886,15 @@ func (fp *AdvancedModel) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, fp.keys.CycleSort):
 		fp.sortMode = (fp.sortMode + 1) % 4
 		fp.sortFiles()
+
+	case key.Matches(msg, fp.keys.ToggleDirSelection):
+		fp.directorySelectionMode = !fp.directorySelectionMode
+
+	case key.Matches(msg, fp.keys.SelectCurrentDir):
+		if fp.directorySelectionMode {
+			fp.selectedFiles = []string{fp.currentPath}
+			return fp, tea.Quit
+		}
 
 	case key.Matches(msg, fp.keys.Up):
 		if fp.cursor > 0 {
@@ -658,10 +922,14 @@ func (fp *AdvancedModel) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(fp.filteredFiles) > 0 {
 			file := fp.filteredFiles[fp.cursor]
 			if file.Name != ".." {
-				if fp.multiSelected[file.Path] {
-					delete(fp.multiSelected, file.Path)
-				} else {
-					fp.multiSelected[file.Path] = true
+				// In directory selection mode, allow selecting directories
+				// In normal mode, allow selecting files
+				if (fp.directorySelectionMode && file.IsDir) || (!fp.directorySelectionMode && !file.IsDir) || (!fp.directorySelectionMode && file.IsDir) {
+					if fp.multiSelected[file.Path] {
+						delete(fp.multiSelected, file.Path)
+					} else {
+						fp.multiSelected[file.Path] = true
+					}
 				}
 			}
 		}
@@ -678,8 +946,12 @@ func (fp *AdvancedModel) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, fp.keys.SelectAllFiles):
 		for _, file := range fp.filteredFiles {
-			if !file.IsDir && file.Name != ".." {
-				fp.multiSelected[file.Path] = true
+			if file.Name != ".." {
+				// In directory selection mode, select directories
+				// In normal mode, select files
+				if (fp.directorySelectionMode && file.IsDir) || (!fp.directorySelectionMode && !file.IsDir) {
+					fp.multiSelected[file.Path] = true
+				}
 			}
 		}
 
@@ -687,19 +959,42 @@ func (fp *AdvancedModel) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(fp.filteredFiles) > 0 {
 			selectedFile := fp.filteredFiles[fp.cursor]
 			if selectedFile.IsDir {
-				var newPath string
-				if selectedFile.Name == ".." {
-					newPath = filepath.Dir(fp.currentPath)
+				if fp.directorySelectionMode {
+					// In directory selection mode, select the directory
+					var targetPath string
+					if selectedFile.Name == ".." {
+						// Select parent directory
+						targetPath = filepath.Dir(fp.currentPath)
+					} else {
+						// Select the subdirectory
+						targetPath = selectedFile.Path
+					}
+					// Only allow selection within jail directory
+					if fp.validateNavigationPath(targetPath) {
+						fp.selectedFiles = []string{targetPath}
+						return fp, tea.Quit
+					}
 				} else {
-					newPath = selectedFile.Path
+					// Normal mode: navigate into directory
+					var newPath string
+					if selectedFile.Name == ".." {
+						newPath = filepath.Dir(fp.currentPath)
+					} else {
+						newPath = selectedFile.Path
+					}
+					// Validate navigation path against jail directory
+					if fp.validateNavigationPath(newPath) {
+						fp.currentPath = newPath
+						fp.addToHistory(newPath)
+						fp.cursor = 0
+						fp.multiSelected = make(map[string]bool)
+						fp.searchQuery = ""
+						fp.globPattern = ""
+						fp.loadDirectory()
+					}
 				}
-				fp.currentPath = newPath
-				fp.addToHistory(newPath)
-				fp.cursor = 0
-				fp.multiSelected = make(map[string]bool)
-				fp.searchQuery = ""
-				fp.loadDirectory()
 			} else {
+				// For files, select them regardless of directory mode
 				if len(fp.multiSelected) > 0 {
 					fp.selectedFiles = make([]string, 0, len(fp.multiSelected))
 					for path := range fp.multiSelected {
@@ -714,12 +1009,16 @@ func (fp *AdvancedModel) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, fp.keys.Backspace):
 		newPath := filepath.Dir(fp.currentPath)
-		fp.currentPath = newPath
-		fp.addToHistory(newPath)
-		fp.cursor = 0
-		fp.multiSelected = make(map[string]bool)
-		fp.searchQuery = ""
-		fp.loadDirectory()
+		// Prevent navigation outside jail directory
+		if fp.validateNavigationPath(newPath) {
+			fp.currentPath = newPath
+			fp.addToHistory(newPath)
+			fp.cursor = 0
+			fp.multiSelected = make(map[string]bool)
+			fp.searchQuery = ""
+			fp.globPattern = ""
+			fp.loadDirectory()
+		}
 
 	case key.Matches(msg, fp.keys.Back):
 		fp.goBack()
@@ -797,6 +1096,28 @@ func (fp *AdvancedModel) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return fp, cmd
 }
 
+// updateGlob handles glob input state
+func (fp *AdvancedModel) updateGlob(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+
+	switch msg.String() {
+	case "enter", "esc":
+		fp.globPattern = fp.globInput.Value()
+		fp.globInput.Blur()
+		fp.viewState = ViewStateNormal
+		fp.filterFiles()
+		if fp.cursor >= len(fp.filteredFiles) {
+			fp.cursor = 0
+		}
+		fp.updatePreview()
+
+	default:
+		fp.globInput, cmd = fp.globInput.Update(msg)
+	}
+
+	return fp, cmd
+}
+
 // updateConfirmDelete handles delete confirmation
 func (fp *AdvancedModel) updateConfirmDelete(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
@@ -840,9 +1161,9 @@ func (fp *AdvancedModel) updateTextInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return fp, cmd
 }
 
-// filterFiles filters files based on search query
+// filterFiles filters files based on search query and glob pattern
 func (fp *AdvancedModel) filterFiles() {
-	if fp.searchQuery == "" {
+	if fp.searchQuery == "" && fp.globPattern == "" {
 		fp.filteredFiles = fp.files
 		return
 	}
@@ -851,7 +1172,26 @@ func (fp *AdvancedModel) filterFiles() {
 	query := strings.ToLower(fp.searchQuery)
 
 	for _, file := range fp.files {
-		if strings.Contains(strings.ToLower(file.Name), query) {
+		// Skip parent directory ".." from glob filtering
+		if file.Name == ".." {
+			fp.filteredFiles = append(fp.filteredFiles, file)
+			continue
+		}
+
+		// Apply search filter
+		matchesSearch := fp.searchQuery == "" || strings.Contains(strings.ToLower(file.Name), query)
+		
+		// Apply glob filter
+		matchesGlob := fp.globPattern == ""
+		if !matchesGlob && fp.globPattern != "" {
+			// Use filepath.Match for glob pattern matching
+			if matched, err := filepath.Match(fp.globPattern, file.Name); err == nil && matched {
+				matchesGlob = true
+			}
+		}
+
+		// File must match both filters (if active)
+		if matchesSearch && matchesGlob {
 			fp.filteredFiles = append(fp.filteredFiles, file)
 		}
 	}
@@ -1249,16 +1589,32 @@ func (fp *AdvancedModel) buildFileListPanel(width int) string {
 
 	// Title with status
 	title := titleStyle.Render("File Explorer")
+	if fp.directorySelectionMode {
+		title += statusStyle.Render(" - Directory Selection Mode")
+	}
 	if fp.searchQuery != "" {
 		title += statusStyle.Render(fmt.Sprintf(" (search: %s)", fp.searchQuery))
+	}
+	if fp.globPattern != "" {
+		title += statusStyle.Render(fmt.Sprintf(" (glob: %s)", fp.globPattern))
 	}
 	if len(fp.multiSelected) > 0 {
 		title += statusStyle.Render(fmt.Sprintf(" (%d selected)", len(fp.multiSelected)))
 	}
 	b.WriteString(title + "\n")
 
-	// Current path
-	path := pathStyle.Render("Path: " + fp.currentPath)
+	// Current path (show relative path from jail if jailed)
+	displayPath := fp.currentPath
+	if fp.jailDirectory != "" {
+		if relPath, err := filepath.Rel(fp.jailDirectory, fp.currentPath); err == nil && !strings.HasPrefix(relPath, "..") {
+			if relPath == "." {
+				displayPath = "[jail]"
+			} else {
+				displayPath = "[jail]/" + relPath
+			}
+		}
+	}
+	path := pathStyle.Render("Path: " + displayPath)
 	b.WriteString(path + "\n")
 
 	// Separator
@@ -1309,6 +1665,13 @@ func (fp *AdvancedModel) buildFileListPanel(width int) string {
 		b.WriteString(searchStyle.Render(fmt.Sprintf("Search: %s (%d matches)", fp.searchQuery, len(fp.filteredFiles))))
 	}
 
+	// Glob input (if active)
+	if fp.viewState == ViewStateGlob {
+		b.WriteString(searchStyle.Render("Glob: ") + fp.globInput.View())
+	} else if fp.globPattern != "" {
+		b.WriteString(searchStyle.Render(fmt.Sprintf("Glob: %s (%d matches)", fp.globPattern, len(fp.filteredFiles))))
+	}
+
 	// Text input (if active)
 	if fp.viewState == ViewStateRename || fp.viewState == ViewStateCreateFile || fp.viewState == ViewStateCreateDir {
 		var prompt string
@@ -1326,10 +1689,10 @@ func (fp *AdvancedModel) buildFileListPanel(width int) string {
 		b.WriteString(prompt + fp.textInput.View())
 	}
 
-	// Add line break only if we had search or text input
-	if fp.viewState == ViewStateSearch || fp.viewState == ViewStateRename ||
-		fp.viewState == ViewStateCreateFile || fp.viewState == ViewStateCreateDir ||
-		fp.searchQuery != "" {
+	// Add line break only if we had search, glob, or text input
+	if fp.viewState == ViewStateSearch || fp.viewState == ViewStateGlob ||
+		fp.viewState == ViewStateRename || fp.viewState == ViewStateCreateFile ||
+		fp.viewState == ViewStateCreateDir || fp.searchQuery != "" || fp.globPattern != "" {
 		b.WriteString("\n")
 	}
 
@@ -1399,7 +1762,7 @@ func (fp *AdvancedModel) buildStatusLine() string {
 	var parts []string
 
 	// File count and filtering info
-	if fp.searchQuery != "" {
+	if fp.searchQuery != "" || fp.globPattern != "" {
 		parts = append(parts, fmt.Sprintf("%d of %d items", len(fp.filteredFiles), len(fp.files)))
 	} else {
 		parts = append(parts, fmt.Sprintf("%d items", len(fp.files)))
@@ -1423,6 +1786,9 @@ func (fp *AdvancedModel) buildStatusLine() string {
 
 	// View options
 	var options []string
+	if fp.directorySelectionMode {
+		options = append(options, "Directory Selection")
+	}
 	if fp.showHidden {
 		options = append(options, "Hidden")
 	}
@@ -1431,6 +1797,9 @@ func (fp *AdvancedModel) buildStatusLine() string {
 	}
 	if fp.showPreview {
 		options = append(options, "Preview")
+	}
+	if fp.jailDirectory != "" {
+		options = append(options, "Jailed")
 	}
 	if len(options) > 0 {
 		parts = append(parts, strings.Join(options, ","))
@@ -1556,7 +1925,12 @@ func (fp *AdvancedModel) formatFileEntry(file File, isCursor bool, width int) st
 	} else if fp.multiSelected[file.Path] {
 		result = multiSelectedStyle.Render(result)
 	} else if file.IsDir {
-		result = dirStyle.Render(result)
+		// Use special styling for directories in directory selection mode
+		if fp.directorySelectionMode {
+			result = dirSelectionStyle.Render(result)
+		} else {
+			result = dirStyle.Render(result)
+		}
 	} else {
 		result = normalStyle.Render(result)
 	}
@@ -1683,18 +2057,22 @@ func (fp *AdvancedModel) loadDirectory() {
 		return
 	}
 
-	// Add parent directory entry if not at root
-	if fp.currentPath != "/" && fp.currentPath != "\\" {
-		if info, err := os.Stat(filepath.Dir(fp.currentPath)); err == nil {
-			fp.files = append(fp.files, File{
-				Name:    "..",
-				Path:    filepath.Dir(fp.currentPath),
-				IsDir:   true,
-				Size:    0,
-				ModTime: info.ModTime(),
-				Mode:    info.Mode(),
-				Hidden:  false,
-			})
+	// Add parent directory entry if not at root and not at jail root
+	if fp.currentPath != "/" && fp.currentPath != "\\" && !fp.isAtJailRoot() {
+		parentPath := filepath.Dir(fp.currentPath)
+		// Only add .. if parent directory is within jail (or no jail is set)
+		if fp.validateNavigationPath(parentPath) {
+			if info, err := os.Stat(parentPath); err == nil {
+				fp.files = append(fp.files, File{
+					Name:    "..",
+					Path:    parentPath,
+					IsDir:   true,
+					Size:    0,
+					ModTime: info.ModTime(),
+					Mode:    info.Mode(),
+					Hidden:  false,
+				})
+			}
 		}
 	}
 
@@ -1761,4 +2139,14 @@ func (fp *AdvancedModel) SetShowPreview(show bool) {
 func (fp *AdvancedModel) SetShowHidden(show bool) {
 	fp.showHidden = show
 	fp.loadDirectory() // Reload to apply the hidden file setting
+}
+
+// GetDirectorySelectionMode returns whether directory selection mode is enabled
+func (fp *AdvancedModel) GetDirectorySelectionMode() bool {
+	return fp.directorySelectionMode
+}
+
+// SetDirectorySelectionMode enables or disables directory selection mode
+func (fp *AdvancedModel) SetDirectorySelectionMode(enabled bool) {
+	fp.directorySelectionMode = enabled
 }

@@ -87,7 +87,7 @@ func TestAdvancedModelDirectly(t *testing.T) {
 	}
 	defer os.RemoveAll(tempDir)
 
-	// Create advanced model directly
+	// Create advanced model directly using deprecated function
 	advModel := NewAdvancedModel(tempDir)
 
 	if advModel.currentPath != tempDir {
@@ -136,5 +136,122 @@ func TestModelEmbedding(t *testing.T) {
 	model.SetShowPreview(false)
 	if model.showPreview {
 		t.Error("Expected showPreview to be false")
+	}
+}
+
+func TestNewOptionsPattern(t *testing.T) {
+	// Test that the new options pattern works
+	tempDir, err := os.MkdirTemp("", "filepicker-options-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Test with no options (should use defaults)
+	model1 := New()
+	if !model1.showPreview {
+		t.Error("Expected showPreview to be true by default")
+	}
+	if model1.showHidden {
+		t.Error("Expected showHidden to be false by default")
+	}
+
+	// Test with options
+	model2 := New(
+		WithStartPath(tempDir),
+		WithShowPreview(false),
+		WithShowHidden(true),
+		WithShowIcons(false),
+		WithShowSizes(false),
+		WithDetailedView(false),
+		WithSortMode(SortBySize),
+		WithPreviewWidth(30),
+		WithMaxHistorySize(25),
+	)
+
+	if model2.currentPath != tempDir {
+		t.Errorf("Expected currentPath to be %s, got %s", tempDir, model2.currentPath)
+	}
+	if model2.showPreview {
+		t.Error("Expected showPreview to be false")
+	}
+	if !model2.showHidden {
+		t.Error("Expected showHidden to be true")
+	}
+	if model2.showIcons {
+		t.Error("Expected showIcons to be false")
+	}
+	if model2.showSizes {
+		t.Error("Expected showSizes to be false")
+	}
+	if model2.detailedView {
+		t.Error("Expected detailedView to be false")
+	}
+	if model2.sortMode != SortBySize {
+		t.Error("Expected sortMode to be SortBySize")
+	}
+	if model2.previewWidth != 30 {
+		t.Errorf("Expected previewWidth to be 30, got %d", model2.previewWidth)
+	}
+	if model2.maxHistorySize != 25 {
+		t.Errorf("Expected maxHistorySize to be 25, got %d", model2.maxHistorySize)
+	}
+}
+
+func TestBackwardCompatibility(t *testing.T) {
+	// Test that the old NewAdvancedModel still works
+	tempDir, err := os.MkdirTemp("", "filepicker-compat-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	model1 := NewAdvancedModel(tempDir)
+	model2 := New(WithStartPath(tempDir))
+
+	// Both should have the same configuration
+	if model1.currentPath != model2.currentPath {
+		t.Error("Expected NewAdvancedModel and New to have same currentPath")
+	}
+	if model1.showPreview != model2.showPreview {
+		t.Error("Expected NewAdvancedModel and New to have same showPreview")
+	}
+	if model1.showHidden != model2.showHidden {
+		t.Error("Expected NewAdvancedModel and New to have same showHidden")
+	}
+}
+
+func TestNewModelWithOptions(t *testing.T) {
+	// Test that the new compatibility function works
+	tempDir, err := os.MkdirTemp("", "filepicker-compat-options-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Test with options
+	model := NewModelWithOptions(
+		WithStartPath(tempDir),
+		WithShowPreview(false),
+		WithShowHidden(true),
+	)
+
+	// Should have compatibility wrapper
+	if model.Filepicker.CurrentDirectory != tempDir {
+		t.Errorf("Expected Filepicker.CurrentDirectory to be %s, got %s", tempDir, model.Filepicker.CurrentDirectory)
+	}
+	if model.Filepicker.DirAllowed != true {
+		t.Error("Expected DirAllowed to be true")
+	}
+	if model.Filepicker.FileAllowed != true {
+		t.Error("Expected FileAllowed to be true")
+	}
+
+	// Should have options applied
+	if model.showPreview {
+		t.Error("Expected showPreview to be false")
+	}
+	if !model.showHidden {
+		t.Error("Expected showHidden to be true")
 	}
 }

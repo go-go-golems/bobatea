@@ -9,6 +9,7 @@ The file picker is a powerful component with both basic compatibility and advanc
 ### Features:
 - **Full backward compatibility** with existing bobatea filepicker API
 - **Multi-file selection** with visual indicators
+- **Directory selection mode** for choosing directories instead of files
 - **File operations**: copy, cut, paste, delete, rename
 - **Search functionality** with real-time filtering  
 - **File preview** with content detection for text files
@@ -51,14 +52,34 @@ picker := filepicker.NewAdvancedModel(".")
 picker.SetShowPreview(true)
 picker.SetShowHidden(false)
 
+// Enable directory selection mode
+picker.SetDirectorySelectionMode(true)
+
 // Use in a bubbletea program
 program := tea.NewProgram(picker)
 
 // After the program exits, check results
 selectedFiles, hasSelection := picker.GetSelected()
 if hasSelection {
-    // Handle selected files
+    // Handle selected files or directories
 }
+```
+
+### New Options API (Recommended):
+```go
+import "github.com/go-go-golems/bobatea/pkg/filepicker"
+
+// Create with options
+picker := filepicker.New(
+    filepicker.WithStartPath("."),
+    filepicker.WithDirectorySelection(true),
+    filepicker.WithShowPreview(true),
+    filepicker.WithShowHidden(false),
+    filepicker.WithDetailedView(true),
+)
+
+// Use in a bubbletea program
+program := tea.NewProgram(picker)
 ```
 
 ### Keyboard Shortcuts:
@@ -74,10 +95,12 @@ if hasSelection {
 - `alt+→/l` - Go forward in history
 
 #### Selection:
-- `space` - Toggle selection
+- `space` - Toggle selection (context-aware: files or directories)
 - `a` - Select all
 - `A` - Deselect all
-- `ctrl+a` - Select all files (not directories)
+- `ctrl+a` - Select all items (files in normal mode, directories in directory selection mode)
+- `s` - Select current directory (in directory selection mode)
+- `tab` - Toggle directory selection mode
 
 #### File Operations:
 - `c` - Copy selected files
@@ -89,7 +112,7 @@ if hasSelection {
 - `m` - Create new directory
 
 #### View Options:
-- `tab` - Toggle file preview
+- `p` - Toggle file preview
 - `f2` - Toggle hidden files
 - `f3` - Toggle detailed view
 - `f4` - Cycle sort mode
@@ -105,8 +128,62 @@ if hasSelection {
 
 - `SetShowPreview(bool)` - Enable/disable file preview
 - `SetShowHidden(bool)` - Show/hide hidden files
-- `GetSelected() ([]string, bool)` - Get selected files after picker exits
+- `SetDirectorySelectionMode(bool)` - Enable/disable directory selection mode
+- `GetDirectorySelectionMode() bool` - Check if directory selection mode is enabled
+- `GetSelected() ([]string, bool)` - Get selected files/directories after picker exits
 - `GetError() error` - Get any error that occurred
+
+### Configuration Options (for `New()` function):
+
+- `WithStartPath(string)` - Set starting directory
+- `WithDirectorySelection(bool)` - Enable directory selection mode
+- `WithShowPreview(bool)` - Enable file preview
+- `WithShowHidden(bool)` - Show hidden files
+- `WithShowIcons(bool)` - Show file type icons
+- `WithShowSizes(bool)` - Show file sizes
+- `WithDetailedView(bool)` - Enable detailed view
+- `WithSortMode(SortMode)` - Set initial sort mode
+- `WithPreviewWidth(int)` - Set preview panel width
+- `WithMaxHistorySize(int)` - Set navigation history size
+
+## Directory Selection Mode
+
+The file picker now supports a dedicated directory selection mode that makes it easy to choose directories instead of files.
+
+### How it works:
+- Enable with `WithDirectorySelection(true)` or `SetDirectorySelectionMode(true)`
+- In directory selection mode:
+  - **Enter** selects the current directory (instead of navigating into it)
+  - **Space** toggles selection on directories (not files)
+  - **`s`** key selects the current directory
+  - **Tab** toggles between file and directory selection modes
+  - Visual indicators show directories are selectable
+  - Status shows "Directory Selection Mode"
+
+### Usage Examples:
+
+```go
+// Create a directory picker
+picker := filepicker.New(
+    filepicker.WithStartPath("/home/user"),
+    filepicker.WithDirectorySelection(true),
+)
+
+// Or enable on existing picker
+picker.SetDirectorySelectionMode(true)
+
+// Run the picker
+program := tea.NewProgram(picker)
+if _, err := program.Run(); err != nil {
+    log.Fatal(err)
+}
+
+// Get selected directories
+selectedDirs, hasSelection := picker.GetSelected()
+if hasSelection {
+    fmt.Printf("Selected directories: %v\n", selectedDirs)
+}
+```
 
 ### Example:
 
