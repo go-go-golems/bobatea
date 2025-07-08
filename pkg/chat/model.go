@@ -214,7 +214,9 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case StateUserInput:
 			m.textArea, cmd = m.textArea.Update(msg)
 		case StateSavingToFile:
-			m.filepicker, cmd = m.filepicker.Update(msg)
+			var updatedModel tea.Model
+			updatedModel, cmd = m.filepicker.Update(msg)
+			m.filepicker = updatedModel.(filepicker.Model)
 		case StateMovingAround, StateStreamCompletion, StateError:
 			prevAtBottom := m.viewport.AtBottom()
 			m.viewport, cmd = m.viewport.Update(msg)
@@ -463,7 +465,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			log.Trace().
 				Int64("update_call_id", updateCallID).
 				Msg("Updating filepicker")
-			m.filepicker, cmd = m.filepicker.Update(msg_)
+			var updatedModel tea.Model
+			updatedModel, cmd = m.filepicker.Update(msg_)
+			m.filepicker = updatedModel.(filepicker.Model)
 			cmds = append(cmds, cmd)
 		}
 	}
