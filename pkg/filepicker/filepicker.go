@@ -1,468 +1,1764 @@
 package filepicker
 
 import (
+	"bufio"
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"time"
+
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
-	"github.com/charmbracelet/bubbletea"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/go-go-golems/bobatea/pkg/buttons"
-	bubblesfilepicker "github.com/go-go-golems/bobatea/pkg/thirdparty/bubbles/filepicker"
-	"os"
-	"path"
-	"strings"
-	"time"
 )
 
+// Messages for compatibility with existing bobatea filepicker API
 type SelectFileMsg struct {
 	Path string
 }
+
 type CancelFilePickerMsg struct{}
 
-type clearError struct{}
+// File represents a file or directory with extended metadata
+type File struct {
+	Name     string
+	Path     string
+	IsDir    bool
+	Size     int64
+	ModTime  time.Time
+	Mode     os.FileMode
+	Selected bool
+	Hidden   bool
+}
 
-//goland:noinspection GoMixedReceiverTypes
+// ViewState represents the current state of the file picker
+type ViewState int
+
+const (
+	ViewStateNormal ViewState = iota
+	ViewStateConfirmDelete
+	ViewStateRename
+	ViewStateCreateFile
+	ViewStateCreateDir
+	ViewStateSearch
+)
+
+// Operation represents file operations
+type Operation int
+
+const (
+	OpNone Operation = iota
+	OpCopy
+	OpCut
+)
+
+// SortMode represents different sorting options
+type SortMode int
+
+const (
+	SortByName SortMode = iota
+	SortBySize
+	SortByDate
+	SortByType
+)
+
+// AdvancedModel represents the advanced file picker model
+type AdvancedModel struct {
+	currentPath   string
+	files         []File
+	filteredFiles []File
+	cursor        int
+	selectedFiles []string // For final selection
+	width         int
+	height        int
+	cancelled     bool
+	showIcons     bool
+	showSizes     bool
+	err           error
+
+	// Multi-selection state
+	multiSelected map[string]bool
+
+	// Operations
+	clipboard   []string
+	clipboardOp Operation
+
+	// UI state
+	viewState    ViewState
+	confirmFiles []string
+	textInput    textinput.Model
+	searchInput  textinput.Model
+	help         help.Model
+	keys         advancedKeyMap
+
+	// Tier 4 features
+	showPreview    bool
+	showHidden     bool
+	detailedView   bool
+	sortMode       SortMode
+	searchQuery    string
+	previewContent string
+	previewWidth   int
+
+	// Navigation history
+	history        []string // Stack of visited directories
+	historyIndex   int      // Current position in history (-1 means at the end)
+	maxHistorySize int      // Maximum history entries to keep
+}
+
+// advancedKeyMap defines the key bindings for the advanced file picker
+type advancedKeyMap struct {
+	// Navigation
+	Up   key.Binding
+	Down key.Binding
+	Home key.Binding
+	End  key.Binding
+
+	// Selection
+	Enter          key.Binding
+	Space          key.Binding
+	SelectAll      key.Binding
+	DeselectAll    key.Binding
+	SelectAllFiles key.Binding
+
+	// File operations
+	Delete  key.Binding
+	Copy    key.Binding
+	Cut     key.Binding
+	Paste   key.Binding
+	Rename  key.Binding
+	NewFile key.Binding
+	NewDir  key.Binding
+
+	// Navigation
+	Escape    key.Binding
+	Backspace key.Binding
+	Refresh   key.Binding
+	Back      key.Binding
+	Forward   key.Binding
+
+	// Tier 4 features
+	TogglePreview key.Binding
+	Search        key.Binding
+	ToggleHidden  key.Binding
+	ToggleDetail  key.Binding
+	CycleSort     key.Binding
+
+	// System
+	Help key.Binding
+	Quit key.Binding
+}
+
+// ShortHelp returns keybindings to be shown in the mini help view
+func (k advancedKeyMap) ShortHelp() []key.Binding {
+	return []key.Binding{k.Help, k.Quit}
+}
+
+// FullHelp returns keybindings for the expanded help view
+func (k advancedKeyMap) FullHelp() [][]key.Binding {
+	return [][]key.Binding{
+		{k.Up, k.Down, k.Home, k.End},
+		{k.Enter, k.Space, k.SelectAll, k.DeselectAll},
+		{k.Copy, k.Cut, k.Paste, k.Delete},
+		{k.Rename, k.NewFile, k.NewDir, k.Refresh},
+		{k.TogglePreview, k.Search, k.ToggleHidden, k.ToggleDetail},
+		{k.CycleSort, k.Backspace, k.Back, k.Forward},
+		{k.Escape, k.Help, k.Quit},
+	}
+}
+
+// defaultAdvancedKeyMap returns the default key bindings for the advanced file picker
+func defaultAdvancedKeyMap() advancedKeyMap {
+	return advancedKeyMap{
+		Up: key.NewBinding(
+			key.WithKeys("up", "k"),
+			key.WithHelp("↑/k", "up"),
+		),
+		Down: key.NewBinding(
+			key.WithKeys("down", "j"),
+			key.WithHelp("↓/j", "down"),
+		),
+		Home: key.NewBinding(
+			key.WithKeys("home"),
+			key.WithHelp("home", "first"),
+		),
+		End: key.NewBinding(
+			key.WithKeys("end"),
+			key.WithHelp("end", "last"),
+		),
+		Enter: key.NewBinding(
+			key.WithKeys("enter"),
+			key.WithHelp("enter", "select/enter"),
+		),
+		Space: key.NewBinding(
+			key.WithKeys(" "),
+			key.WithHelp("space", "toggle selection"),
+		),
+		SelectAll: key.NewBinding(
+			key.WithKeys("a"),
+			key.WithHelp("a", "select all"),
+		),
+		DeselectAll: key.NewBinding(
+			key.WithKeys("A"),
+			key.WithHelp("A", "deselect all"),
+		),
+		SelectAllFiles: key.NewBinding(
+			key.WithKeys("ctrl+a"),
+			key.WithHelp("ctrl+a", "select all files"),
+		),
+		Delete: key.NewBinding(
+			key.WithKeys("d"),
+			key.WithHelp("d", "delete"),
+		),
+		Copy: key.NewBinding(
+			key.WithKeys("c"),
+			key.WithHelp("c", "copy"),
+		),
+		Cut: key.NewBinding(
+			key.WithKeys("x"),
+			key.WithHelp("x", "cut"),
+		),
+		Paste: key.NewBinding(
+			key.WithKeys("v"),
+			key.WithHelp("v", "paste"),
+		),
+		Rename: key.NewBinding(
+			key.WithKeys("r"),
+			key.WithHelp("r", "rename"),
+		),
+		NewFile: key.NewBinding(
+			key.WithKeys("n"),
+			key.WithHelp("n", "new file"),
+		),
+		NewDir: key.NewBinding(
+			key.WithKeys("m"),
+			key.WithHelp("m", "new directory"),
+		),
+		Escape: key.NewBinding(
+			key.WithKeys("esc"),
+			key.WithHelp("esc", "cancel"),
+		),
+		Backspace: key.NewBinding(
+			key.WithKeys("backspace"),
+			key.WithHelp("backspace", "up directory"),
+		),
+		Refresh: key.NewBinding(
+			key.WithKeys("f5"),
+			key.WithHelp("f5", "refresh"),
+		),
+		Back: key.NewBinding(
+			key.WithKeys("alt+left", "h"),
+			key.WithHelp("alt+←/h", "back"),
+		),
+		Forward: key.NewBinding(
+			key.WithKeys("alt+right", "l"),
+			key.WithHelp("alt+→/l", "forward"),
+		),
+		TogglePreview: key.NewBinding(
+			key.WithKeys("tab"),
+			key.WithHelp("tab", "toggle preview"),
+		),
+		Search: key.NewBinding(
+			key.WithKeys("/"),
+			key.WithHelp("/", "search"),
+		),
+		ToggleHidden: key.NewBinding(
+			key.WithKeys("f2"),
+			key.WithHelp("f2", "toggle hidden"),
+		),
+		ToggleDetail: key.NewBinding(
+			key.WithKeys("f3"),
+			key.WithHelp("f3", "toggle details"),
+		),
+		CycleSort: key.NewBinding(
+			key.WithKeys("f4"),
+			key.WithHelp("f4", "cycle sort"),
+		),
+		Help: key.NewBinding(
+			key.WithKeys("?"),
+			key.WithHelp("?", "toggle help"),
+		),
+		Quit: key.NewBinding(
+			key.WithKeys("q", "ctrl+c"),
+			key.WithHelp("q", "quit"),
+		),
+	}
+}
+
+// Styles for Tier 4
+var (
+	borderStyle = lipgloss.NewStyle().
+			BorderStyle(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("62"))
+
+	titleStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("205")).
+			Bold(true)
+
+	pathStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("241"))
+
+	selectedStyle = lipgloss.NewStyle().
+			Background(lipgloss.Color("62")).
+			Foreground(lipgloss.Color("230"))
+
+	multiSelectedStyle = lipgloss.NewStyle().
+				Background(lipgloss.Color("33")).
+				Foreground(lipgloss.Color("230"))
+
+	normalStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("252"))
+
+	dirStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("39")).
+			Bold(true)
+
+	hiddenStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("243"))
+
+	statusStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("205"))
+
+	previewStyle = lipgloss.NewStyle().
+			BorderStyle(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("240")).
+			Padding(0, 1)
+
+	previewTitleStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("99")).
+				Bold(true)
+
+	searchStyle = lipgloss.NewStyle().
+			Background(lipgloss.Color("235")).
+			Foreground(lipgloss.Color("99"))
+
+	confirmStyle = lipgloss.NewStyle().
+			BorderStyle(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("196")).
+			Background(lipgloss.Color("52")).
+			Foreground(lipgloss.Color("255")).
+			Padding(1, 2)
+
+	errorStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("196"))
+)
+
+// NewAdvancedModel creates a new advanced file picker
+func NewAdvancedModel(startPath string) *AdvancedModel {
+	ti := textinput.New()
+	ti.Placeholder = "Enter name..."
+	ti.CharLimit = 255
+
+	si := textinput.New()
+	si.Placeholder = "Search files..."
+	si.CharLimit = 100
+
+	fp := &AdvancedModel{
+		currentPath:   startPath,
+		showIcons:     true,
+		showSizes:     true,
+		multiSelected: make(map[string]bool),
+		clipboard:     []string{},
+		clipboardOp:   OpNone,
+		viewState:     ViewStateNormal,
+		textInput:     ti,
+		searchInput:   si,
+		help:          help.New(),
+		keys:          defaultAdvancedKeyMap(),
+		showPreview:   true,
+		showHidden:    false,
+		detailedView:   true,
+		sortMode:       SortByName,
+		previewWidth:   40,
+		history:        make([]string, 0),
+		historyIndex:   -1,
+		maxHistorySize: 50,
+	}
+
+	// Resolve the starting path
+	if absPath, err := filepath.Abs(startPath); err == nil {
+		fp.currentPath = absPath
+	}
+
+	// Add initial directory to history
+	fp.addToHistory(fp.currentPath)
+	
+	fp.loadDirectory()
+	return fp
+}
+
+// CompatFilepicker provides compatibility with the old bubbles filepicker interface
+type CompatFilepicker struct {
+	DirAllowed       bool
+	FileAllowed      bool
+	CurrentDirectory string
+	Height           int
+	advancedModel    *AdvancedModel
+}
+
+// Model provides backward compatibility with the original bobatea filepicker API
 type Model struct {
-	Title string
-	Error string
-
-	Filepicker    bubblesfilepicker.Model
-	confirmDialog buttons.Model
-	help          help.Model
-	filenameInput textinput.Model
-
-	width             int
-	height            int
-	state             state
-	creatingDirectory bool
-
-	keyMap KeyMap
-
+	*AdvancedModel
+	sentCancelMsg   bool
+	sentSelectMsg   bool
+	
+	// Compatibility fields
+	Title        string
+	Error        string
+	Filepicker   CompatFilepicker
 	SelectedPath string
 }
 
-type state string
-
-const (
-	stateBrowse           state = "browse"
-	stateNewFile          state = "new-file"
-	stateConfirmNew       state = "confirm-new"
-	stateConfirmOverwrite state = "confirm-overwrite"
-)
-
+// NewModel creates a new file picker with backward compatibility
+// This maintains the original bobatea API while using the advanced implementation
 func NewModel() Model {
-	fp := bubblesfilepicker.New()
-	filenameInput := textinput.New()
-	filenameInput.Focus()
-	keyMap := DefaultKeyMap()
-
+	wd, err := os.Getwd()
+	if err != nil {
+		wd = "."
+	}
+	
+	advModel := NewAdvancedModel(wd)
+	
 	return Model{
-		Filepicker:    fp,
-		confirmDialog: newConfirmCreateDialog(""),
-		filenameInput: filenameInput,
-		help:          help.New(),
-		keyMap:        keyMap,
-		state:         stateBrowse,
+		AdvancedModel: advModel,
+		Filepicker: CompatFilepicker{
+			DirAllowed:       true,
+			FileAllowed:      true,
+			CurrentDirectory: wd,
+			Height:           10,
+			advancedModel:    advModel,
+		},
 	}
 }
 
-func newConfirmCreateDialog(question string) buttons.Model {
-	return buttons.NewModel(
-		buttons.WithQuestion(question),
-		buttons.WithButtons("No", "Yes"),
-		buttons.WithActiveButton("Yes"),
-	)
-}
-
-func newConfirmOverwriteDialog(filename string) buttons.Model {
-	return buttons.NewModel(
-		buttons.WithQuestion(fmt.Sprintf("Overwrite file %s?", filename)),
-		buttons.WithButtons("No", "Yes"),
-		buttons.WithActiveButton("No"),
-	)
-}
-
+// Init initializes the compatibility wrapper
 func (m Model) Init() tea.Cmd {
-	return m.Filepicker.Init()
+	return m.AdvancedModel.Init()
 }
 
-func (m *Model) resize() tea.Cmd {
-	m_, cmd := m.Update(tea.WindowSizeMsg{
-		Width:  m.width,
-		Height: m.height,
-	})
-	m.Filepicker = m_.Filepicker
-	return cmd
-}
-
-func (m *Model) setError(err string) tea.Cmd {
-	m.Error = err
-	m.state = stateBrowse
-
-	if m.Error != "" {
-		return tea.Batch(m.resize(), func() tea.Msg {
-			time.Sleep(3 * time.Second)
-			return clearError{}
-		})
+// Update handles updates for the compatibility wrapper
+func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Sync compatibility settings to advanced model if they changed
+	if m.Filepicker.CurrentDirectory != m.AdvancedModel.currentPath {
+		m.AdvancedModel.currentPath = m.Filepicker.CurrentDirectory
+		m.AdvancedModel.loadDirectory()
 	}
-
-	return m.resize()
-}
-
-func (m *Model) enterNewFile(creatingDirectory bool) tea.Cmd {
-	m.filenameInput.Reset()
-	m.filenameInput.Focus()
-	m.state = stateNewFile
-	m.creatingDirectory = creatingDirectory
-	return m.resize()
-}
-
-func (m *Model) enterConfirmNew() tea.Cmd {
-	fileName := path.Base(m.SelectedPath)
-	question := fmt.Sprintf("Create new file %s?", fileName)
-	if m.creatingDirectory {
-		question = fmt.Sprintf("Create new directory %s?", fileName)
-	}
-	m.confirmDialog = newConfirmCreateDialog(question)
-	m.state = stateConfirmNew
-	return m.resize()
-}
-
-func (m *Model) enterConfirmOverwrite() tea.Cmd {
-	fileName := path.Base(m.SelectedPath)
-	m.confirmDialog = newConfirmOverwriteDialog(fileName)
-	m.state = stateConfirmOverwrite
-	return m.resize()
-}
-
-func (m *Model) enterBrowse() tea.Cmd {
-	m.state = stateBrowse
-	return m.resize()
-}
-
-func (m Model) selectFile() tea.Cmd {
-	return func() tea.Msg {
-		return SelectFileMsg{
-			Path: m.SelectedPath,
+	
+	// Delegate to the advanced model
+	updatedAdvanced, cmd := m.AdvancedModel.Update(msg)
+	
+	// Update our wrapper
+	m.AdvancedModel = updatedAdvanced.(*AdvancedModel)
+	
+	// Sync back to compatibility fields
+	m.Filepicker.CurrentDirectory = m.AdvancedModel.currentPath
+	m.Filepicker.advancedModel = m.AdvancedModel
+	
+	// Check if we need to send compatibility messages
+	var compatCmd tea.Cmd
+	
+	if m.AdvancedModel.cancelled && !m.sentCancelMsg {
+		m.sentCancelMsg = true
+		compatCmd = func() tea.Msg {
+			return CancelFilePickerMsg{}
+		}
+	} else if len(m.AdvancedModel.selectedFiles) > 0 && !m.sentSelectMsg {
+		m.sentSelectMsg = true
+		m.SelectedPath = m.AdvancedModel.selectedFiles[0]
+		compatCmd = func() tea.Msg {
+			return SelectFileMsg{Path: m.AdvancedModel.selectedFiles[0]}
 		}
 	}
+	
+	if compatCmd != nil {
+		return m, tea.Batch(cmd, compatCmd)
+	}
+	
+	return m, cmd
 }
 
-func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
+// View renders the compatibility wrapper
+func (m Model) View() string {
+	return m.AdvancedModel.View()
+}
+
+// Init initializes the file picker
+func (fp *AdvancedModel) Init() tea.Cmd {
+	return nil
+}
+
+// addToHistory adds a directory to the navigation history
+func (fp *AdvancedModel) addToHistory(path string) {
+	// If we're in the middle of history (user went back), truncate forward history
+	if fp.historyIndex >= 0 && fp.historyIndex < len(fp.history)-1 {
+		fp.history = fp.history[:fp.historyIndex+1]
+	}
+	
+	// Don't add duplicate consecutive entries
+	if len(fp.history) > 0 && fp.history[len(fp.history)-1] == path {
+		return
+	}
+	
+	// Add to history
+	fp.history = append(fp.history, path)
+	
+	// Limit history size
+	if len(fp.history) > fp.maxHistorySize {
+		fp.history = fp.history[1:]
+	}
+	
+	// Reset history index to end
+	fp.historyIndex = -1
+}
+
+// canGoBack returns true if we can navigate back in history
+func (fp *AdvancedModel) canGoBack() bool {
+	if fp.historyIndex == -1 {
+		return len(fp.history) > 1
+	}
+	return fp.historyIndex > 0
+}
+
+// canGoForward returns true if we can navigate forward in history
+func (fp *AdvancedModel) canGoForward() bool {
+	return fp.historyIndex >= 0 && fp.historyIndex < len(fp.history)-1
+}
+
+// goBack navigates to the previous directory in history
+func (fp *AdvancedModel) goBack() {
+	if !fp.canGoBack() {
+		return
+	}
+	
+	if fp.historyIndex == -1 {
+		fp.historyIndex = len(fp.history) - 2
+	} else {
+		fp.historyIndex--
+	}
+	
+	fp.navigateToHistoryIndex()
+}
+
+// goForward navigates to the next directory in history
+func (fp *AdvancedModel) goForward() {
+	if !fp.canGoForward() {
+		return
+	}
+	
+	fp.historyIndex++
+	fp.navigateToHistoryIndex()
+}
+
+// navigateToHistoryIndex navigates to the directory at the current history index
+func (fp *AdvancedModel) navigateToHistoryIndex() {
+	if fp.historyIndex < 0 || fp.historyIndex >= len(fp.history) {
+		return
+	}
+	
+	fp.currentPath = fp.history[fp.historyIndex]
+	fp.cursor = 0
+	fp.multiSelected = make(map[string]bool)
+	fp.searchQuery = ""
+	fp.loadDirectory()
+}
+
+// Update handles messages for Tier 4
+func (fp *AdvancedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
-	if key.Matches(msg, m.keyMap.Help) {
-		m.help.ShowAll = !m.help.ShowAll
-		return cmd
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		fp.width = msg.Width
+		fp.height = msg.Height
+		fp.help.Width = msg.Width
+
+	case tea.KeyMsg:
+		switch fp.viewState {
+		case ViewStateNormal:
+			return fp.updateNormal(msg)
+		case ViewStateConfirmDelete:
+			return fp.updateConfirmDelete(msg)
+		case ViewStateRename, ViewStateCreateFile, ViewStateCreateDir:
+			return fp.updateTextInput(msg)
+		case ViewStateSearch:
+			return fp.updateSearch(msg)
+		}
 	}
 
-	switch m.state {
-	case stateBrowse:
-		switch {
-		case key.Matches(msg, m.keyMap.CreateFile):
-			return m.enterNewFile(false)
+	return fp, cmd
+}
 
-		case key.Matches(msg, m.keyMap.CreateDirectory):
-			return m.enterNewFile(true)
+// updateNormal handles normal view state with Tier 4 features
+func (fp *AdvancedModel) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, fp.keys.Quit):
+		fp.cancelled = true
+		return fp, tea.Quit
 
-		case key.Matches(msg, m.keyMap.Exit):
-			return func() tea.Msg {
-				return CancelFilePickerMsg{}
-			}
-
-		default:
-			m.Filepicker, cmd = m.Filepicker.Update(msg)
-			return cmd
+	case key.Matches(msg, fp.keys.Escape):
+		if fp.searchQuery != "" {
+			fp.searchQuery = ""
+			fp.filterFiles()
+		} else {
+			fp.cancelled = true
+			return fp, tea.Quit
 		}
-	case stateNewFile:
-		switch {
-		case key.Matches(msg, m.keyMap.Accept):
-			if m.filenameInput.Value() != "" {
-				m.SelectedPath = path.Join(m.Filepicker.CurrentDirectory, m.filenameInput.Value())
-				if m.creatingDirectory {
-					return m.enterConfirmNew()
+
+	case key.Matches(msg, fp.keys.Help):
+		fp.help.ShowAll = !fp.help.ShowAll
+
+	case key.Matches(msg, fp.keys.TogglePreview):
+		fp.showPreview = !fp.showPreview
+
+	case key.Matches(msg, fp.keys.Search):
+		fp.searchInput.SetValue("")
+		fp.searchInput.Focus()
+		fp.viewState = ViewStateSearch
+		return fp, textinput.Blink
+
+	case key.Matches(msg, fp.keys.ToggleHidden):
+		fp.showHidden = !fp.showHidden
+		fp.loadDirectory()
+
+	case key.Matches(msg, fp.keys.ToggleDetail):
+		fp.detailedView = !fp.detailedView
+
+	case key.Matches(msg, fp.keys.CycleSort):
+		fp.sortMode = (fp.sortMode + 1) % 4
+		fp.sortFiles()
+
+	case key.Matches(msg, fp.keys.Up):
+		if fp.cursor > 0 {
+			fp.cursor--
+			fp.updatePreview()
+		}
+
+	case key.Matches(msg, fp.keys.Down):
+		if fp.cursor < len(fp.filteredFiles)-1 {
+			fp.cursor++
+			fp.updatePreview()
+		}
+
+	case key.Matches(msg, fp.keys.Home):
+		fp.cursor = 0
+		fp.updatePreview()
+
+	case key.Matches(msg, fp.keys.End):
+		if len(fp.filteredFiles) > 0 {
+			fp.cursor = len(fp.filteredFiles) - 1
+			fp.updatePreview()
+		}
+
+	case key.Matches(msg, fp.keys.Space):
+		if len(fp.filteredFiles) > 0 {
+			file := fp.filteredFiles[fp.cursor]
+			if file.Name != ".." {
+				if fp.multiSelected[file.Path] {
+					delete(fp.multiSelected, file.Path)
 				} else {
-					if fi, err := os.Stat(m.SelectedPath); err == nil && fi.IsDir() {
-						return tea.Batch(m.setError("File is a directory"), m.enterBrowse())
-					}
-					return m.enterConfirmNew()
+					fp.multiSelected[file.Path] = true
 				}
 			}
-			return m.enterBrowse()
-
-		case key.Matches(msg, m.keyMap.Exit):
-			return m.enterBrowse()
-
-		case key.Matches(msg, m.keyMap.ResetFileInput):
-			m.filenameInput.Reset()
-			return nil
-
-		default:
-			m.filenameInput, cmd = m.filenameInput.Update(msg)
-			return cmd
 		}
 
-	case stateConfirmNew, stateConfirmOverwrite:
-		switch {
-		case key.Matches(msg, m.keyMap.Exit):
-			return m.enterBrowse()
-		default:
-			m.confirmDialog, cmd = m.confirmDialog.Update(msg)
+	case key.Matches(msg, fp.keys.SelectAll):
+		for _, file := range fp.filteredFiles {
+			if file.Name != ".." {
+				fp.multiSelected[file.Path] = true
+			}
 		}
-		return cmd
+
+	case key.Matches(msg, fp.keys.DeselectAll):
+		fp.multiSelected = make(map[string]bool)
+
+	case key.Matches(msg, fp.keys.SelectAllFiles):
+		for _, file := range fp.filteredFiles {
+			if !file.IsDir && file.Name != ".." {
+				fp.multiSelected[file.Path] = true
+			}
+		}
+
+	case key.Matches(msg, fp.keys.Enter):
+		if len(fp.filteredFiles) > 0 {
+			selectedFile := fp.filteredFiles[fp.cursor]
+			if selectedFile.IsDir {
+				var newPath string
+				if selectedFile.Name == ".." {
+					newPath = filepath.Dir(fp.currentPath)
+				} else {
+					newPath = selectedFile.Path
+				}
+				fp.currentPath = newPath
+				fp.addToHistory(newPath)
+				fp.cursor = 0
+				fp.multiSelected = make(map[string]bool)
+				fp.searchQuery = ""
+				fp.loadDirectory()
+			} else {
+				if len(fp.multiSelected) > 0 {
+					fp.selectedFiles = make([]string, 0, len(fp.multiSelected))
+					for path := range fp.multiSelected {
+						fp.selectedFiles = append(fp.selectedFiles, path)
+					}
+				} else {
+					fp.selectedFiles = []string{selectedFile.Path}
+				}
+				return fp, tea.Quit
+			}
+		}
+
+	case key.Matches(msg, fp.keys.Backspace):
+		newPath := filepath.Dir(fp.currentPath)
+		fp.currentPath = newPath
+		fp.addToHistory(newPath)
+		fp.cursor = 0
+		fp.multiSelected = make(map[string]bool)
+		fp.searchQuery = ""
+		fp.loadDirectory()
+
+	case key.Matches(msg, fp.keys.Back):
+		fp.goBack()
+
+	case key.Matches(msg, fp.keys.Forward):
+		fp.goForward()
+
+	case key.Matches(msg, fp.keys.Refresh):
+		fp.loadDirectory()
+
+	case key.Matches(msg, fp.keys.Delete):
+		filesToDelete := fp.getSelectedFiles()
+		if len(filesToDelete) > 0 {
+			fp.confirmFiles = filesToDelete
+			fp.viewState = ViewStateConfirmDelete
+		}
+
+	case key.Matches(msg, fp.keys.Copy):
+		fp.clipboard = fp.getSelectedFiles()
+		fp.clipboardOp = OpCopy
+
+	case key.Matches(msg, fp.keys.Cut):
+		fp.clipboard = fp.getSelectedFiles()
+		fp.clipboardOp = OpCut
+
+	case key.Matches(msg, fp.keys.Paste):
+		if len(fp.clipboard) > 0 {
+			fp.performPaste()
+		}
+
+	case key.Matches(msg, fp.keys.Rename):
+		if len(fp.filteredFiles) > 0 && fp.filteredFiles[fp.cursor].Name != ".." {
+			fp.textInput.SetValue(fp.filteredFiles[fp.cursor].Name)
+			fp.textInput.CursorEnd()
+			fp.textInput.Focus()
+			fp.viewState = ViewStateRename
+			return fp, textinput.Blink
+		}
+
+	case key.Matches(msg, fp.keys.NewFile):
+		fp.textInput.SetValue("")
+		fp.textInput.Focus()
+		fp.viewState = ViewStateCreateFile
+		return fp, textinput.Blink
+
+	case key.Matches(msg, fp.keys.NewDir):
+		fp.textInput.SetValue("")
+		fp.textInput.Focus()
+		fp.viewState = ViewStateCreateDir
+		return fp, textinput.Blink
+	}
+
+	return fp, nil
+}
+
+// updateSearch handles search input state
+func (fp *AdvancedModel) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+
+	switch msg.String() {
+	case "enter", "esc":
+		fp.searchQuery = fp.searchInput.Value()
+		fp.searchInput.Blur()
+		fp.viewState = ViewStateNormal
+		fp.filterFiles()
+		if fp.cursor >= len(fp.filteredFiles) {
+			fp.cursor = 0
+		}
+		fp.updatePreview()
+
+	default:
+		fp.searchInput, cmd = fp.searchInput.Update(msg)
+	}
+
+	return fp, cmd
+}
+
+// updateConfirmDelete handles delete confirmation
+func (fp *AdvancedModel) updateConfirmDelete(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "y", "Y":
+		fp.performDelete()
+		fp.viewState = ViewStateNormal
+	case "n", "N", "esc":
+		fp.viewState = ViewStateNormal
+	}
+	return fp, nil
+}
+
+// updateTextInput handles text input states
+func (fp *AdvancedModel) updateTextInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+
+	switch msg.String() {
+	case "enter":
+		name := strings.TrimSpace(fp.textInput.Value())
+		if name != "" {
+			switch fp.viewState {
+			case ViewStateRename:
+				fp.performRename(name)
+			case ViewStateCreateFile:
+				fp.performCreateFile(name)
+			case ViewStateCreateDir:
+				fp.performCreateDir(name)
+			}
+		}
+		fp.textInput.Blur()
+		fp.viewState = ViewStateNormal
+
+	case "esc":
+		fp.textInput.Blur()
+		fp.viewState = ViewStateNormal
+
+	default:
+		fp.textInput, cmd = fp.textInput.Update(msg)
+	}
+
+	return fp, cmd
+}
+
+// filterFiles filters files based on search query
+func (fp *AdvancedModel) filterFiles() {
+	if fp.searchQuery == "" {
+		fp.filteredFiles = fp.files
+		return
+	}
+
+	fp.filteredFiles = []File{}
+	query := strings.ToLower(fp.searchQuery)
+
+	for _, file := range fp.files {
+		if strings.Contains(strings.ToLower(file.Name), query) {
+			fp.filteredFiles = append(fp.filteredFiles, file)
+		}
+	}
+}
+
+// sortFiles sorts files according to current sort mode
+func (fp *AdvancedModel) sortFiles() {
+	sort.Slice(fp.files, func(i, j int) bool {
+		// Always keep parent directory at top
+		if fp.files[i].Name == ".." {
+			return true
+		}
+		if fp.files[j].Name == ".." {
+			return false
+		}
+
+		// Directories first (except when sorting by type)
+		if fp.sortMode != SortByType && fp.files[i].IsDir != fp.files[j].IsDir {
+			return fp.files[i].IsDir
+		}
+
+		switch fp.sortMode {
+		case SortBySize:
+			return fp.files[i].Size < fp.files[j].Size
+		case SortByDate:
+			return fp.files[i].ModTime.After(fp.files[j].ModTime)
+		case SortByType:
+			extI := strings.ToLower(filepath.Ext(fp.files[i].Name))
+			extJ := strings.ToLower(filepath.Ext(fp.files[j].Name))
+			if extI != extJ {
+				return extI < extJ
+			}
+			return strings.ToLower(fp.files[i].Name) < strings.ToLower(fp.files[j].Name)
+		default: // SortByName
+			return strings.ToLower(fp.files[i].Name) < strings.ToLower(fp.files[j].Name)
+		}
+	})
+
+	fp.filterFiles()
+}
+
+// updatePreview updates the preview content for current file
+func (fp *AdvancedModel) updatePreview() {
+	if !fp.showPreview || len(fp.filteredFiles) == 0 {
+		fp.previewContent = ""
+		return
+	}
+
+	file := fp.filteredFiles[fp.cursor]
+
+	if file.IsDir {
+		fp.previewContent = fp.buildDirectoryPreview(file)
+	} else {
+		fp.previewContent = fp.buildFilePreview(file)
+	}
+}
+
+// buildDirectoryPreview builds preview content for directories
+func (fp *AdvancedModel) buildDirectoryPreview(file File) string {
+	var content strings.Builder
+
+	content.WriteString(previewTitleStyle.Render(file.Name) + "\n")
+	content.WriteString("Type: Directory\n")
+	content.WriteString(fmt.Sprintf("Modified: %s\n", file.ModTime.Format("Jan 02, 2006 15:04")))
+	content.WriteString(fmt.Sprintf("Permissions: %s\n", file.Mode.String()))
+
+	// Try to count items in directory
+	if entries, err := os.ReadDir(file.Path); err == nil {
+		visibleCount := 0
+		hiddenCount := 0
+		for _, entry := range entries {
+			if strings.HasPrefix(entry.Name(), ".") {
+				hiddenCount++
+			} else {
+				visibleCount++
+			}
+		}
+		content.WriteString(fmt.Sprintf("Items: %d", visibleCount))
+		if hiddenCount > 0 {
+			content.WriteString(fmt.Sprintf(" (%d hidden)", hiddenCount))
+		}
+		content.WriteString("\n")
+	}
+
+	return content.String()
+}
+
+// buildFilePreview builds preview content for files
+func (fp *AdvancedModel) buildFilePreview(file File) string {
+	var content strings.Builder
+
+	content.WriteString(previewTitleStyle.Render(file.Name) + "\n")
+	content.WriteString(fmt.Sprintf("Size: %s\n", fp.formatFileSize(file.Size)))
+	content.WriteString(fmt.Sprintf("Modified: %s\n", file.ModTime.Format("Jan 02, 2006 15:04")))
+	content.WriteString(fmt.Sprintf("Permissions: %s\n", file.Mode.String()))
+	content.WriteString(strings.Repeat("─", 20) + "\n")
+
+	// Try to preview file content
+	if fp.isTextFile(file.Name) && file.Size < 10*1024 { // Only preview small text files
+		if preview := fp.readFilePreview(file.Path); preview != "" {
+			content.WriteString(preview)
+		} else {
+			content.WriteString("[Unable to read file]")
+		}
+	} else if fp.isImageFile(file.Name) {
+		content.WriteString("[Image file]\n")
+		if info, err := os.Stat(file.Path); err == nil {
+			content.WriteString(fmt.Sprintf("Size: %dx? pixels\n", info.Size()))
+		}
+	} else if fp.isArchiveFile(file.Name) {
+		content.WriteString("[Archive file]\n")
+		content.WriteString("Use 'file' command for details")
+	} else {
+		content.WriteString("[Binary file]")
+	}
+
+	return content.String()
+}
+
+// isTextFile checks if a file is likely a text file
+func (fp *AdvancedModel) isTextFile(filename string) bool {
+	ext := strings.ToLower(filepath.Ext(filename))
+	textExts := []string{
+		".txt", ".md", ".readme", ".go", ".py", ".js", ".html", ".css",
+		".json", ".xml", ".yml", ".yaml", ".toml", ".ini", ".conf",
+		".sh", ".bat", ".ps1", ".php", ".rb", ".pl", ".java", ".cpp",
+		".c", ".h", ".hpp", ".rs", ".swift", ".kt", ".scala", ".clj",
+	}
+
+	for _, textExt := range textExts {
+		if ext == textExt {
+			return true
+		}
+	}
+	return false
+}
+
+// isImageFile checks if a file is an image
+func (fp *AdvancedModel) isImageFile(filename string) bool {
+	ext := strings.ToLower(filepath.Ext(filename))
+	imageExts := []string{".jpg", ".jpeg", ".png", ".gif", ".bmp", ".svg", ".webp", ".tiff", ".ico"}
+
+	for _, imgExt := range imageExts {
+		if ext == imgExt {
+			return true
+		}
+	}
+	return false
+}
+
+// isArchiveFile checks if a file is an archive
+func (fp *AdvancedModel) isArchiveFile(filename string) bool {
+	ext := strings.ToLower(filepath.Ext(filename))
+	archiveExts := []string{".zip", ".tar", ".gz", ".rar", ".7z", ".bz2", ".xz", ".lz", ".lzma"}
+
+	for _, archExt := range archiveExts {
+		if ext == archExt {
+			return true
+		}
+	}
+	return false
+}
+
+// readFilePreview reads a preview of a text file
+func (fp *AdvancedModel) readFilePreview(filePath string) string {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return ""
+	}
+	defer file.Close()
+
+	var lines []string
+	scanner := bufio.NewScanner(file)
+	lineCount := 0
+	maxLines := 15
+
+	for scanner.Scan() && lineCount < maxLines {
+		line := scanner.Text()
+		if len(line) > 50 {
+			line = line[:50] + "..."
+		}
+		lines = append(lines, line)
+		lineCount++
+	}
+
+	if lineCount == maxLines {
+		lines = append(lines, "...")
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+// getSelectedFiles returns the list of selected files
+func (fp *AdvancedModel) getSelectedFiles() []string {
+	if len(fp.multiSelected) > 0 {
+		files := make([]string, 0, len(fp.multiSelected))
+		for path := range fp.multiSelected {
+			files = append(files, path)
+		}
+		return files
+	}
+
+	if len(fp.filteredFiles) > 0 && fp.filteredFiles[fp.cursor].Name != ".." {
+		return []string{fp.filteredFiles[fp.cursor].Path}
+	}
+
+	return []string{}
+}
+
+// File operation methods (same as Tier 3, but working with filteredFiles)
+func (fp *AdvancedModel) performDelete() {
+	for _, filePath := range fp.confirmFiles {
+		if err := os.RemoveAll(filePath); err != nil {
+			fp.err = fmt.Errorf("failed to delete %s: %v", filepath.Base(filePath), err)
+			return
+		}
+		delete(fp.multiSelected, filePath)
+	}
+	fp.loadDirectory()
+}
+
+func (fp *AdvancedModel) performPaste() {
+	for _, src := range fp.clipboard {
+		dst := filepath.Join(fp.currentPath, filepath.Base(src))
+
+		if fp.clipboardOp == OpCopy {
+			if err := fp.copyFile(src, dst); err != nil {
+				fp.err = fmt.Errorf("failed to copy %s: %v", filepath.Base(src), err)
+				return
+			}
+		} else if fp.clipboardOp == OpCut {
+			if err := os.Rename(src, dst); err != nil {
+				fp.err = fmt.Errorf("failed to move %s: %v", filepath.Base(src), err)
+				return
+			}
+		}
+	}
+
+	if fp.clipboardOp == OpCut {
+		fp.clipboard = []string{}
+		fp.clipboardOp = OpNone
+	}
+
+	fp.loadDirectory()
+}
+
+func (fp *AdvancedModel) copyFile(src, dst string) error {
+	srcInfo, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+
+	if srcInfo.IsDir() {
+		return fp.copyDir(src, dst)
+	}
+
+	srcFile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer srcFile.Close()
+
+	dstFile, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer dstFile.Close()
+
+	_, err = io.Copy(dstFile, srcFile)
+	return err
+}
+
+func (fp *AdvancedModel) copyDir(src, dst string) error {
+	if err := os.MkdirAll(dst, 0755); err != nil {
+		return err
+	}
+
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		srcPath := filepath.Join(src, entry.Name())
+		dstPath := filepath.Join(dst, entry.Name())
+
+		if err := fp.copyFile(srcPath, dstPath); err != nil {
+			return err
+		}
 	}
 
 	return nil
 }
 
-func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
-	var cmds []tea.Cmd
-	var cmd tea.Cmd
+func (fp *AdvancedModel) performRename(newName string) {
+	if len(fp.filteredFiles) > 0 && fp.filteredFiles[fp.cursor].Name != ".." {
+		oldPath := fp.filteredFiles[fp.cursor].Path
+		newPath := filepath.Join(fp.currentPath, newName)
 
-	switch msg := msg.(type) {
-	case clearError:
-		cmds = append(cmds, m.setError(""))
-
-	case buttons.AbortedMsg:
-		cmds = append(cmds, m.enterBrowse())
-
-	case buttons.SelectedMsg:
-		switch m.state {
-		case stateConfirmNew:
-			switch msg.Name {
-			case "No":
-				cmds = append(cmds, m.enterBrowse())
-			case "Yes":
-				cmd = func() tea.Cmd {
-					fi, err := os.Stat(m.SelectedPath)
-
-					if m.creatingDirectory {
-						if err != nil {
-							if os.IsNotExist(err) {
-								err = os.Mkdir(m.SelectedPath, 0755)
-								if err != nil {
-									return tea.Batch(
-										m.setError(err.Error()),
-										m.enterBrowse(),
-									)
-								}
-								return tea.Batch(
-									m.enterDir(m.SelectedPath),
-									m.enterBrowse(),
-								)
-							} else {
-								return tea.Batch(
-									m.setError(err.Error()),
-									m.enterBrowse(),
-								)
-							}
-						}
-
-						if fi.IsDir() {
-							return tea.Batch(
-								m.enterDir(m.SelectedPath),
-								m.enterBrowse(),
-							)
-						}
-
-						return tea.Batch(
-							m.setError("File or Directory already exists"),
-							m.enterBrowse(),
-						)
-					} else {
-						if err != nil {
-							if os.IsNotExist(err) {
-								return tea.Batch(
-									m.selectFile(),
-									m.enterBrowse(),
-								)
-							} else {
-								return tea.Batch(
-									m.setError(err.Error()),
-									m.enterBrowse(),
-								)
-							}
-						}
-						if fi.IsDir() {
-							return tea.Batch(
-								m.setError("File is a directory"),
-								m.enterBrowse(),
-							)
-						}
-
-						return m.enterConfirmOverwrite()
-					}
-
-				}()
-				cmds = append(cmds, cmd)
-			}
-
-		case stateConfirmOverwrite:
-			switch msg.Name {
-			case "No":
-				cmds = append(cmds, m.enterBrowse())
-			case "Yes":
-				cmds = append(cmds,
-					m.selectFile(),
-					m.enterBrowse(),
-				)
-			}
-
-		case stateBrowse, stateNewFile:
+		if err := os.Rename(oldPath, newPath); err != nil {
+			fp.err = fmt.Errorf("failed to rename: %v", err)
+			return
 		}
 
-	case tea.KeyMsg:
-		cmds = append(cmds, m.handleKey(msg))
+		delete(fp.multiSelected, oldPath)
+		fp.loadDirectory()
+	}
+}
 
-	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
+func (fp *AdvancedModel) performCreateFile(name string) {
+	filePath := filepath.Join(fp.currentPath, name)
 
-		m.help.Width = msg.Width
-		m.filenameInput.Width = msg.Width
+	file, err := os.Create(filePath)
+	if err != nil {
+		fp.err = fmt.Errorf("failed to create file: %v", err)
+		return
+	}
+	file.Close()
 
-		errorView := m.viewError()
-		errorViewHeight := lipgloss.Height(errorView)
-		if errorViewHeight > 0 {
-			errorViewHeight++
-		}
+	fp.loadDirectory()
+}
 
-		helpView := m.help.View(m.keyMap)
-		helpViewHeight := lipgloss.Height(helpView)
-		titleViewHeight := lipgloss.Height(m.viewTitle(""))
+func (fp *AdvancedModel) performCreateDir(name string) {
+	dirPath := filepath.Join(fp.currentPath, name)
 
-		switch m.state {
-		case stateBrowse:
-			fpHeight := msg.Height - helpViewHeight - errorViewHeight - titleViewHeight
+	if err := os.Mkdir(dirPath, 0755); err != nil {
+		fp.err = fmt.Errorf("failed to create directory: %v", err)
+		return
+	}
 
-			m.Filepicker, cmd = m.Filepicker.Update(tea.WindowSizeMsg{
-				Width:  msg.Width,
-				Height: fpHeight,
-			})
-			cmds = append(cmds, cmd)
+	fp.loadDirectory()
+}
 
-		case stateConfirmNew, stateConfirmOverwrite, stateNewFile:
-			m.confirmDialog, cmd = m.confirmDialog.Update(tea.WindowSizeMsg{
-				Width:  msg.Width,
-				Height: msg.Height - helpViewHeight - errorViewHeight,
-			})
-			cmds = append(cmds, cmd)
-		}
+// View renders the advanced file picker (Tier 4)
+func (fp *AdvancedModel) View() string {
+	if fp.width == 0 || fp.height == 0 {
+		return "Loading..."
+	}
 
-	case bubblesfilepicker.NavigateToDirMsg:
-		m.Filepicker, cmd = m.Filepicker.Update(msg)
-		cmds = append(cmds, cmd)
-
+	switch fp.viewState {
+	case ViewStateConfirmDelete:
+		return fp.viewConfirmDelete()
 	default:
-		switch m.state {
-		case stateBrowse:
-			m.Filepicker, cmd = m.Filepicker.Update(msg)
-			cmds = append(cmds, cmd)
-		case stateNewFile:
-			m.filenameInput, cmd = m.filenameInput.Update(msg)
-			cmds = append(cmds, cmd)
-		case stateConfirmNew, stateConfirmOverwrite:
-			m.confirmDialog, cmd = m.confirmDialog.Update(msg)
-			cmds = append(cmds, cmd)
+		return fp.viewNormal()
+	}
+}
+
+// viewNormal renders the normal file picker view with preview panel
+func (fp *AdvancedModel) viewNormal() string {
+	// Calculate panel widths
+	var fileListWidth, previewWidth int
+	if fp.showPreview {
+		previewWidth = (fp.width * fp.previewWidth) / 100
+		if previewWidth < 20 {
+			previewWidth = 2
+		}
+		if previewWidth > fp.width-40 {
+			previewWidth = fp.width - 40
+		}
+		fileListWidth = fp.width - previewWidth - 6 // Account for borders and separator
+	} else {
+		fileListWidth = fp.width - 4
+		previewWidth = 0
+	}
+
+	// Build file list panel
+	filePanel := fp.buildFileListPanel(fileListWidth)
+
+	if fp.showPreview {
+		// Build preview panel
+		previewPanel := fp.buildPreviewPanel(previewWidth)
+
+		// Combine panels side by side
+		panelsView := lipgloss.JoinHorizontal(
+			lipgloss.Top,
+			borderStyle.Width(fileListWidth).Render(filePanel),
+			borderStyle.Width(previewWidth).Render(previewPanel),
+		)
+
+		// Add help below panels
+		helpView := fp.help.View(fp.keys)
+		if helpView != "" {
+			return panelsView + "\n" + helpView
+		}
+		return panelsView
+	} else {
+		return borderStyle.Width(fileListWidth).Render(filePanel) + "\n" + fp.help.View(fp.keys)
+	}
+}
+
+// buildFileListPanel builds the file list panel content
+func (fp *AdvancedModel) buildFileListPanel(width int) string {
+	var b strings.Builder
+	contentWidth := width - 2
+
+	// Title with status
+	title := titleStyle.Render("File Explorer")
+	if fp.searchQuery != "" {
+		title += statusStyle.Render(fmt.Sprintf(" (search: %s)", fp.searchQuery))
+	}
+	if len(fp.multiSelected) > 0 {
+		title += statusStyle.Render(fmt.Sprintf(" (%d selected)", len(fp.multiSelected)))
+	}
+	b.WriteString(title + "\n")
+
+	// Current path
+	path := pathStyle.Render("Path: " + fp.currentPath)
+	b.WriteString(path + "\n")
+
+	// Separator
+	b.WriteString(strings.Repeat("─", contentWidth) + "\n")
+
+	// File list
+	contentHeight := fp.height - 9 // Account for title, path, status, search, help
+
+	startIdx := 0
+	endIdx := len(fp.filteredFiles)
+
+	// Calculate visible range for scrolling
+	if len(fp.filteredFiles) > contentHeight {
+		if fp.cursor >= contentHeight/2 {
+			startIdx = fp.cursor - contentHeight/2
+			endIdx = startIdx + contentHeight
+			if endIdx > len(fp.filteredFiles) {
+				endIdx = len(fp.filteredFiles)
+				startIdx = endIdx - contentHeight
+				if startIdx < 0 {
+					startIdx = 0
+				}
+			}
+		} else {
+			endIdx = contentHeight
 		}
 	}
 
-	if m.state == stateBrowse {
-		if ok, path := m.Filepicker.DidSelectFile(msg); ok {
-			m.SelectedPath = path
-			m.confirmDialog = newConfirmOverwriteDialog(m.SelectedPath)
-			m.state = stateConfirmOverwrite
+	for i := startIdx; i < endIdx; i++ {
+		file := fp.filteredFiles[i]
+		line := fp.formatFileEntry(file, i == fp.cursor, contentWidth)
+		b.WriteString(line + "\n")
+	}
+
+	// Fill remaining space
+	remaining := contentHeight - (endIdx - startIdx)
+	for i := 0; i < remaining; i++ {
+		b.WriteString(strings.Repeat(" ", contentWidth) + "\n")
+	}
+
+	// Separator
+	b.WriteString(strings.Repeat("─", contentWidth) + "\n")
+
+	// Search input (if active)
+	if fp.viewState == ViewStateSearch {
+		b.WriteString(searchStyle.Render("Search: ") + fp.searchInput.View())
+	} else if fp.searchQuery != "" {
+		b.WriteString(searchStyle.Render(fmt.Sprintf("Search: %s (%d matches)", fp.searchQuery, len(fp.filteredFiles))))
+	}
+
+	// Text input (if active)
+	if fp.viewState == ViewStateRename || fp.viewState == ViewStateCreateFile || fp.viewState == ViewStateCreateDir {
+		var prompt string
+		switch fp.viewState {
+		case ViewStateRename:
+			prompt = "Rename: "
+		case ViewStateCreateFile:
+			prompt = "New file: "
+		case ViewStateCreateDir:
+			prompt = "New directory: "
+		}
+		if fp.viewState == ViewStateSearch {
+			b.WriteString("\n")
+		}
+		b.WriteString(prompt + fp.textInput.View())
+	}
+
+	// Add line break only if we had search or text input
+	if fp.viewState == ViewStateSearch || fp.viewState == ViewStateRename ||
+		fp.viewState == ViewStateCreateFile || fp.viewState == ViewStateCreateDir ||
+		fp.searchQuery != "" {
+		b.WriteString("\n")
+	}
+
+	// Status line
+	status := fp.buildStatusLine()
+	b.WriteString(status)
+
+	// Error display
+	if fp.err != nil {
+		b.WriteString("\n" + errorStyle.Render("Error: "+fp.err.Error()))
+		fp.err = nil
+	}
+
+	return b.String()
+}
+
+// buildPreviewPanel builds the preview panel content
+func (fp *AdvancedModel) buildPreviewPanel(width int) string {
+	var b strings.Builder
+	contentWidth := width - 2
+
+	// Preview title
+	b.WriteString(previewTitleStyle.Render("Preview") + "\n")
+	b.WriteString(strings.Repeat("─", contentWidth) + "\n")
+
+	// Preview content with better formatting
+	if fp.previewContent != "" {
+		lines := strings.Split(fp.previewContent, "\n")
+		maxLines := fp.height - 8
+
+		for i, line := range lines {
+			if i >= maxLines {
+				b.WriteString("...\n")
+				break
+			}
+			if len(line) > contentWidth-1 {
+				line = line[:contentWidth-3] + "..."
+			}
+			b.WriteString(" " + line + "\n") // Add leading space for readability
+		}
+	} else {
+		b.WriteString(" No preview available\n")
+	}
+
+	return b.String()
+}
+
+// viewConfirmDelete renders the delete confirmation dialog
+func (fp *AdvancedModel) viewConfirmDelete() string {
+	var b strings.Builder
+
+	b.WriteString("Delete the following files?\n\n")
+
+	for _, filePath := range fp.confirmFiles {
+		b.WriteString("• " + filepath.Base(filePath) + "\n")
+	}
+
+	b.WriteString("\n[Y] Yes    [N] No")
+
+	dialog := confirmStyle.Render(b.String())
+
+	return lipgloss.Place(fp.width, fp.height, lipgloss.Center, lipgloss.Center, dialog)
+}
+
+// buildStatusLine builds the status line with Tier 4 info
+func (fp *AdvancedModel) buildStatusLine() string {
+	var parts []string
+
+	// File count and filtering info
+	if fp.searchQuery != "" {
+		parts = append(parts, fmt.Sprintf("%d of %d items", len(fp.filteredFiles), len(fp.files)))
+	} else {
+		parts = append(parts, fmt.Sprintf("%d items", len(fp.files)))
+	}
+
+	if len(fp.multiSelected) > 0 {
+		parts = append(parts, fmt.Sprintf("%d selected", len(fp.multiSelected)))
+	}
+
+	if len(fp.clipboard) > 0 {
+		op := "copied"
+		if fp.clipboardOp == OpCut {
+			op = "cut"
+		}
+		parts = append(parts, fmt.Sprintf("%d %s", len(fp.clipboard), op))
+	}
+
+	// Sort mode
+	sortModes := []string{"Name", "Size", "Date", "Type"}
+	parts = append(parts, fmt.Sprintf("Sort: %s", sortModes[fp.sortMode]))
+
+	// View options
+	var options []string
+	if fp.showHidden {
+		options = append(options, "Hidden")
+	}
+	if fp.detailedView {
+		options = append(options, "Details")
+	}
+	if fp.showPreview {
+		options = append(options, "Preview")
+	}
+	if len(options) > 0 {
+		parts = append(parts, strings.Join(options, ","))
+	}
+
+	return statusStyle.Render(strings.Join(parts, " | "))
+}
+
+// formatFileEntry formats a single file entry with proper table columns
+func (fp *AdvancedModel) formatFileEntry(file File, isCursor bool, width int) string {
+	if file.Hidden && !fp.showHidden {
+		return "" // Skip hidden files if not showing them
+	}
+
+	// Column widths - responsive design with column hiding (no permissions)
+	const (
+		indicatorWidth = 4  // "✓▶  "
+		iconWidth      = 4  // "📁  "
+		sizeWidth      = 12 // "  1.23 GB  " (can get quite wide)
+		dateWidth      = 10 // " Jan 02   "
+		spacerWidth    = 2  // Extra spacing between sections
+		sizeDateSpacer = 4  // Extra spacing between size and date (wider files)
+		minNameWidth   = 25 // Minimum name column width
+	)
+
+	// Calculate which columns to show based on available width
+	baseWidth := indicatorWidth + iconWidth + spacerWidth + minNameWidth + 8 // 8 for padding/safety
+	showSize := fp.detailedView && fp.showSizes
+	showDate := fp.detailedView
+
+	// Progressive column hiding based on available width (no permissions column)
+	fullWidth := baseWidth + sizeWidth + sizeDateSpacer + dateWidth
+	if width < fullWidth {
+		// Not enough space for all columns, start hiding
+		if width < baseWidth + sizeWidth + sizeDateSpacer {
+			showDate = false // Hide date first
+		}
+		if width < baseWidth + sizeWidth {
+			showSize = false // Hide size last
 		}
 	}
 
-	m.keyMap.UpdateKeyBindings(m.state, m.filenameInput.Value())
-
-	return m, tea.Batch(cmds...)
-}
-
-func (m Model) View() string {
-	switch m.state {
-	case stateConfirmNew, stateConfirmOverwrite:
-		return m.viewConfirm()
-	case stateBrowse:
-		return m.viewBrowse()
-
-	case stateNewFile:
-		return m.viewNewFile()
+	// Calculate actual fixed width based on what we're showing
+	fixedWidth := indicatorWidth + iconWidth + spacerWidth
+	if showSize {
+		fixedWidth += sizeWidth + sizeDateSpacer
+	}
+	if showDate {
+		fixedWidth += dateWidth
 	}
 
-	return ""
-}
-
-func (m Model) viewBrowse() string {
-	helpView := m.help.View(m.keyMap)
-	errorView := m.viewError()
-	headerView := m.viewTitle(fmt.Sprintf("Current Directory: %s", m.Filepicker.CurrentDirectory))
-	listView := m.Filepicker.View()
-	listViewHeight := lipgloss.Height(listView)
-	_ = listViewHeight
-
-	return strings.Join([]string{
-		headerView, listView, errorView, helpView,
-	}, "\n")
-}
-
-func (m Model) viewInput() string {
-	inputTitle := "New file name:"
-	if m.creatingDirectory {
-		inputTitle = "New directory name:"
-	}
-	inputView := m.filenameInput.View()
-
-	return strings.Join([]string{
-		inputTitle, inputView,
-	}, "\n")
-}
-
-func (m Model) viewError() string {
-	if m.Error == "" {
-		return ""
+	nameWidth := width - fixedWidth - 8 // -8 for border padding and extra safety margin
+	if nameWidth < minNameWidth {
+		nameWidth = minNameWidth
 	}
 
-	return lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#F25D94")).
-		Render(m.Error)
-}
+	var line strings.Builder
 
-func (m Model) viewTitle(title string) string {
-	return lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#FFCC66")).
-		Render(title) + "\n"
-}
+	// Selection indicators (fixed width)
+	indicator := "   "
+	if isCursor && fp.multiSelected[file.Path] {
+		indicator = "✓▶ "
+	} else if isCursor {
+		indicator = "▶  "
+	} else if fp.multiSelected[file.Path] {
+		indicator = "✓  "
+	}
+	line.WriteString(fmt.Sprintf("%-*s", indicatorWidth, indicator))
 
-func (m Model) viewNewFile() string {
-	helpView := m.help.View(m.keyMap)
-	listView := m.Filepicker.View()
-	listViewHeight := lipgloss.Height(listView)
-	_ = listViewHeight
-	inputView := m.viewInput()
-	errorView := m.viewError()
+	// Icon (fixed width)
+	if fp.showIcons {
+		icon := fp.getFileIcon(file)
+		line.WriteString(fmt.Sprintf("%-*s", iconWidth, icon))
+	}
 
-	return strings.Join([]string{
-		listView, inputView, errorView, helpView,
-	}, "\n")
-}
+	// Spacer after icon
+	line.WriteString(strings.Repeat(" ", spacerWidth))
 
-func (m Model) viewConfirm() string {
-	helpView := m.help.View(m.keyMap)
-	confirmView := m.confirmDialog.View()
-	errorView := m.viewError()
+	// Name (variable width, left-aligned)
+	name := file.Name
+	if len(name) > nameWidth {
+		name = name[:nameWidth-3] + "..."
+	}
+	line.WriteString(fmt.Sprintf("%-*s", nameWidth, name))
 
-	return strings.Join([]string{
-		confirmView, errorView, helpView,
-	}, "\n")
-}
+	// Add detail columns based on available space
+	if showSize {
+		// Size column (right-aligned with extra spacing after)
+		if !file.IsDir && file.Name != ".." {
+			size := fp.formatFileSize(file.Size)
+			line.WriteString(fmt.Sprintf("%*s", sizeWidth, size))
+		} else {
+			line.WriteString(fmt.Sprintf("%*s", sizeWidth, ""))
+		}
+		// Extra spacer after size column (since sizes can be wide)
+		line.WriteString(strings.Repeat(" ", sizeDateSpacer))
+	}
 
-func (m Model) enterDir(selectedPath string) tea.Cmd {
-	return func() tea.Msg {
-		return bubblesfilepicker.NavigateToDirMsg{
-			Path: selectedPath,
+	if showDate {
+		// Date column (left-aligned)
+		if file.Name != ".." {
+			modTime := file.ModTime.Format("Jan 02")
+			line.WriteString(fmt.Sprintf("%-*s", dateWidth, modTime))
+		} else {
+			line.WriteString(fmt.Sprintf("%-*s", dateWidth, ""))
 		}
 	}
+
+	result := line.String()
+
+	// Ensure we don't exceed width
+	if len(result) > width-2 {
+		result = result[:width-2]
+	}
+
+	// Apply styling
+	if file.Hidden {
+		result = hiddenStyle.Render(result)
+	} else if isCursor && fp.multiSelected[file.Path] {
+		result = multiSelectedStyle.Render(result)
+	} else if isCursor {
+		result = selectedStyle.Render(result)
+	} else if fp.multiSelected[file.Path] {
+		result = multiSelectedStyle.Render(result)
+	} else if file.IsDir {
+		result = dirStyle.Render(result)
+	} else {
+		result = normalStyle.Render(result)
+	}
+
+	return result
+}
+
+// getFileIcon returns an appropriate icon for the file (extended for Tier 4)
+func (fp *AdvancedModel) getFileIcon(file File) string {
+	if file.Name == ".." {
+		return "📁"
+	}
+	if file.IsDir {
+		if file.Hidden {
+			return "👻"
+		}
+		return "📁"
+	}
+
+	if file.Hidden {
+		return "👻"
+	}
+
+	// Detailed file type detection for Tier 4
+	ext := strings.ToLower(filepath.Ext(file.Name))
+	filename := strings.ToLower(file.Name)
+
+	// Archives
+	switch ext {
+	case ".zip", ".tar", ".gz", ".rar", ".7z", ".bz2", ".xz":
+		return "📦"
+	}
+
+	// Documents
+	switch ext {
+	case ".pdf", ".doc", ".docx", ".odt":
+		return "📋"
+	case ".xls", ".xlsx", ".ods", ".csv":
+		return "📊"
+	case ".ppt", ".pptx", ".odp":
+		return "▶️"
+	}
+
+	// Media
+	switch ext {
+	case ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".svg", ".webp", ".tiff":
+		return "🖼️"
+	case ".mp4", ".avi", ".mkv", ".mov", ".wmv", ".flv", ".webm":
+		return "🎬"
+	case ".mp3", ".wav", ".flac", ".ogg", ".aac", ".m4a":
+		return "🎵"
+	}
+
+	// Code files
+	switch ext {
+	case ".go", ".py", ".js", ".ts", ".java", ".cpp", ".c", ".h", ".rs", ".swift":
+		return "💻"
+	case ".html", ".css", ".scss", ".less":
+		return "💻"
+	case ".json", ".xml", ".yml", ".yaml", ".toml":
+		return "💻"
+	}
+
+	// Scripts and executables
+	switch ext {
+	case ".sh", ".bat", ".ps1", ".cmd":
+		return "⚙️"
+	case ".exe", ".msi", ".deb", ".rpm", ".dmg", ".app":
+		return "⚙️"
+	}
+
+	// Text files
+	switch ext {
+	case ".txt", ".md", ".readme", ".log":
+		return "📄"
+	}
+
+	// Symlinks (would need additional detection)
+	if file.Mode&os.ModeSymlink != 0 {
+		return "🔗"
+	}
+
+	// Read-only files
+	if file.Mode&0200 == 0 {
+		return "🔒"
+	}
+
+	// Special files
+	if strings.Contains(filename, "readme") {
+		return "📄"
+	}
+	if strings.Contains(filename, "license") {
+		return "📄"
+	}
+	if strings.Contains(filename, "makefile") || strings.Contains(filename, "dockerfile") {
+		return "⚙️"
+	}
+
+	return "❓" // Unknown file type
+}
+
+// formatFileSize formats file size in human-readable format
+func (fp *AdvancedModel) formatFileSize(size int64) string {
+	const unit = 1024
+	if size < unit {
+		return fmt.Sprintf("%d B", size)
+	}
+	div, exp := int64(unit), 0
+	for n := size / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(size)/float64(div), "KMGTPE"[exp])
+}
+
+// loadDirectory loads the contents of the current directory (enhanced for Tier 4)
+func (fp *AdvancedModel) loadDirectory() {
+	fp.files = []File{}
+	fp.err = nil
+
+	entries, err := os.ReadDir(fp.currentPath)
+	if err != nil {
+		fp.err = err
+		return
+	}
+
+	// Add parent directory entry if not at root
+	if fp.currentPath != "/" && fp.currentPath != "\\" {
+		if info, err := os.Stat(filepath.Dir(fp.currentPath)); err == nil {
+			fp.files = append(fp.files, File{
+				Name:    "..",
+				Path:    filepath.Dir(fp.currentPath),
+				IsDir:   true,
+				Size:    0,
+				ModTime: info.ModTime(),
+				Mode:    info.Mode(),
+				Hidden:  false,
+			})
+		}
+	}
+
+	// Add directory entries
+	for _, entry := range entries {
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+
+		isHidden := strings.HasPrefix(entry.Name(), ".")
+
+		// Skip hidden files if not showing them
+		if isHidden && !fp.showHidden {
+			continue
+		}
+
+		file := File{
+			Name:    entry.Name(),
+			Path:    filepath.Join(fp.currentPath, entry.Name()),
+			IsDir:   entry.IsDir(),
+			Size:    info.Size(),
+			ModTime: info.ModTime(),
+			Mode:    info.Mode(),
+			Hidden:  isHidden,
+		}
+		fp.files = append(fp.files, file)
+	}
+
+	// Sort files
+	fp.sortFiles()
+
+	// Reset cursor if out of bounds
+	if fp.cursor >= len(fp.filteredFiles) {
+		fp.cursor = len(fp.filteredFiles) - 1
+	}
+	if fp.cursor < 0 {
+		fp.cursor = 0
+	}
+
+	// Update preview for current file
+	fp.updatePreview()
+}
+
+// GetSelected returns the selected file paths
+func (fp *AdvancedModel) GetSelected() ([]string, bool) {
+	if fp.cancelled {
+		return nil, false
+	}
+	return fp.selectedFiles, len(fp.selectedFiles) > 0
+}
+
+// GetError returns any error that occurred
+func (fp *AdvancedModel) GetError() error {
+	return fp.err
+}
+
+// SetShowPreview sets whether to show file preview
+func (fp *AdvancedModel) SetShowPreview(show bool) {
+	fp.showPreview = show
+}
+
+// SetShowHidden sets whether to show hidden files
+func (fp *AdvancedModel) SetShowHidden(show bool) {
+	fp.showHidden = show
+	fp.loadDirectory() // Reload to apply the hidden file setting
 }
