@@ -563,9 +563,6 @@ type MessagePosition struct {
 }
 
 func (m Model) ViewAndSelectedPosition() (string, MessagePosition) {
-	viewStart := time.Now()
-	logMemoryUsage("view_generation_start")
-
 	log.Debug().
 		Str("operation", "view_generation_start").
 		Int("cache_size", len(m.cache)).
@@ -595,7 +592,6 @@ func (m Model) ViewAndSelectedPosition() (string, MessagePosition) {
 		Msg("Full cache update completed in view generation")
 
 	// Assemble the view
-	assemblyStart := time.Now()
 	renderedMessages := 0
 	skippedMessages := 0
 	totalContentLength := 0
@@ -624,21 +620,6 @@ func (m Model) ViewAndSelectedPosition() (string, MessagePosition) {
 		ret += "\n"
 		height += h
 	}
-
-	assemblyDuration := time.Since(assemblyStart)
-	totalDuration := time.Since(viewStart)
-	logMemoryUsage("view_generation_complete")
-
-	log.Info().
-		Str("operation", "view_generation_complete").
-		Dur("total_duration", totalDuration).
-		Dur("cache_update_duration", cacheUpdateDuration).
-		Dur("assembly_duration", assemblyDuration).
-		Int("rendered_messages", renderedMessages).
-		Int("skipped_messages", skippedMessages).
-		Int("total_content_length", totalContentLength).
-		Int("view_height", height).
-		Msg("View generation completed")
 
 	return ret, MessagePosition{
 		Offset: selectedOffset,
