@@ -645,6 +645,11 @@ type Model struct {
 	SelectedPath string
 }
 
+// SetSize sets the width and height of the file picker (compatibility method)
+func (m Model) SetSize(width, height int) {
+	m.AdvancedModel.SetSize(width, height)
+}
+
 // NewModel creates a new file picker with backward compatibility
 // This maintains the original bobatea API while using the advanced implementation
 func NewModel() Model {

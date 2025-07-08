@@ -110,16 +110,15 @@ func WithAutoStartBackend(autoStartBackend bool) ModelOption {
 	}
 }
 
-// TODO(manuel, 2024-04-07) Add options to configure filepicker
-
 func InitialModel(manager geppetto_conversation.Manager, backend Backend, options ...ModelOption) model {
-	fp := filepicker.NewModel()
-
-	fp.Filepicker.DirAllowed = false
-	fp.Filepicker.FileAllowed = true
 	dir, _ := os.Getwd()
-	fp.Filepicker.CurrentDirectory = dir
-	fp.Filepicker.Height = 10
+	fp := filepicker.NewModelWithOptions(
+		filepicker.WithStartPath(dir),
+		filepicker.WithDirectorySelection(false), // Only allow file selection
+		filepicker.WithShowPreview(true),
+		filepicker.WithShowHidden(false),
+		filepicker.WithDetailedView(true),
+	)
 
 	ret := model{
 		conversationManager: manager,
@@ -600,10 +599,15 @@ func (m *model) recomputeSize() {
 		Msg("Header and help views computed")
 
 	if m.state == StateSavingToFile {
-		m.filepicker.Filepicker.Height = m.height - headerHeight - helpViewHeight
+		fpHeight := m.height - headerHeight - helpViewHeight
+		m.filepicker.Filepicker.Height = fpHeight
+		// Also set the size on the underlying AdvancedModel
+		m.filepicker.SetSize(m.width, fpHeight)
 		log.Trace().
 			Int64("recompute_call_id", recomputeCallID).
 			Int("filepicker_height", m.filepicker.Filepicker.Height).
+			Int("model_width", m.width).
+			Int("model_height", fpHeight).
 			Msg("File picker size set")
 		return
 	}
