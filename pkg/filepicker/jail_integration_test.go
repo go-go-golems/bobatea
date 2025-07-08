@@ -219,8 +219,7 @@ func TestJailIntegrationDirectorySelectionMode(t *testing.T) {
 	fp.currentPath = subDir
 	fp.loadDirectory()
 
-	// Try to select parent directory (should be blocked if it goes outside jail)
-	// In this case, parent is jail root so it should be allowed
+	// Test navigation with Enter key - Enter should always navigate, not select
 	if len(fp.filteredFiles) > 0 {
 		// Look for ".." entry
 		for i, file := range fp.filteredFiles {
@@ -228,15 +227,39 @@ func TestJailIntegrationDirectorySelectionMode(t *testing.T) {
 				fp.cursor = i
 				enterMsg := tea.KeyMsg{Type: tea.KeyEnter}
 
-				// Should select jail directory (parent of subdirectory)
-				model, cmd := fp.updateNormal(enterMsg)
-				if cmd == nil {
-					t.Error("Expected selection to trigger quit command")
+				// Enter should navigate to parent directory, not select it
+				model, _ := fp.updateNormal(enterMsg)
+				fp = model.(*AdvancedModel)
+
+				// Should have navigated to parent directory (jail root)
+				if fp.currentPath != jailDir {
+					t.Errorf("Expected to navigate to jail directory %s, but current path is %s", jailDir, fp.currentPath)
 				}
 
+				// No selection should have occurred
+				if len(fp.selectedFiles) > 0 {
+					t.Errorf("Expected no selection with Enter key, but got %v", fp.selectedFiles)
+				}
+				break
+			}
+		}
+	}
+
+	// Test directory selection with Space key
+	if len(fp.filteredFiles) > 0 {
+		// Look for a directory to select
+		for i, file := range fp.filteredFiles {
+			if file.IsDir && file.Name != ".." {
+				fp.cursor = i
+				spaceMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{' '}}
+
+				// Space should select the directory
+				model, _ := fp.updateNormal(spaceMsg)
 				fp = model.(*AdvancedModel)
-				if len(fp.selectedFiles) == 0 || fp.selectedFiles[0] != jailDir {
-					t.Errorf("Expected to select jail directory %s, got %v", jailDir, fp.selectedFiles)
+
+				// Should have selected the directory
+				if !fp.multiSelected[file.Path] {
+					t.Errorf("Expected directory %s to be selected with Space key", file.Path)
 				}
 				break
 			}

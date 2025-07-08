@@ -14,7 +14,11 @@ func TestCompatibilityAPI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp directory: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Error removing temp directory: %v", err)
+		}
+	}()
 
 	// Create test files
 	testFile := filepath.Join(tempDir, "test.txt")
@@ -57,9 +61,7 @@ func TestCompatibilityAPI(t *testing.T) {
 
 	// Test Init method
 	initCmd := model.Init()
-	if initCmd == nil {
-		// This is acceptable - Init might return nil
-	}
+	_ = initCmd // Commands can be nil, that's normal
 
 	// Test View method
 	view := model.View()
@@ -85,7 +87,11 @@ func TestAdvancedModelDirectly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp directory: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Error removing temp directory: %v", err)
+		}
+	}()
 
 	// Create advanced model directly using deprecated function
 	advModel := NewAdvancedModel(tempDir)
@@ -145,7 +151,11 @@ func TestNewOptionsPattern(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp directory: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Error removing temp directory: %v", err)
+		}
+	}()
 
 	// Test with no options (should use defaults)
 	model1 := New()
@@ -204,7 +214,11 @@ func TestBackwardCompatibility(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp directory: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Error removing temp directory: %v", err)
+		}
+	}()
 
 	model1 := NewAdvancedModel(tempDir)
 	model2 := New(WithStartPath(tempDir))
@@ -227,7 +241,11 @@ func TestNewModelWithOptions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp directory: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Error removing temp directory: %v", err)
+		}
+	}()
 
 	// Test with options
 	model := NewModelWithOptions(

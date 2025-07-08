@@ -188,6 +188,31 @@ func (k advancedKeyMap) FullHelp() [][]key.Binding {
 	}
 }
 
+// FullHelpForMode returns keybindings for the expanded help view based on the current mode
+func (fp *AdvancedModel) FullHelpForMode() [][]key.Binding {
+	if fp.directorySelectionMode {
+		// Update the Space key help text for directory mode
+		spaceKey := key.NewBinding(
+			key.WithKeys(" "),
+			key.WithHelp("space", "select directory"),
+		)
+
+		return [][]key.Binding{
+			{fp.keys.Up, fp.keys.Down, fp.keys.Home, fp.keys.End},
+			{fp.keys.Enter, spaceKey, fp.keys.SelectAll, fp.keys.DeselectAll},
+			{fp.keys.Copy, fp.keys.Cut, fp.keys.Paste, fp.keys.Delete},
+			{fp.keys.Rename, fp.keys.NewFile, fp.keys.NewDir, fp.keys.Refresh},
+			{fp.keys.TogglePreview, fp.keys.Search, fp.keys.Glob, fp.keys.ClearGlob, fp.keys.ToggleHidden, fp.keys.ToggleDetail},
+			{fp.keys.CycleSort, fp.keys.Backspace, fp.keys.Back, fp.keys.Forward},
+			{fp.keys.SelectCurrentDir, fp.keys.ToggleDirSelection},
+			{fp.keys.Escape, fp.keys.Help, fp.keys.Quit},
+		}
+	} else {
+		// Standard file mode help
+		return fp.keys.FullHelp()
+	}
+}
+
 // defaultAdvancedKeyMap returns the default key bindings for the advanced file picker
 func defaultAdvancedKeyMap() advancedKeyMap {
 	return advancedKeyMap{
@@ -209,11 +234,11 @@ func defaultAdvancedKeyMap() advancedKeyMap {
 		),
 		Enter: key.NewBinding(
 			key.WithKeys("enter"),
-			key.WithHelp("enter", "select/enter"),
+			key.WithHelp("enter", "navigate/select"),
 		),
 		Space: key.NewBinding(
 			key.WithKeys(" "),
-			key.WithHelp("space", "toggle selection"),
+			key.WithHelp("space", "select item"),
 		),
 		SelectAll: key.NewBinding(
 			key.WithKeys("a"),
@@ -360,11 +385,6 @@ var (
 
 	statusStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("205"))
-
-	previewStyle = lipgloss.NewStyle().
-			BorderStyle(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("240")).
-			Padding(0, 1)
 
 	previewTitleStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("99")).
@@ -671,9 +691,9 @@ func (m Model) Init() tea.Cmd {
 // Update handles updates for the compatibility wrapper
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Sync compatibility settings to advanced model if they changed
-	if m.Filepicker.CurrentDirectory != m.AdvancedModel.currentPath {
-		m.AdvancedModel.currentPath = m.Filepicker.CurrentDirectory
-		m.AdvancedModel.loadDirectory()
+	if m.Filepicker.CurrentDirectory != m.currentPath {
+		m.currentPath = m.Filepicker.CurrentDirectory
+		m.loadDirectory()
 	}
 
 	// Delegate to the advanced model
@@ -683,22 +703,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.AdvancedModel = updatedAdvanced.(*AdvancedModel)
 
 	// Sync back to compatibility fields
-	m.Filepicker.CurrentDirectory = m.AdvancedModel.currentPath
+	m.Filepicker.CurrentDirectory = m.currentPath
 	m.Filepicker.advancedModel = m.AdvancedModel
 
 	// Check if we need to send compatibility messages
 	var compatCmd tea.Cmd
 
-	if m.AdvancedModel.cancelled && !m.sentCancelMsg {
+	if m.cancelled && !m.sentCancelMsg {
 		m.sentCancelMsg = true
 		compatCmd = func() tea.Msg {
 			return CancelFilePickerMsg{}
 		}
-	} else if len(m.AdvancedModel.selectedFiles) > 0 && !m.sentSelectMsg {
+	} else if len(m.selectedFiles) > 0 && !m.sentSelectMsg {
 		m.sentSelectMsg = true
-		m.SelectedPath = m.AdvancedModel.selectedFiles[0]
+		m.SelectedPath = m.selectedFiles[0]
 		compatCmd = func() tea.Msg {
-			return SelectFileMsg{Path: m.AdvancedModel.selectedFiles[0]}
+			return SelectFileMsg{Path: m.selectedFiles[0]}
 		}
 	}
 
@@ -922,9 +942,19 @@ func (fp *AdvancedModel) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(fp.filteredFiles) > 0 {
 			file := fp.filteredFiles[fp.cursor]
 			if file.Name != ".." {
-				// In directory selection mode, allow selecting directories
-				// In normal mode, allow selecting files
-				if (fp.directorySelectionMode && file.IsDir) || (!fp.directorySelectionMode && !file.IsDir) || (!fp.directorySelectionMode && file.IsDir) {
+				// In directory selection mode, only select directories
+				// In normal mode, select both files and directories
+				if fp.directorySelectionMode {
+					// Only select directories in directory selection mode
+					if file.IsDir {
+						if fp.multiSelected[file.Path] {
+							delete(fp.multiSelected, file.Path)
+						} else {
+							fp.multiSelected[file.Path] = true
+						}
+					}
+				} else {
+					// Select any item in normal mode
 					if fp.multiSelected[file.Path] {
 						delete(fp.multiSelected, file.Path)
 					} else {
@@ -947,9 +977,13 @@ func (fp *AdvancedModel) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, fp.keys.SelectAllFiles):
 		for _, file := range fp.filteredFiles {
 			if file.Name != ".." {
-				// In directory selection mode, select directories
-				// In normal mode, select files
-				if (fp.directorySelectionMode && file.IsDir) || (!fp.directorySelectionMode && !file.IsDir) {
+				// In directory selection mode, only select directories
+				// In normal mode, select all items (both files and directories)
+				if fp.directorySelectionMode {
+					if file.IsDir {
+						fp.multiSelected[file.Path] = true
+					}
+				} else {
 					fp.multiSelected[file.Path] = true
 				}
 			}
@@ -959,51 +993,41 @@ func (fp *AdvancedModel) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(fp.filteredFiles) > 0 {
 			selectedFile := fp.filteredFiles[fp.cursor]
 			if selectedFile.IsDir {
-				if fp.directorySelectionMode {
-					// In directory selection mode, select the directory
-					var targetPath string
-					if selectedFile.Name == ".." {
-						// Select parent directory
-						targetPath = filepath.Dir(fp.currentPath)
-					} else {
-						// Select the subdirectory
-						targetPath = selectedFile.Path
-					}
-					// Only allow selection within jail directory
-					if fp.validateNavigationPath(targetPath) {
-						fp.selectedFiles = []string{targetPath}
-						return fp, tea.Quit
-					}
+				// Always navigate into directories, regardless of mode
+				var newPath string
+				if selectedFile.Name == ".." {
+					newPath = filepath.Dir(fp.currentPath)
 				} else {
-					// Normal mode: navigate into directory
-					var newPath string
-					if selectedFile.Name == ".." {
-						newPath = filepath.Dir(fp.currentPath)
-					} else {
-						newPath = selectedFile.Path
-					}
-					// Validate navigation path against jail directory
-					if fp.validateNavigationPath(newPath) {
-						fp.currentPath = newPath
-						fp.addToHistory(newPath)
-						fp.cursor = 0
-						fp.multiSelected = make(map[string]bool)
-						fp.searchQuery = ""
-						fp.globPattern = ""
-						fp.loadDirectory()
-					}
+					newPath = selectedFile.Path
+				}
+				// Validate navigation path against jail directory
+				if fp.validateNavigationPath(newPath) {
+					fp.currentPath = newPath
+					fp.addToHistory(newPath)
+					fp.cursor = 0
+					fp.multiSelected = make(map[string]bool)
+					fp.searchQuery = ""
+					fp.globPattern = ""
+					fp.loadDirectory()
 				}
 			} else {
-				// For files, select them regardless of directory mode
-				if len(fp.multiSelected) > 0 {
-					fp.selectedFiles = make([]string, 0, len(fp.multiSelected))
-					for path := range fp.multiSelected {
-						fp.selectedFiles = append(fp.selectedFiles, path)
-					}
+				// For files, behavior depends on mode
+				if fp.directorySelectionMode {
+					// In directory selection mode, pressing Enter on a file does nothing
+					// Only directories can be selected/navigated
+					return fp, nil
 				} else {
-					fp.selectedFiles = []string{selectedFile.Path}
+					// In normal mode, select the file
+					if len(fp.multiSelected) > 0 {
+						fp.selectedFiles = make([]string, 0, len(fp.multiSelected))
+						for path := range fp.multiSelected {
+							fp.selectedFiles = append(fp.selectedFiles, path)
+						}
+					} else {
+						fp.selectedFiles = []string{selectedFile.Path}
+					}
+					return fp, tea.Quit
 				}
-				return fp, tea.Quit
 			}
 		}
 
@@ -1145,6 +1169,8 @@ func (fp *AdvancedModel) updateTextInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				fp.performCreateFile(name)
 			case ViewStateCreateDir:
 				fp.performCreateDir(name)
+			case ViewStateNormal, ViewStateConfirmDelete, ViewStateSearch, ViewStateGlob:
+				// These states shouldn't be handled here
 			}
 		}
 		fp.textInput.Blur()
@@ -1225,7 +1251,9 @@ func (fp *AdvancedModel) sortFiles() {
 				return extI < extJ
 			}
 			return strings.ToLower(fp.files[i].Name) < strings.ToLower(fp.files[j].Name)
-		default: // SortByName
+		case SortByName:
+			return strings.ToLower(fp.files[i].Name) < strings.ToLower(fp.files[j].Name)
+		default:
 			return strings.ToLower(fp.files[i].Name) < strings.ToLower(fp.files[j].Name)
 		}
 	})
@@ -1361,7 +1389,9 @@ func (fp *AdvancedModel) readFilePreview(filePath string) string {
 	if err != nil {
 		return ""
 	}
-	defer file.Close()
+	defer func() {
+		_ = file.Close() // Ignore close errors in defer
+	}()
 
 	var lines []string
 	scanner := bufio.NewScanner(file)
@@ -1417,16 +1447,19 @@ func (fp *AdvancedModel) performPaste() {
 	for _, src := range fp.clipboard {
 		dst := filepath.Join(fp.currentPath, filepath.Base(src))
 
-		if fp.clipboardOp == OpCopy {
+		switch fp.clipboardOp {
+		case OpCopy:
 			if err := fp.copyFile(src, dst); err != nil {
 				fp.err = fmt.Errorf("failed to copy %s: %v", filepath.Base(src), err)
 				return
 			}
-		} else if fp.clipboardOp == OpCut {
+		case OpCut:
 			if err := os.Rename(src, dst); err != nil {
 				fp.err = fmt.Errorf("failed to move %s: %v", filepath.Base(src), err)
 				return
 			}
+		case OpNone:
+			// No operation to perform
 		}
 	}
 
@@ -1452,13 +1485,17 @@ func (fp *AdvancedModel) copyFile(src, dst string) error {
 	if err != nil {
 		return err
 	}
-	defer srcFile.Close()
+	defer func() {
+		_ = srcFile.Close() // Ignore close errors in defer
+	}()
 
 	dstFile, err := os.Create(dst)
 	if err != nil {
 		return err
 	}
-	defer dstFile.Close()
+	defer func() {
+		_ = dstFile.Close() // Ignore close errors in defer
+	}()
 
 	_, err = io.Copy(dstFile, srcFile)
 	return err
@@ -1509,7 +1546,7 @@ func (fp *AdvancedModel) performCreateFile(name string) {
 		fp.err = fmt.Errorf("failed to create file: %v", err)
 		return
 	}
-	file.Close()
+	_ = file.Close() // Ignore close errors
 
 	fp.loadDirectory()
 }
@@ -1534,6 +1571,8 @@ func (fp *AdvancedModel) View() string {
 	switch fp.viewState {
 	case ViewStateConfirmDelete:
 		return fp.viewConfirmDelete()
+	case ViewStateNormal, ViewStateRename, ViewStateCreateFile, ViewStateCreateDir, ViewStateSearch, ViewStateGlob:
+		return fp.viewNormal()
 	default:
 		return fp.viewNormal()
 	}
@@ -1572,14 +1611,52 @@ func (fp *AdvancedModel) viewNormal() string {
 		)
 
 		// Add help below panels
-		helpView := fp.help.View(fp.keys)
+		helpView := fp.buildHelpView()
 		if helpView != "" {
 			return panelsView + "\n" + helpView
 		}
 		return panelsView
 	} else {
-		return borderStyle.Width(fileListWidth).Render(filePanel) + "\n" + fp.help.View(fp.keys)
+		return borderStyle.Width(fileListWidth).Render(filePanel) + "\n" + fp.buildHelpView()
 	}
+}
+
+// buildHelpView creates a help view that adapts to the current mode
+func (fp *AdvancedModel) buildHelpView() string {
+	if fp.help.ShowAll {
+		// Create a custom help model for this mode
+		customKeyMap := &dynamicKeyMap{
+			model: fp,
+		}
+		return fp.help.View(customKeyMap)
+	} else {
+		return fp.help.View(fp.keys)
+	}
+}
+
+// dynamicKeyMap provides mode-aware help text
+type dynamicKeyMap struct {
+	model *AdvancedModel
+}
+
+func (d *dynamicKeyMap) ShortHelp() []key.Binding {
+	return d.model.keys.ShortHelp()
+}
+
+func (d *dynamicKeyMap) FullHelp() [][]key.Binding {
+	return d.model.FullHelpForMode()
+}
+
+// IsDirectorySelectionMode returns whether directory selection mode is enabled
+func (fp *AdvancedModel) IsDirectorySelectionMode() bool {
+	return fp.directorySelectionMode
+}
+
+// SetSize sets the width and height of the file picker
+func (fp *AdvancedModel) SetSize(width, height int) {
+	fp.width = width
+	fp.height = height
+	fp.help.Width = width
 }
 
 // buildFileListPanel builds the file list panel content
@@ -1682,6 +1759,8 @@ func (fp *AdvancedModel) buildFileListPanel(width int) string {
 			prompt = "New file: "
 		case ViewStateCreateDir:
 			prompt = "New directory: "
+		case ViewStateNormal, ViewStateConfirmDelete, ViewStateSearch, ViewStateGlob:
+			// These states don't need prompts
 		}
 		if fp.viewState == ViewStateSearch {
 			b.WriteString("\n")

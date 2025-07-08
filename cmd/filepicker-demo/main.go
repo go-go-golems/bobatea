@@ -174,6 +174,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.textInput, cmd = m.textInput.Update(msg)
 		return m, cmd
+	case stateResults:
+		// Results state is handled above
+		return m, nil
 	}
 
 	return m, nil
@@ -237,11 +240,6 @@ func (m model) updateConfig(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m model) updateFilePicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// This should not be called since we run filepicker in its own program
-	return m, nil
-}
-
 func (m model) updateResults(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, quitKeys):
@@ -281,14 +279,22 @@ func (m model) setupScenario(scenarioID string) model {
 	case "jail":
 		// Create a safe jail directory in temp
 		jailDir := filepath.Join(os.TempDir(), "filepicker-demo-jail")
-		os.MkdirAll(filepath.Join(jailDir, "subdir1"), 0755)
-		os.MkdirAll(filepath.Join(jailDir, "subdir2"), 0755)
+		if err := os.MkdirAll(filepath.Join(jailDir, "subdir1"), 0755); err != nil {
+			log.Printf("Error creating jail subdirectory: %v", err)
+		}
+		if err := os.MkdirAll(filepath.Join(jailDir, "subdir2"), 0755); err != nil {
+			log.Printf("Error creating jail subdirectory: %v", err)
+		}
 
 		// Create some demo files
 		demoFile1 := filepath.Join(jailDir, "demo.txt")
 		demoFile2 := filepath.Join(jailDir, "subdir1", "readme.md")
-		os.WriteFile(demoFile1, []byte("This is a demo file in the jail directory."), 0644)
-		os.WriteFile(demoFile2, []byte("# Demo\n\nThis is a subdirectory in the jail."), 0644)
+		if err := os.WriteFile(demoFile1, []byte("This is a demo file in the jail directory."), 0644); err != nil {
+			log.Printf("Error creating demo file: %v", err)
+		}
+		if err := os.WriteFile(demoFile2, []byte("# Demo\n\nThis is a subdirectory in the jail."), 0644); err != nil {
+			log.Printf("Error creating demo file: %v", err)
+		}
 
 		options = []filepicker.Option{
 			filepicker.WithJailDirectory(jailDir),

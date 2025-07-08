@@ -14,7 +14,11 @@ func TestDirectorySelection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp directory: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Error removing temp directory: %v", err)
+		}
+	}()
 
 	// Create test subdirectory
 	subDir := filepath.Join(tempDir, "subdir")
@@ -82,7 +86,11 @@ func TestDirectorySelectionKeyBindings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp directory: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Error removing temp directory: %v", err)
+		}
+	}()
 
 	// Create test subdirectory
 	subDir := filepath.Join(tempDir, "subdir")
@@ -134,7 +142,11 @@ func TestCompatibilityWithDirectorySelection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp directory: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Error removing temp directory: %v", err)
+		}
+	}()
 
 	// Test using the compatibility API with new options
 	model := NewModelWithOptions(
