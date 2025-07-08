@@ -91,15 +91,15 @@ func (m *Model) updateFiltered() {
 		for _, cmd := range m.commands {
 			targets = append(targets, cmd.Name)
 		}
-		
+
 		matches := fuzzy.Find(m.query, targets)
 		m.filteredCmds = []Command{}
-		
+
 		for _, match := range matches {
 			m.filteredCmds = append(m.filteredCmds, m.commands[match.Index])
 		}
 	}
-	
+
 	// Reset selection if out of bounds
 	if m.selected >= len(m.filteredCmds) {
 		m.selected = 0
@@ -116,50 +116,92 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	if !m.visible {
 		return m, nil
 	}
-	
+
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "escape", "ctrl+p":
-			m.Hide()
+		case "esc", "escape", "ctrl+p":
+			m.visible = false
+			m.query = ""
+			m.selected = 0
 			return m, nil
-			
+
 		case "enter":
 			if len(m.filteredCmds) > 0 && m.selected < len(m.filteredCmds) {
 				cmd := m.filteredCmds[m.selected].Action()
-				m.Hide()
+				m.visible = false
+				m.query = ""
+				m.selected = 0
 				return m, cmd
 			}
 			return m, nil
-			
+
 		case "up", "ctrl+k":
 			if m.selected > 0 {
 				m.selected--
 			}
 			return m, nil
-			
+
 		case "down", "ctrl+j":
 			if m.selected < len(m.filteredCmds)-1 {
 				m.selected++
 			}
 			return m, nil
-			
+
 		case "backspace":
 			if len(m.query) > 0 {
 				m.query = m.query[:len(m.query)-1]
-				m.updateFiltered()
+				if m.query == "" {
+					m.filteredCmds = m.commands
+				} else {
+					// Use fuzzy matching
+					var targets []string
+					for _, cmd := range m.commands {
+						targets = append(targets, cmd.Name)
+					}
+
+					matches := fuzzy.Find(m.query, targets)
+					m.filteredCmds = []Command{}
+
+					for _, match := range matches {
+						m.filteredCmds = append(m.filteredCmds, m.commands[match.Index])
+					}
+				}
+				// Reset selection if out of bounds
+				if m.selected >= len(m.filteredCmds) {
+					m.selected = 0
+				}
 			}
 			return m, nil
-			
+
 		default:
 			if len(msg.String()) == 1 {
 				m.query += msg.String()
-				m.updateFiltered()
+				if m.query == "" {
+					m.filteredCmds = m.commands
+				} else {
+					// Use fuzzy matching
+					var targets []string
+					for _, cmd := range m.commands {
+						targets = append(targets, cmd.Name)
+					}
+
+					matches := fuzzy.Find(m.query, targets)
+					m.filteredCmds = []Command{}
+
+					for _, match := range matches {
+						m.filteredCmds = append(m.filteredCmds, m.commands[match.Index])
+					}
+				}
+				// Reset selection if out of bounds
+				if m.selected >= len(m.filteredCmds) {
+					m.selected = 0
+				}
 			}
 			return m, nil
 		}
 	}
-	
+
 	return m, nil
 }
 
@@ -168,53 +210,53 @@ func (m Model) View() string {
 	if !m.visible {
 		return ""
 	}
-	
+
 	// Header
 	header := m.styles.Header.Render("Command Palette")
-	
+
 	// Query input
 	queryPrompt := "> " + m.query
 	if m.query == "" {
 		queryPrompt = "> Type to search commands..."
 	}
 	query := m.styles.Query.Width(m.width - 12).Render(queryPrompt)
-	
+
 	// Commands list
 	var commandLines []string
 	maxCommands := 8 // Limit visible commands
-	
+
 	for i, cmd := range m.filteredCmds {
 		if i >= maxCommands {
 			break
 		}
-		
+
 		name := m.styles.CommandName.Render(cmd.Name)
 		desc := m.styles.CommandDescription.Render(" - " + cmd.Description)
 		line := name + desc
-		
+
 		if i == m.selected {
 			line = m.styles.SelectedCommand.Width(m.width - 12).Render(line)
 		} else {
 			line = m.styles.Command.Width(m.width - 12).Render(line)
 		}
-		
+
 		commandLines = append(commandLines, line)
 	}
-	
+
 	if len(commandLines) == 0 {
 		commandLines = append(commandLines, m.styles.Command.Render("No commands found"))
 	}
-	
+
 	// Footer with navigation help
 	footer := m.styles.Help.Render("↑↓ navigate • Enter select • Esc close")
-	
-	content := lipgloss.JoinVertical(lipgloss.Left, 
+
+	content := lipgloss.JoinVertical(lipgloss.Left,
 		header,
-		query, 
+		query,
 		strings.Join(commandLines, "\n"),
 		"",
 		footer,
 	)
-	
+
 	return m.styles.Palette.Width(m.width - 8).Render(content)
 }
