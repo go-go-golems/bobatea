@@ -25,8 +25,11 @@ A drop-in replacement for the original bubbles filepicker that maintains API com
 ### Advanced Mode
 A full-featured file manager with:
 - **Multi-selection** - Select multiple files and directories
+- **Directory selection** - Dedicated mode for choosing directories
 - **File operations** - Copy, cut, paste, delete, rename, create
 - **Search functionality** - Real-time file filtering
+- **Glob pattern filtering** - Filter files using glob patterns (*.go, test_*, etc.)
+- **Jail directory** - Restrict navigation to a specific directory tree
 - **Preview panel** - View file contents and metadata
 - **Multiple view modes** - Normal, detailed, and hidden file visibility
 - **Sorting options** - Sort by name, size, date, or type
@@ -86,9 +89,9 @@ func main() {
 }
 ```
 
-### Advanced Mode
+### Advanced Mode (Unified Constructor)
 
-For full-featured file management:
+For full-featured file management with the unified constructor:
 
 ```go
 package main
@@ -99,44 +102,66 @@ import (
     tea "github.com/charmbracelet/bubbletea"
 )
 
-type model struct {
-    filepicker *filepicker.AdvancedModel
-}
-
-func (m model) Init() tea.Cmd {
-    return m.filepicker.Init()
-}
-
-func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-    var cmd tea.Cmd
-    m.filepicker, cmd = m.filepicker.Update(msg)
+func main() {
+    // Create with comprehensive options
+    picker := filepicker.New(
+        filepicker.WithStartPath("."),
+        filepicker.WithShowPreview(true),
+        filepicker.WithShowHidden(false),
+        filepicker.WithDirectorySelection(false), // for file selection
+        filepicker.WithGlobPattern("*.go"),       // filter Go files
+        filepicker.WithJailDirectory("/home/user/project"), // restrict to project dir
+    )
     
-    // Check for completion
-    if m.filepicker.Cancelled() {
-        return m, tea.Quit
+    p := tea.NewProgram(picker, tea.WithAltScreen())
+    if _, err := p.Run(); err != nil {
+        fmt.Printf("Error: %v\n", err)
+        return
     }
     
-    if selectedFiles := m.filepicker.SelectedFiles(); len(selectedFiles) > 0 {
-        for _, file := range selectedFiles {
-            fmt.Printf("Selected: %s\n", file)
-        }
-        return m, tea.Quit
+    // Handle results
+    selectedFiles, hasSelection := picker.GetSelected()
+    if !hasSelection {
+        fmt.Println("Selection cancelled")
+        return
     }
     
-    return m, cmd
+    for _, file := range selectedFiles {
+        fmt.Printf("Selected: %s\n", file)
+    }
 }
+```
 
-func (m model) View() string {
-    return m.filepicker.View()
-}
+### Directory Selection Mode
+
+For selecting directories instead of files:
+
+```go
+package main
+
+import (
+    "fmt"
+    "github.com/go-go-golems/bobatea/pkg/filepicker"
+    tea "github.com/charmbracelet/bubbletea"
+)
 
 func main() {
-    m := model{
-        filepicker: filepicker.NewAdvancedModel("."),
+    // Create directory picker
+    picker := filepicker.New(
+        filepicker.WithStartPath("/home/user"),
+        filepicker.WithDirectorySelection(true), // enable directory mode
+        filepicker.WithShowPreview(true),
+    )
+    
+    p := tea.NewProgram(picker, tea.WithAltScreen())
+    if _, err := p.Run(); err != nil {
+        fmt.Printf("Error: %v\n", err)
+        return
     }
     
-    if _, err := tea.NewProgram(m).Run(); err != nil {
-        fmt.Printf("Error: %v\n", err)
+    selectedDirs, hasSelection := picker.GetSelected()
+    if hasSelection {
+        fmt.Printf("Selected directories: %v\n", selectedDirs)
     }
 }
 ```
@@ -306,12 +331,14 @@ func (fp *AdvancedModel) CanGoForward() bool
 ### View Controls
 | Key | Action |
 |-----|--------|
-| `Tab` | Toggle preview panel |
+| `Tab` | Toggle preview panel / directory selection mode |
 | `F2` | Toggle hidden files |
 | `F3` | Toggle detailed view |
 | `F4` | Cycle sort mode |
 | `F5` | Refresh directory |
 | `/` | Search files |
+| `g` | Enter glob pattern filter |
+| `G` | Clear glob filter |
 
 ### System
 | Key | Action |
@@ -322,39 +349,56 @@ func (fp *AdvancedModel) CanGoForward() bool
 
 ## Configuration
 
-### Basic Configuration
+### Basic Configuration (Unified Constructor)
 
 ```go
-// Create with custom starting path
-fp := filepicker.NewAdvancedModel("/home/user/documents")
-
-// Set window size
-fp.SetSize(120, 40)
-
-// Configure display options
-fp.SetShowPreview(true)
-fp.SetShowHidden(false)
-fp.SetDetailedView(true)
-fp.SetSortMode(filepicker.SortByName)
+// Create with comprehensive options
+picker := filepicker.New(
+    filepicker.WithStartPath("/home/user/documents"),
+    filepicker.WithShowPreview(true),
+    filepicker.WithShowHidden(false),
+    filepicker.WithDirectorySelection(false),
+    filepicker.WithDetailedView(true),
+    filepicker.WithSortMode(filepicker.SortByName),
+)
 ```
 
-### Advanced Configuration
+### Advanced Configuration Options
 
 ```go
-// Access internal configuration
-fp := filepicker.NewAdvancedModel(".")
-
-// Configure preview width
-fp.SetPreviewWidth(50)
-
-// Set history size
-fp.SetMaxHistorySize(100)
-
-// Configure file filtering
-fp.SetFileFilter(func(file filepicker.File) bool {
-    return !strings.HasPrefix(file.Name, ".")
-})
+// Complete configuration example
+picker := filepicker.New(
+    filepicker.WithStartPath("."),
+    filepicker.WithShowPreview(true),
+    filepicker.WithShowHidden(false),
+    filepicker.WithShowIcons(true),
+    filepicker.WithShowSizes(true),
+    filepicker.WithDetailedView(true),
+    filepicker.WithSortMode(filepicker.SortByDate),
+    filepicker.WithPreviewWidth(40),
+    filepicker.WithMaxHistorySize(100),
+    filepicker.WithDirectorySelection(false),
+    filepicker.WithGlobPattern("*.go"),
+    filepicker.WithJailDirectory("/home/user/safe-area"),
+)
 ```
+
+### Available Configuration Options
+
+| Option | Description |
+|--------|-------------|
+| `WithStartPath(string)` | Set starting directory |
+| `WithShowPreview(bool)` | Enable/disable file preview panel |
+| `WithShowHidden(bool)` | Show/hide hidden files |
+| `WithShowIcons(bool)` | Show file type icons |
+| `WithShowSizes(bool)` | Show file sizes |
+| `WithDetailedView(bool)` | Enable detailed view mode |
+| `WithSortMode(SortMode)` | Set initial sort mode |
+| `WithPreviewWidth(int)` | Set preview panel width |
+| `WithMaxHistorySize(int)` | Set navigation history size |
+| `WithDirectorySelection(bool)` | Enable directory selection mode |
+| `WithGlobPattern(string)` | Set initial glob filter pattern |
+| `WithJailDirectory(string)` | Restrict navigation to directory tree |
 
 ## Integration Examples
 
@@ -449,21 +493,145 @@ func (cm *ConfigManager) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 ## Advanced Features
 
+### Directory Selection Mode
+
+The filepicker includes a dedicated directory selection mode for choosing directories instead of files:
+
+```go
+// Enable directory selection mode
+picker := filepicker.New(
+    filepicker.WithDirectorySelection(true),
+    filepicker.WithStartPath("/home/user"),
+)
+
+// Or toggle at runtime
+picker.SetDirectorySelectionMode(true)
+
+// Check current mode
+isDirectoryMode := picker.GetDirectorySelectionMode()
+```
+
+**Features in Directory Selection Mode:**
+- **Enter** selects the current directory (instead of navigating into it)
+- **Space** toggles selection on directories (not files)
+- **Tab** toggles between file and directory selection modes
+- Visual indicators show directories are selectable
+- Status shows "Directory Selection Mode"
+
+### Glob Pattern Filtering
+
+Filter files using glob patterns for precise file matching:
+
+```go
+// Create with glob pattern
+picker := filepicker.New(
+    filepicker.WithGlobPattern("*.go"),     // Show only Go files
+    filepicker.WithStartPath("."),
+)
+
+// Common glob patterns
+picker := filepicker.New(
+    filepicker.WithGlobPattern("test_*"),   // Files starting with "test_"
+)
+
+picker := filepicker.New(
+    filepicker.WithGlobPattern("*.{js,ts}"), // JavaScript and TypeScript files
+)
+```
+
+**Interactive Glob Filtering:**
+- Press **g** to enter glob pattern mode
+- Type your pattern (e.g., `*.md`, `test_*`, `*.{go,mod}`)
+- Press **Enter** to apply the filter
+- Press **G** to clear the glob filter
+
+### Jail Directory (Security Restriction)
+
+Restrict navigation to a specific directory tree for security:
+
+```go
+// Create with jail directory
+picker := filepicker.New(
+    filepicker.WithJailDirectory("/home/user/safe-area"),
+    filepicker.WithStartPath("/home/user/safe-area/documents"),
+)
+```
+
+**Jail Features:**
+- **Navigation Restriction**: Users cannot navigate above the jail directory
+- **Visual Indicators**: 
+  - Status shows "Jailed" when restriction is active
+  - Path display shows relative path from jail root (`[jail]/subdir` instead of absolute path)
+  - ".." entry is hidden when at jail root
+- **Complete Coverage**: All navigation methods respect the jail boundary:
+  - Backspace key navigation
+  - ".." directory entry  
+  - History navigation (back/forward)
+  - Direct path setting
+- **Security**: Handles symlinks and prevents escape attempts
+- **Graceful Handling**: If current directory is outside jail, automatically navigates to jail
+
+#### Jail API Usage
+
+```go
+// Basic setup with jail
+fp := filepicker.New(
+    filepicker.WithJailDirectory("/home/user/safe-area"),
+    filepicker.WithStartPath("/home/user/safe-area/documents"),
+)
+
+// Using the compatibility Model
+fp := filepicker.NewModelWithOptions(
+    filepicker.WithJailDirectory("/path/to/jail"),
+    filepicker.WithShowPreview(true),
+)
+```
+
+#### Security Considerations
+
+- **Path Validation**: All paths are resolved to absolute form and validated
+- **Symlink Handling**: Symlinks cannot be used to escape the jail
+- **History Restriction**: Navigation history only contains paths within jail
+- **Thread Safety**: Thread-safe for concurrent access (no shared mutable state)
+- **Zero Performance Impact**: No performance cost when jail is not used
+
+#### Example Scenarios
+
+**Restrict to User Documents:**
+```go
+fp := filepicker.New(
+    filepicker.WithJailDirectory("/home/user/Documents"),
+)
+```
+
+**Temporary Directory Restriction:**
+```go
+tmpDir := "/tmp/app-sandbox"
+os.MkdirAll(tmpDir, 0755)
+fp := filepicker.New(
+    filepicker.WithJailDirectory(tmpDir),
+)
+```
+
+**Application Data Directory:**
+```go
+dataDir := filepath.Join(os.Getenv("HOME"), ".myapp", "data")
+fp := filepicker.New(
+    filepicker.WithJailDirectory(dataDir),
+    filepicker.WithStartPath(filepath.Join(dataDir, "projects")),
+)
+```
+
 ### Multi-Selection
 
 The filepicker supports selecting multiple files and directories:
 
 ```go
-// Select multiple files using Space key
-// Get all selected files
+// Get all selected files after picker exits
+selectedFiles, hasSelection := picker.GetSelected()
+
+// In compatibility mode, use SelectedFiles()
 selectedFiles := fp.SelectedFiles()
-
-// Programmatically select files
-fp.SelectFile("/path/to/file1.txt")
-fp.SelectFile("/path/to/file2.txt")
-
-// Clear selection
-fp.ClearSelection()
 ```
 
 ### File Operations

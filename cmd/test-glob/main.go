@@ -22,11 +22,11 @@ func main() {
 		opts = append(opts, filepicker.WithGlobPattern(pattern))
 		fmt.Printf("Starting with glob pattern: %s\n", pattern)
 	}
-	
+
 	fp := filepicker.New(opts...)
 
 	p := tea.NewProgram(fp, tea.WithAltScreen())
-	
+
 	finalModel, err := p.Run()
 	if err != nil {
 		log.Fatal(err)

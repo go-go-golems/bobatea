@@ -130,7 +130,7 @@ func TestGlobPatternMatching(t *testing.T) {
 func TestWithGlobPattern(t *testing.T) {
 	pattern := "*.go"
 	fp := New(WithGlobPattern(pattern))
-	
+
 	if fp.globPattern != pattern {
 		t.Errorf("Expected glob pattern '%s', got '%s'", pattern, fp.globPattern)
 	}

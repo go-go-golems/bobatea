@@ -351,9 +351,9 @@ var (
 			Bold(true)
 
 	dirSelectionStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("99")).
-			Background(lipgloss.Color("17")).
-			Bold(true)
+				Foreground(lipgloss.Color("99")).
+				Background(lipgloss.Color("17")).
+				Bold(true)
 
 	hiddenStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("243"))
@@ -582,7 +582,7 @@ func (fp *AdvancedModel) isAtJailRoot() bool {
 	if fp.jailDirectory == "" {
 		return false // No jail restriction
 	}
-	
+
 	cleanJail := filepath.Clean(fp.jailDirectory)
 	cleanCurrent := filepath.Clean(fp.currentPath)
 	return cleanJail == cleanCurrent
@@ -793,7 +793,7 @@ func (fp *AdvancedModel) navigateToHistoryIndex() {
 	}
 
 	targetPath := fp.history[fp.historyIndex]
-	
+
 	// Validate against jail directory
 	if !fp.isWithinJail(targetPath) {
 		return
@@ -1180,7 +1180,7 @@ func (fp *AdvancedModel) filterFiles() {
 
 		// Apply search filter
 		matchesSearch := fp.searchQuery == "" || strings.Contains(strings.ToLower(file.Name), query)
-		
+
 		// Apply glob filter
 		matchesGlob := fp.globPattern == ""
 		if !matchesGlob && fp.globPattern != "" {

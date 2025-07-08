@@ -12,7 +12,7 @@ func TestJailDirectory(t *testing.T) {
 	jailDir := filepath.Join(tmpDir, "jail")
 	outsideDir := filepath.Join(tmpDir, "outside")
 	subDir := filepath.Join(jailDir, "subdir")
-	
+
 	err := os.MkdirAll(jailDir, 0755)
 	if err != nil {
 		t.Fatal(err)
@@ -28,7 +28,7 @@ func TestJailDirectory(t *testing.T) {
 
 	// Test WithJailDirectory option
 	fp := New(WithJailDirectory(jailDir))
-	
+
 	if fp.jailDirectory != jailDir {
 		t.Errorf("Expected jail directory %s, got %s", jailDir, fp.jailDirectory)
 	}
@@ -39,7 +39,7 @@ func TestIsWithinJail(t *testing.T) {
 	jailDir := filepath.Join(tmpDir, "jail")
 	outsideDir := filepath.Join(tmpDir, "outside")
 	subDir := filepath.Join(jailDir, "subdir")
-	
+
 	err := os.MkdirAll(jailDir, 0755)
 	if err != nil {
 		t.Fatal(err)
@@ -81,7 +81,7 @@ func TestIsAtJailRoot(t *testing.T) {
 	tmpDir := t.TempDir()
 	jailDir := filepath.Join(tmpDir, "jail")
 	subDir := filepath.Join(jailDir, "subdir")
-	
+
 	err := os.MkdirAll(jailDir, 0755)
 	if err != nil {
 		t.Fatal(err)
@@ -117,7 +117,7 @@ func TestValidateNavigationPath(t *testing.T) {
 	jailDir := filepath.Join(tmpDir, "jail")
 	outsideDir := filepath.Join(tmpDir, "outside")
 	subDir := filepath.Join(jailDir, "subdir")
-	
+
 	err := os.MkdirAll(jailDir, 0755)
 	if err != nil {
 		t.Fatal(err)
@@ -158,7 +158,7 @@ func TestJailWithStartPathOutsideJail(t *testing.T) {
 	tmpDir := t.TempDir()
 	jailDir := filepath.Join(tmpDir, "jail")
 	outsideDir := filepath.Join(tmpDir, "outside")
-	
+
 	err := os.MkdirAll(jailDir, 0755)
 	if err != nil {
 		t.Fatal(err)
@@ -183,7 +183,7 @@ func TestJailWithStartPathOutsideJail(t *testing.T) {
 func TestNoJailRestriction(t *testing.T) {
 	tmpDir := t.TempDir()
 	subDir := filepath.Join(tmpDir, "subdir")
-	
+
 	err := os.MkdirAll(subDir, 0755)
 	if err != nil {
 		t.Fatal(err)
