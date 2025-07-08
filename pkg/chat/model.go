@@ -118,6 +118,7 @@ func InitialModel(manager geppetto_conversation.Manager, backend Backend, option
 		filepicker.WithShowPreview(true),
 		filepicker.WithShowHidden(false),
 		filepicker.WithDetailedView(true),
+		filepicker.WithGlobPattern("*.{json,yaml,yml}"), // Filter for configuration files
 	)
 
 	ret := model{

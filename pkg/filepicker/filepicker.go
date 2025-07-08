@@ -171,7 +171,7 @@ type advancedKeyMap struct {
 
 // ShortHelp returns keybindings to be shown in the mini help view
 func (k advancedKeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Help, k.Quit}
+	return []key.Binding{k.Enter, k.Space, k.NewFile, k.NewDir, k.Search, k.Escape, k.Help}
 }
 
 // FullHelp returns keybindings for the expanded help view
