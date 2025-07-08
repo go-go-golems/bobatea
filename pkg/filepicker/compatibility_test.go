@@ -24,34 +24,34 @@ func TestCompatibilityAPI(t *testing.T) {
 
 	// Test NewModel() creates compatible structure
 	model := NewModel()
-	
+
 	// Test that the compatibility fields exist and have correct types
 	if model.Filepicker.DirAllowed != true {
 		t.Error("Expected DirAllowed to be true by default")
 	}
-	
+
 	if model.Filepicker.FileAllowed != true {
 		t.Error("Expected FileAllowed to be true by default")
 	}
-	
+
 	if model.Filepicker.Height != 10 {
 		t.Error("Expected Height to be 10 by default")
 	}
 
 	// Test setting CurrentDirectory
 	model.Filepicker.CurrentDirectory = tempDir
-	
+
 	// Test Update method works
 	windowMsg := tea.WindowSizeMsg{Width: 80, Height: 24}
 	updatedModel, cmd := model.Update(windowMsg)
-	
+
 	// Verify the model is updated correctly
 	compatModel := updatedModel.(Model)
 	if compatModel.Filepicker.CurrentDirectory != tempDir {
-		t.Errorf("Expected CurrentDirectory to be %s, got %s", 
+		t.Errorf("Expected CurrentDirectory to be %s, got %s",
 			tempDir, compatModel.Filepicker.CurrentDirectory)
 	}
-	
+
 	// Verify the command is returned (can be nil)
 	_ = cmd // Commands can be nil, that's normal
 
@@ -89,7 +89,7 @@ func TestAdvancedModelDirectly(t *testing.T) {
 
 	// Create advanced model directly
 	advModel := NewAdvancedModel(tempDir)
-	
+
 	if advModel.currentPath != tempDir {
 		t.Errorf("Expected currentPath to be %s, got %s", tempDir, advModel.currentPath)
 	}
@@ -122,7 +122,7 @@ func TestAdvancedModelDirectly(t *testing.T) {
 func TestModelEmbedding(t *testing.T) {
 	// Test that Model correctly embeds AdvancedModel
 	model := NewModel()
-	
+
 	// These should work because Model embeds *AdvancedModel
 	selected, hasSelection := model.GetSelected()
 	if hasSelection {

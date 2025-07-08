@@ -359,19 +359,19 @@ func NewAdvancedModel(startPath string) *AdvancedModel {
 	si.CharLimit = 100
 
 	fp := &AdvancedModel{
-		currentPath:   startPath,
-		showIcons:     true,
-		showSizes:     true,
-		multiSelected: make(map[string]bool),
-		clipboard:     []string{},
-		clipboardOp:   OpNone,
-		viewState:     ViewStateNormal,
-		textInput:     ti,
-		searchInput:   si,
-		help:          help.New(),
-		keys:          defaultAdvancedKeyMap(),
-		showPreview:   true,
-		showHidden:    false,
+		currentPath:    startPath,
+		showIcons:      true,
+		showSizes:      true,
+		multiSelected:  make(map[string]bool),
+		clipboard:      []string{},
+		clipboardOp:    OpNone,
+		viewState:      ViewStateNormal,
+		textInput:      ti,
+		searchInput:    si,
+		help:           help.New(),
+		keys:           defaultAdvancedKeyMap(),
+		showPreview:    true,
+		showHidden:     false,
 		detailedView:   true,
 		sortMode:       SortByName,
 		previewWidth:   40,
@@ -387,7 +387,7 @@ func NewAdvancedModel(startPath string) *AdvancedModel {
 
 	// Add initial directory to history
 	fp.addToHistory(fp.currentPath)
-	
+
 	fp.loadDirectory()
 	return fp
 }
@@ -404,9 +404,9 @@ type CompatFilepicker struct {
 // Model provides backward compatibility with the original bobatea filepicker API
 type Model struct {
 	*AdvancedModel
-	sentCancelMsg   bool
-	sentSelectMsg   bool
-	
+	sentCancelMsg bool
+	sentSelectMsg bool
+
 	// Compatibility fields
 	Title        string
 	Error        string
@@ -421,9 +421,9 @@ func NewModel() Model {
 	if err != nil {
 		wd = "."
 	}
-	
+
 	advModel := NewAdvancedModel(wd)
-	
+
 	return Model{
 		AdvancedModel: advModel,
 		Filepicker: CompatFilepicker{
@@ -448,20 +448,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.AdvancedModel.currentPath = m.Filepicker.CurrentDirectory
 		m.AdvancedModel.loadDirectory()
 	}
-	
+
 	// Delegate to the advanced model
 	updatedAdvanced, cmd := m.AdvancedModel.Update(msg)
-	
+
 	// Update our wrapper
 	m.AdvancedModel = updatedAdvanced.(*AdvancedModel)
-	
+
 	// Sync back to compatibility fields
 	m.Filepicker.CurrentDirectory = m.AdvancedModel.currentPath
 	m.Filepicker.advancedModel = m.AdvancedModel
-	
+
 	// Check if we need to send compatibility messages
 	var compatCmd tea.Cmd
-	
+
 	if m.AdvancedModel.cancelled && !m.sentCancelMsg {
 		m.sentCancelMsg = true
 		compatCmd = func() tea.Msg {
@@ -474,11 +474,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return SelectFileMsg{Path: m.AdvancedModel.selectedFiles[0]}
 		}
 	}
-	
+
 	if compatCmd != nil {
 		return m, tea.Batch(cmd, compatCmd)
 	}
-	
+
 	return m, cmd
 }
 
@@ -498,20 +498,20 @@ func (fp *AdvancedModel) addToHistory(path string) {
 	if fp.historyIndex >= 0 && fp.historyIndex < len(fp.history)-1 {
 		fp.history = fp.history[:fp.historyIndex+1]
 	}
-	
+
 	// Don't add duplicate consecutive entries
 	if len(fp.history) > 0 && fp.history[len(fp.history)-1] == path {
 		return
 	}
-	
+
 	// Add to history
 	fp.history = append(fp.history, path)
-	
+
 	// Limit history size
 	if len(fp.history) > fp.maxHistorySize {
 		fp.history = fp.history[1:]
 	}
-	
+
 	// Reset history index to end
 	fp.historyIndex = -1
 }
@@ -534,13 +534,13 @@ func (fp *AdvancedModel) goBack() {
 	if !fp.canGoBack() {
 		return
 	}
-	
+
 	if fp.historyIndex == -1 {
 		fp.historyIndex = len(fp.history) - 2
 	} else {
 		fp.historyIndex--
 	}
-	
+
 	fp.navigateToHistoryIndex()
 }
 
@@ -549,7 +549,7 @@ func (fp *AdvancedModel) goForward() {
 	if !fp.canGoForward() {
 		return
 	}
-	
+
 	fp.historyIndex++
 	fp.navigateToHistoryIndex()
 }
@@ -559,7 +559,7 @@ func (fp *AdvancedModel) navigateToHistoryIndex() {
 	if fp.historyIndex < 0 || fp.historyIndex >= len(fp.history) {
 		return
 	}
-	
+
 	fp.currentPath = fp.history[fp.historyIndex]
 	fp.cursor = 0
 	fp.multiSelected = make(map[string]bool)
@@ -1465,10 +1465,10 @@ func (fp *AdvancedModel) formatFileEntry(file File, isCursor bool, width int) st
 	fullWidth := baseWidth + sizeWidth + sizeDateSpacer + dateWidth
 	if width < fullWidth {
 		// Not enough space for all columns, start hiding
-		if width < baseWidth + sizeWidth + sizeDateSpacer {
+		if width < baseWidth+sizeWidth+sizeDateSpacer {
 			showDate = false // Hide date first
 		}
-		if width < baseWidth + sizeWidth {
+		if width < baseWidth+sizeWidth {
 			showSize = false // Hide size last
 		}
 	}

@@ -57,10 +57,10 @@ func runAdvancedFilePicker(startPath string, showPreview, showHidden bool) {
 
 func runBasicFilePicker() {
 	fp := filepicker.NewModel()
-	
+
 	// Create a simple wrapper model
 	model := &wrapperModel{filepicker: fp}
-	
+
 	p := tea.NewProgram(model, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		log.Fatal(err)
