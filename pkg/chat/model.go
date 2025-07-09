@@ -88,6 +88,9 @@ type model struct {
 	title string
 
 	status *Status
+
+	// Callback function for file selection
+	filePickerCallback func(path string) error
 }
 
 type ModelOption func(*model)
@@ -110,6 +113,12 @@ func WithAutoStartBackend(autoStartBackend bool) ModelOption {
 	}
 }
 
+func WithFilePickerCallback(callback func(path string) error) ModelOption {
+	return func(m *model) {
+		m.filePickerCallback = callback
+	}
+}
+
 func InitialModel(manager geppetto_conversation.Manager, backend Backend, options ...ModelOption) model {
 	dir, _ := os.Getwd()
 	fp := filepicker.NewModelWithOptions(
@@ -118,7 +127,6 @@ func InitialModel(manager geppetto_conversation.Manager, backend Backend, option
 		filepicker.WithShowPreview(true),
 		filepicker.WithShowHidden(false),
 		filepicker.WithDetailedView(true),
-		filepicker.WithGlobPattern("*.{json,yaml,yml}"), // Filter for configuration files
 	)
 
 	ret := model{
@@ -235,6 +243,27 @@ func (m model) saveToFile(path string) (tea.Model, tea.Cmd) {
 		return m, func() tea.Msg {
 			return ErrorMsg(err)
 		}
+	}
+
+	m.state = StateUserInput
+	m.updateKeyBindings()
+	m.recomputeSize()
+
+	return m, nil
+}
+
+func (m model) handleFileSelection(path string) (tea.Model, tea.Cmd) {
+	// Use callback if provided, otherwise default to saveToFile
+	if m.filePickerCallback != nil {
+		err := m.filePickerCallback(path)
+		if err != nil {
+			return m, func() tea.Msg {
+				return ErrorMsg(err)
+			}
+		}
+	} else {
+		// Default behavior: save conversation to file
+		return m.saveToFile(path)
 	}
 
 	m.state = StateUserInput
@@ -419,7 +448,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			Int64("update_call_id", updateCallID).
 			Str("path", msg_.Path).
 			Msg("File selected for saving")
-		return m.saveToFile(msg_.Path)
+		return m.handleFileSelection(msg_.Path)
 
 	case filepicker.CancelFilePickerMsg:
 		log.Trace().
