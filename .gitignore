@@ -16,3 +16,10 @@
 dist/
 
 .history
+
+# Build artifacts and temporary files
+/build/
+*.tmp
+*.log
+/ttmp/
+*.wsm/

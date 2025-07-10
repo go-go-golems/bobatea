@@ -1,10 +1,12 @@
-package repl
+package example
 
 import (
 	"context"
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/go-go-golems/bobatea/pkg/repl"
 )
 
 // ExampleEvaluator is a simple evaluator for demonstration
@@ -12,8 +14,8 @@ type ExampleEvaluator struct {
 	name string
 }
 
-// NewExampleEvaluator creates a new example evaluator
-func NewExampleEvaluator() *ExampleEvaluator {
+// NewEvaluator creates a new example evaluator
+func NewEvaluator() *ExampleEvaluator {
 	return &ExampleEvaluator{
 		name: "Example",
 	}
@@ -63,3 +65,5 @@ func (e *ExampleEvaluator) SupportsMultiline() bool {
 func (e *ExampleEvaluator) GetFileExtension() string {
 	return ".txt"
 }
+
+var _ repl.Evaluator = (*ExampleEvaluator)(nil)

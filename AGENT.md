@@ -6,6 +6,12 @@
 - Run single test: `go test ./path/to/package -run TestName`
 - Security: `make gosec govulncheck`
 
+## Binary & Build Management
+- **Prefer `go run`**: Run binaries with `go run ./cmd/component` when possible
+- **Build directory**: If compilation is needed, build into `build/` directory at project root
+- **Avoid in-place builds**: Don't build binaries in their source directories (keeps git clean)
+- **Examples**: All examples should be runnable with `go run .` from their directory
+
 ## Code Style Guidelines
 - Go version: 1.24+
 - Errors: Use pkg/errors for wrapping
