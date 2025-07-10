@@ -105,6 +105,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		// Handle special key combinations
+		//nolint:exhaustive
 		switch msg.Type {
 		case tea.KeyCtrlC:
 			m.quitting = true
@@ -409,14 +410,18 @@ func (m Model) openExternalEditor(content string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to create temporary file: %w", err)
 	}
-	defer os.Remove(tmpFile.Name())
+	defer func() {
+		_ = os.Remove(tmpFile.Name()) // Best effort cleanup
+	}()
 
 	// Write content to temp file
 	if _, err := tmpFile.WriteString(content); err != nil {
-		tmpFile.Close()
+		_ = tmpFile.Close()
 		return "", fmt.Errorf("failed to write to temporary file: %w", err)
 	}
-	tmpFile.Close()
+	if err := tmpFile.Close(); err != nil {
+		return "", fmt.Errorf("failed to close temporary file: %w", err)
+	}
 
 	// Launch editor
 	cmd := exec.Command(editor, tmpFile.Name())
@@ -433,7 +438,9 @@ func (m Model) openExternalEditor(content string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to read edited file: %w", err)
 	}
-	defer editedFile.Close()
+	defer func() {
+		_ = editedFile.Close() // Best effort cleanup
+	}()
 
 	editedBytes, err := io.ReadAll(editedFile)
 	if err != nil {
