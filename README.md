@@ -26,6 +26,8 @@ This package contains either modified versions of common Bubble Tea bubbles or c
 
 - **[mode-keymap](pkg/mode-keymap/)** - Mode-based keyboard mapping system
 
+- **[sparkline](pkg/sparkline/)** - Terminal data visualization component for displaying trends in compact charts ([Documentation](docs/sparkline.md))
+
 ## Quick Start
 
 ```go
@@ -33,6 +35,7 @@ import (
     "github.com/go-go-golems/bobatea/pkg/repl"
     "github.com/go-go-golems/bobatea/pkg/filepicker"
     "github.com/go-go-golems/bobatea/pkg/textarea"
+    "github.com/go-go-golems/bobatea/pkg/sparkline"
 )
 
 // Use components in your Bubble Tea application
@@ -47,6 +50,15 @@ func main() {
         filepicker.WithStartPath("."),
         filepicker.WithShowPreview(true),
     )
+    
+    // Create a sparkline for data visualization
+    sparklineConfig := sparkline.Config{
+        Width:  40,
+        Height: 6,
+        Style:  sparkline.StyleBars,
+        Title:  "CPU Usage",
+    }
+    chart := sparkline.New(sparklineConfig)
     
     // Run your application
     p := tea.NewProgram(replModel)
@@ -67,6 +79,7 @@ func main() {
 
 - **[REPL Documentation](docs/repl.md)** - Complete guide for the REPL component
 - **[Filepicker Documentation](docs/filepicker.md)** - Comprehensive filepicker guide
+- **[Sparkline Documentation](docs/sparkline.md)** - Terminal data visualization guide
 - **[Examples](examples/)** - Working example applications
 
 ## Contributing
