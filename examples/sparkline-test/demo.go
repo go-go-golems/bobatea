@@ -182,7 +182,7 @@ func DemoSparkline() {
 
 	fmt.Println("\n✅ Demo completed!")
 	fmt.Println("\nTo run the interactive TUI version:")
-	fmt.Println("  go run ./cmd/apps/sparkline-test")
+	fmt.Println("  go run ./examples/sparkline-test")
 }
 
 // Helper functions to generate test data
@@ -222,4 +222,4 @@ func generateSpikes(count int, base float64, spikeProb, spikeHeight float64) []f
 	return data
 }
 
-var r = rand.New(rand.NewSource(time.Now().UnixNano())) //nolint:gosec // demo purposes only
+var r = rand.New(rand.NewSource(time.Now().UnixNano())) // #nosec G404 // demo purposes only

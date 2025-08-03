@@ -139,7 +139,7 @@ func (m Model) tickCmd() tea.Cmd {
 func initialModel() Model {
 	width := 50
 	height := 8
-	rng := rand.New(rand.NewSource(time.Now().UnixNano())) //nolint:gosec // demo purposes only
+	rng := rand.New(rand.NewSource(time.Now().UnixNano())) // #nosec G404 // demo purposes only
 
 	// Color ranges for different values
 	colorRanges := []sparkline.ColorRange{
