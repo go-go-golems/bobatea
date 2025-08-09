@@ -6,15 +6,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-go-golems/geppetto/pkg/events"
-
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 	conversation2 "github.com/go-go-golems/geppetto/pkg/conversation"
-	"github.com/go-go-golems/geppetto/pkg/steps"
+	"github.com/go-go-golems/geppetto/pkg/events"
 	"github.com/google/uuid"
 	"github.com/muesli/reflow/wordwrap"
 	"github.com/muesli/termenv"
@@ -631,7 +629,7 @@ type StreamMetadata struct {
 	ID            conversation2.NodeID  `json:"id" yaml:"id"`
 	ParentID      conversation2.NodeID  `json:"parent_id" yaml:"parent_id"`
 	EventMetadata *events.EventMetadata `json:"metadata" yaml:"metadata"`
-	StepMetadata  *steps.StepMetadata   `json:"step_metadata,omitempty"`
+	StepMetadata  *events.StepMetadata  `json:"step_metadata,omitempty"`
 }
 
 type StreamStartMsg struct {
