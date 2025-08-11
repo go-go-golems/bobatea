@@ -154,6 +154,9 @@ func InitialModel(manager geppetto_conversation.Manager, backend Backend, option
     ret.timelineReg = timeline.NewRegistry()
     ret.timelineReg.Register(&timeline.LLMTextRenderer{})
     ret.timelineReg.Register(&timeline.ToolCallsPanelRenderer{})
+    // Register tool-specific renderers
+    ret.timelineReg.Register(&timeline.ToolWeatherRenderer{})
+    ret.timelineReg.Register(&timeline.ToolWebSearchRenderer{})
     ret.timelineCtrl = timeline.NewController(ret.timelineReg)
     ret.entityVers = map[string]int64{}
 
@@ -277,43 +280,41 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	updateStartTime := time.Now()
 	msgType := fmt.Sprintf("%T", msg)
 
-	log.Trace().
-		Int64("update_call_id", updateCallID).
-		Str("msg_type", msgType).
-		Str("current_state", string(m.state)).
-		Int("message_count", len(m.conversationManager.GetConversation())).
-		Bool("scroll_to_bottom", m.scrollToBottom).
-		Bool("backend_finished", m.backend.IsFinished()).
-		Time("start_time", updateStartTime).
-		Msg("UPDATE ENTRY")
+    // Consolidated logger for this update call
+    logger := log.With().Int64("update_call_id", updateCallID).Logger()
+    logger.Trace().
+        Str("msg_type", msgType).
+        Str("current_state", string(m.state)).
+        Int("message_count", len(m.conversationManager.GetConversation())).
+        Bool("scroll_to_bottom", m.scrollToBottom).
+        Bool("backend_finished", m.backend.IsFinished()).
+        Time("start_time", updateStartTime).
+        Msg("UPDATE ENTRY")
 
 	var cmds []tea.Cmd
 	var cmd tea.Cmd
 
 	switch msg_ := msg.(type) {
 	case tea.KeyMsg:
-		log.Trace().
-			Int64("update_call_id", updateCallID).
-			Str("key", msg_.String()).
-			Msg("Handling key press")
-		return m.handleKeyPress(msg_)
+        logger.Trace().Str("key", msg_.String()).Msg("Handling key press")
+        // Inject demo tool triggers on letters
+        if msg_.String() == "alt+w" {
+            return m.handleUserAction(TriggerWeatherToolMsg{})
+        }
+        if msg_.String() == "alt+s" {
+            return m.handleUserAction(TriggerWebSearchToolMsg{})
+        }
+        return m.handleKeyPress(msg_)
 
 	case tea.WindowSizeMsg:
-		log.Trace().
-			Int64("update_call_id", updateCallID).
-			Int("width", msg_.Width).
-			Int("height", msg_.Height).
-			Msg("Window size changed")
+        logger.Trace().Int("width", msg_.Width).Int("height", msg_.Height).Msg("Window size changed")
         m.width = msg_.Width
         m.height = msg_.Height
         m.timelineCtrl.SetSize(m.width, m.height)
         m.recomputeSize()
 
 	case ErrorMsg:
-		log.Trace().
-			Int64("update_call_id", updateCallID).
-			Str("error", msg_.Error()).
-			Msg("Error message received")
+        logger.Trace().Str("error", msg_.Error()).Msg("Error message received")
 		m.err = msg_
 		return m, nil
 
@@ -323,37 +324,28 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		conversationui.StreamDoneMsg,
 		conversationui.StreamCompletionError:
 
-		log.Trace().
-			Int64("update_call_id", updateCallID).
-			Str("stream_msg_type", msgType).
-			Msg("Stream message received - ENTERING STREAM PROCESSING")
+        logger.Trace().Str("stream_msg_type", msgType).Msg("Stream message received - ENTERING STREAM PROCESSING")
 
 		startTime := time.Now()
 
 		switch streamMsg := msg.(type) {
 		case conversationui.StreamStartMsg:
-            log.Trace().
-                Int64("update_call_id", updateCallID).
-                Str("operation", "stream_start_reception").
+            logger.Trace().Str("operation", "stream_start_reception").
                 Str("messageID", streamMsg.ID.String()).
                 Time("timestamp", startTime).
                 Int("current_message_count", len(m.conversationManager.GetConversation())).
                 Bool("scroll_to_bottom", m.scrollToBottom).
                 Msg("StreamStartMsg details")
 		case conversationui.StreamCompletionMsg:
-			log.Trace().
-				Int64("update_call_id", updateCallID).
-				Str("operation", "stream_completion_reception").
-				Str("messageID", streamMsg.ID.String()).
-				Int("delta_length", len(streamMsg.Delta)).
-				Int("completion_length", len(streamMsg.Completion)).
-				Msg("StreamCompletionMsg details")
+            logger.Trace().Str("operation", "stream_completion_reception").
+                Str("messageID", streamMsg.ID.String()).
+                Int("delta_length", len(streamMsg.Delta)).
+                Int("completion_length", len(streamMsg.Completion)).
+                Msg("StreamCompletionMsg details")
 		case conversationui.StreamDoneMsg:
-			log.Trace().
-				Int64("update_call_id", updateCallID).
-				Str("operation", "stream_done_reception").
-				Str("messageID", streamMsg.ID.String()).
-				Msg("StreamDoneMsg details")
+            logger.Trace().Str("operation", "stream_done_reception").
+                Str("messageID", streamMsg.ID.String()).
+                Msg("StreamDoneMsg details")
 		}
 
         // Translate stream messages to timeline entity lifecycle
@@ -397,27 +389,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
         }
 
 		totalDuration := time.Since(startTime)
-		log.Trace().
-			Int64("update_call_id", updateCallID).
-			Str("operation", "stream_message_total").
-			Dur("total_duration", totalDuration).
-			Msg("Stream message processing completed")
+        logger.Trace().Str("operation", "stream_message_total").
+            Dur("total_duration", totalDuration).
+            Msg("Stream message processing completed")
 
 		cmds = append(cmds, cmd)
 
 	case BackendFinishedMsg:
-		log.Trace().
-			Int64("update_call_id", updateCallID).
-			Msg("Backend finished - calling finishCompletion()")
+        logger.Trace().Msg("Backend finished - calling finishCompletion()")
 		cmd = m.finishCompletion()
 		cmds = append(cmds, cmd)
 
 	case refreshMessageMsg:
-		log.Trace().
-			Int64("update_call_id", updateCallID).
-			Bool("go_to_bottom", msg_.GoToBottom).
-			Bool("scroll_to_bottom", m.scrollToBottom).
-			Msg("REFRESH MESSAGE - POTENTIAL TRIGGER FOR LOOPS")
+        logger.Trace().Bool("go_to_bottom", msg_.GoToBottom).Bool("scroll_to_bottom", m.scrollToBottom).Msg("REFRESH MESSAGE - POTENTIAL TRIGGER FOR LOOPS")
 
         v := m.timelineCtrl.View()
         m.viewport.SetContent(v)
@@ -427,47 +411,30 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case filepicker.SelectFileMsg:
-		log.Trace().
-			Int64("update_call_id", updateCallID).
-			Str("path", msg_.Path).
-			Msg("File selected for saving")
+        logger.Trace().Str("path", msg_.Path).Msg("File selected for saving")
 		return m.saveToFile(msg_.Path)
 
 	case filepicker.CancelFilePickerMsg:
-		log.Trace().
-			Int64("update_call_id", updateCallID).
-			Msg("File picker cancelled")
+        logger.Trace().Msg("File picker cancelled")
 		m.state = StateUserInput
 		m.updateKeyBindings()
 
 	case StartBackendMsg:
-		log.Trace().
-			Int64("update_call_id", updateCallID).
-			Msg("Starting backend - POTENTIAL COMMAND GENERATOR")
+        logger.Trace().Msg("Starting backend - POTENTIAL COMMAND GENERATOR")
 		return m, m.startBackend()
 
 	case UserActionMsg:
-		log.Trace().
-			Int64("update_call_id", updateCallID).
-			Str("user_action_type", fmt.Sprintf("%T", msg_)).
-			Msg("User action message - calling handleUserAction()")
+        logger.Trace().Str("user_action_type", fmt.Sprintf("%T", msg_)).Msg("User action message - calling handleUserAction()")
 		return m.handleUserAction(msg_)
 
 	default:
-		log.Trace().
-			Int64("update_call_id", updateCallID).
-			Str("msg_type", msgType).
-			Str("state", string(m.state)).
-			Msg("DEFAULT CASE - updating viewport or filepicker")
+        logger.Trace().Str("msg_type", msgType).Str("state", string(m.state)).Msg("DEFAULT CASE - updating viewport or filepicker")
 
         switch m.state {
 		case StateUserInput, StateError, StateMovingAround, StateStreamCompletion:
             m.viewport, cmd = m.viewport.Update(msg_)
 			if cmd != nil {
-				log.Trace().
-					Int64("update_call_id", updateCallID).
-					Str("viewport_cmd_type", fmt.Sprintf("%T", cmd)).
-					Msg("Viewport returned command")
+                logger.Trace().Str("viewport_cmd_type", fmt.Sprintf("%T", cmd)).Msg("Viewport returned command")
 			}
 			cmds = append(cmds, cmd)
 		case StateSavingToFile:
@@ -491,11 +458,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.status.Error = m.err
 
 		if oldMessageCount != m.status.MessageCount {
-			log.Trace().
-				Int64("update_call_id", updateCallID).
-				Int("old_count", oldMessageCount).
-				Int("new_count", m.status.MessageCount).
-				Msg("MESSAGE COUNT CHANGED")
+            logger.Trace().Int("old_count", oldMessageCount).Int("new_count", m.status.MessageCount).Msg("MESSAGE COUNT CHANGED")
 		}
 	}
 
@@ -503,23 +466,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	cmdCount := len(cmds)
 
 	// Log all commands being returned
-	for i, cmd := range cmds {
+    for i, cmd := range cmds {
 		if cmd != nil {
-			log.Trace().
-				Int64("update_call_id", updateCallID).
-				Int("cmd_index", i).
-				Str("cmd_type", fmt.Sprintf("%T", cmd)).
-				Msg("COMMAND BEING RETURNED - POTENTIAL LOOP SOURCE")
+            logger.Trace().Int("cmd_index", i).Str("cmd_type", fmt.Sprintf("%T", cmd)).Msg("COMMAND BEING RETURNED - POTENTIAL LOOP SOURCE")
 		}
 	}
 
-	log.Trace().
-		Int64("update_call_id", updateCallID).
-		Str("msg_type", msgType).
-		Dur("total_duration", updateDuration).
-		Int("cmd_count", cmdCount).
-		Str("final_state", string(m.state)).
-		Msg("UPDATE EXIT")
+    logger.Trace().Str("msg_type", msgType).Dur("total_duration", updateDuration).Int("cmd_count", cmdCount).Str("final_state", string(m.state)).Msg("UPDATE EXIT")
 
 	return m, tea.Batch(cmds...)
 }
@@ -695,35 +648,20 @@ func (m model) View() string {
 	viewCallID := atomic.AddInt64(&viewCallCounter, 1)
 	viewStartTime := time.Now()
 
-	log.Trace().
-		Int64("view_call_id", viewCallID).
-		Str("state", string(m.state)).
-		Int("message_count", len(m.conversationManager.GetConversation())).
-		Bool("scroll_to_bottom", m.scrollToBottom).
-		Time("start_time", viewStartTime).
-		Msg("VIEW ENTRY - POTENTIAL EXCESSIVE CALL POINT")
+    vlogger := log.With().Int64("view_call_id", viewCallID).Logger()
+    vlogger.Trace().Str("state", string(m.state)).Int("message_count", len(m.conversationManager.GetConversation())).Bool("scroll_to_bottom", m.scrollToBottom).Time("start_time", viewStartTime).Msg("VIEW ENTRY - POTENTIAL EXCESSIVE CALL POINT")
 
 	headerStart := time.Now()
 	headerView := m.headerView()
 	headerDuration := time.Since(headerStart)
 
-	log.Trace().
-		Int64("view_call_id", viewCallID).
-		Dur("header_duration", headerDuration).
-		Bool("header_empty", headerView == "").
-		Msg("Header view generated")
+    vlogger.Trace().Dur("header_duration", headerDuration).Bool("header_empty", headerView == "").Msg("Header view generated")
 
     // Generate timeline view instead of conversation view
     view := m.timelineCtrl.View()
     m.viewport.SetContent(view)
 
-	log.Trace().
-		Int64("view_call_id", viewCallID).
-        // no extra metrics for set content here
-		Int("viewport_width", m.viewport.Width).
-		Int("viewport_height", m.viewport.Height).
-		Int("viewport_y_position", m.viewport.YPosition).
-		Msg("VIEWPORT CONTENT SET - POTENTIAL TRIGGER FOR UPDATES")
+    vlogger.Trace().Int("viewport_width", m.viewport.Width).Int("viewport_height", m.viewport.Height).Int("viewport_y_position", m.viewport.YPosition).Msg("VIEWPORT CONTENT SET - POTENTIAL TRIGGER FOR UPDATES")
 
     viewportViewStart := time.Now()
     viewportView := m.viewport.View()
@@ -737,12 +675,7 @@ func (m model) View() string {
 	helpView := m.help.View(m.keyMap)
 	helpDuration := time.Since(helpStart)
 
-	log.Trace().
-		Int64("view_call_id", viewCallID).
-		Dur("viewport_view_duration", viewportViewDuration).
-		Dur("textarea_duration", textAreaDuration).
-		Dur("help_duration", helpDuration).
-		Msg("UI component views generated")
+    vlogger.Trace().Dur("viewport_view_duration", viewportViewDuration).Dur("textarea_duration", textAreaDuration).Dur("help_duration", helpDuration).Msg("UI component views generated")
 
     // debugging heights with trace logging
     viewportHeight := lipgloss.Height(viewportView)
@@ -750,15 +683,7 @@ func (m model) View() string {
     headerHeight := lipgloss.Height(headerView)
     helpViewHeight := lipgloss.Height(helpView)
 
-	log.Trace().
-		Int64("view_call_id", viewCallID).
-		Int("viewport_height", viewportHeight).
-		Int("textarea_height", textAreaHeight).
-		Int("header_height", headerHeight).
-		Int("help_height", helpViewHeight).
-		Int("total_calculated_height", viewportHeight+textAreaHeight+headerHeight+helpViewHeight).
-		Int("model_height", m.height).
-		Msg("Height calculations")
+    vlogger.Trace().Int("viewport_height", viewportHeight).Int("textarea_height", textAreaHeight).Int("header_height", headerHeight).Int("help_height", helpViewHeight).Int("total_calculated_height", viewportHeight+textAreaHeight+headerHeight+helpViewHeight).Int("model_height", m.height).Msg("Height calculations")
 
 	ret := ""
 	if headerView != "" {
@@ -768,27 +693,15 @@ func (m model) View() string {
 	switch m.state {
 	case StateUserInput, StateError, StateMovingAround, StateStreamCompletion:
 		ret += viewportView + "\n" + textAreaView + "\n" + helpView
-		log.Trace().
-			Int64("view_call_id", viewCallID).
-			Str("combined_state", "viewport+textarea+help").
-			Int("final_length", len(ret)).
-			Msg("Combined view for main states")
+        vlogger.Trace().Str("combined_state", "viewport+textarea+help").Int("final_length", len(ret)).Msg("Combined view for main states")
 
 	case StateSavingToFile:
 		ret += m.filepicker.View()
-		log.Trace().
-			Int64("view_call_id", viewCallID).
-			Str("combined_state", "filepicker").
-			Int("final_length", len(ret)).
-			Msg("Combined view for file saving state")
+        vlogger.Trace().Str("combined_state", "filepicker").Int("final_length", len(ret)).Msg("Combined view for file saving state")
 	}
 
 	viewDuration := time.Since(viewStartTime)
-	log.Trace().
-		Int64("view_call_id", viewCallID).
-		Dur("total_view_duration", viewDuration).
-		Int("final_output_length", len(ret)).
-		Msg("VIEW EXIT")
+    vlogger.Trace().Dur("total_view_duration", viewDuration).Int("final_output_length", len(ret)).Msg("VIEW EXIT")
 
 	return ret
 }
@@ -956,6 +869,40 @@ func (m model) handleUserAction(msg UserActionMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
 	switch msg_ := msg.(type) {
+    case TriggerWeatherToolMsg:
+        id := geppetto_conversation.NewNodeID().String()
+        m.timelineCtrl.OnCreated(timeline.UIEntityCreated{
+            ID:       timeline.EntityID{LocalID: id, Kind: "tool_call"},
+            Renderer: timeline.RendererDescriptor{Key: "renderer.tool.get_weather.v1", Kind: "tool_call"},
+            Props: map[string]any{
+                "location": "Paris",
+                "units":    "celsius",
+            },
+            StartedAt: time.Now(),
+        })
+        // simulate result
+        m.timelineCtrl.OnUpdated(timeline.UIEntityUpdated{ID: timeline.EntityID{LocalID: id, Kind: "tool_call"}, Patch: map[string]any{"result": "22C, Sunny"}, Version: 1, UpdatedAt: time.Now()})
+        m.timelineCtrl.OnCompleted(timeline.UIEntityCompleted{ID: timeline.EntityID{LocalID: id, Kind: "tool_call"}})
+        v := m.timelineCtrl.View()
+        m.viewport.SetContent(v)
+        if m.scrollToBottom { m.viewport.GotoBottom() }
+        return m, nil
+    case TriggerWebSearchToolMsg:
+        id := geppetto_conversation.NewNodeID().String()
+        m.timelineCtrl.OnCreated(timeline.UIEntityCreated{
+            ID:       timeline.EntityID{LocalID: id, Kind: "tool_call"},
+            Renderer: timeline.RendererDescriptor{Key: "renderer.tool.web_search.v1", Kind: "tool_call"},
+            Props: map[string]any{
+                "query": "golang bubbletea timeline ui",
+            },
+            StartedAt: time.Now(),
+        })
+        m.timelineCtrl.OnUpdated(timeline.UIEntityUpdated{ID: timeline.EntityID{LocalID: id, Kind: "tool_call"}, Patch: map[string]any{"result": "Found 3 relevant links"}, Version: 1, UpdatedAt: time.Now()})
+        m.timelineCtrl.OnCompleted(timeline.UIEntityCompleted{ID: timeline.EntityID{LocalID: id, Kind: "tool_call"}})
+        v := m.timelineCtrl.View()
+        m.viewport.SetContent(v)
+        if m.scrollToBottom { m.viewport.GotoBottom() }
+        return m, nil
 	case ToggleHelpMsg:
 		m.help.ShowAll = !m.help.ShowAll
 

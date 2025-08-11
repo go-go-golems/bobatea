@@ -51,6 +51,10 @@ type PrependInputTextMsg struct {
 
 type GetInputTextMsg struct{}
 
+// Demo tool triggers
+type TriggerWeatherToolMsg struct{}
+type TriggerWebSearchToolMsg struct{}
+
 func (ToggleHelpMsg) isUserAction()                      {}
 func (UnfocusMessageMsg) isUserAction()                  {}
 func (QuitMsg) isUserAction()                            {}
@@ -72,3 +76,5 @@ func (ReplaceInputTextMsg) isUserAction() {}
 func (AppendInputTextMsg) isUserAction()  {}
 func (PrependInputTextMsg) isUserAction() {}
 func (GetInputTextMsg) isUserAction()     {}
+func (TriggerWeatherToolMsg) isUserAction()   {}
+func (TriggerWebSearchToolMsg) isUserAction() {}
