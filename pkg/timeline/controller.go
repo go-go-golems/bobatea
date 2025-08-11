@@ -40,6 +40,13 @@ func (c *Controller) OnCreated(e UIEntityCreated) {
             rec.model.SetSize(c.width, c.height)
         }
     }
+    // Fallback: try factory by kind when no key-specific factory is found
+    if rec.model == nil && e.Renderer.Kind != "" {
+        if f, ok := c.reg.GetModelFactoryByKind(e.Renderer.Kind); ok {
+            rec.model = f.NewEntityModel(rec.Props)
+            rec.model.SetSize(c.width, c.height)
+        }
+    }
 	c.store.add(rec)
 	if c.selected < 0 {
 		c.selected = 0
@@ -52,6 +59,8 @@ func (c *Controller) OnUpdated(e UIEntityUpdated) {
 		applyPatch(rec.Props, e.Patch)
         if rec.model != nil {
             rec.model.OnProps(e.Patch)
+            // Also emit a structured props-updated message for models that react in Update
+            rec.model.Update(EntityPropsUpdatedMsg{ID: rec.ID, Patch: e.Patch})
         }
 		rec.Version = max64(rec.Version, e.Version)
 		rec.UpdatedAt = e.UpdatedAt.UnixNano()
@@ -62,10 +71,13 @@ func (c *Controller) OnUpdated(e UIEntityUpdated) {
 func (c *Controller) OnCompleted(e UIEntityCompleted) {
 	if rec, ok := c.store.get(e.ID); ok {
 		log.Debug().Str("component", "timeline_controller").Str("event", "completed").Str("kind", e.ID.Kind).Str("local_id", e.ID.LocalID).Int("result_len", len(e.Result)).Msg("applying complete")
-		if len(e.Result) > 0 {
-			applyPatch(rec.Props, e.Result)
-		}
+        if len(e.Result) > 0 {
+            applyPatch(rec.Props, e.Result)
+        }
 		rec.Completed = true
+        if rec.model != nil {
+            rec.model.OnCompleted(e.Result)
+        }
 		c.cache.invalidateByID(e.ID)
 	}
 }
@@ -185,6 +197,18 @@ func (c *Controller) ViewAndSelectedPosition() (string, int, int) {
     offset := 0
     for idx, id := range c.store.order {
         rec, _ := c.store.get(id)
+        // If we have an interactive model, render and measure directly
+        if rec.model != nil {
+            sel := idx == c.selected && c.selectionVisible
+            rec.model.OnProps(map[string]any{"selected": sel})
+            if sel { rec.model.Update(EntitySelectedMsg{ID: rec.ID}) } else { rec.model.Update(EntityUnselectedMsg{ID: rec.ID}) }
+            s := rec.model.View()
+            h := lipLines(s)
+            if idx == c.selected { return view, offset, h }
+            offset += h
+            continue
+        }
+        // Stateless renderer path with cache
         r := c.pickRenderer(rec)
         annotated := cloneMap(rec.Props)
         if idx == c.selected { annotated["selected"] = true }

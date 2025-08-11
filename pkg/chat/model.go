@@ -224,10 +224,10 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
     case key.Matches(msg, m.keyMap.FocusMessage):
         log.Debug().Str("component", "chat").Str("key", msg.String()).Msg("Focus pressed")
         cmd = func() tea.Msg { return FocusMessageMsg{} }
-    case key.Matches(msg, m.keyMap.SelectNextMessage) || msg.String() == "down":
+    case key.Matches(msg, m.keyMap.SelectNextMessage):
         log.Debug().Str("component", "chat").Str("key", msg.String()).Msg("SelectNext pressed")
         cmd = func() tea.Msg { return SelectNextMessageMsg{} }
-    case key.Matches(msg, m.keyMap.SelectPrevMessage) || msg.String() == "up":
+    case key.Matches(msg, m.keyMap.SelectPrevMessage):
         log.Debug().Str("component", "chat").Str("key", msg.String()).Msg("SelectPrev pressed")
         cmd = func() tea.Msg { return SelectPrevMessageMsg{} }
 	case key.Matches(msg, m.keyMap.SubmitMessage):
