@@ -27,7 +27,17 @@ func NewController(reg *Registry) *Controller {
 	return c
 }
 
-func (c *Controller) SetSize(w, h int)      { c.width, c.height = w, h }
+func (c *Controller) SetSize(w, h int) {
+    c.width, c.height = w, h
+    // Propagate new size to interactive models
+    for _, id := range c.store.order {
+        if rec, ok := c.store.get(id); ok {
+            if rec.model != nil {
+                rec.model.SetSize(w, h)
+            }
+        }
+    }
+}
 func (c *Controller) SetTheme(theme string) { c.theme = theme }
 
 func (c *Controller) OnCreated(e UIEntityCreated) {

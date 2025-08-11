@@ -26,6 +26,7 @@ func (p *plainRenderer) Render(props map[string]any, width int, theme string) (s
 }
 
 // LLM text renderer (simple, no markdown to keep demo self-contained)
+// Deprecated: LLMTextRenderer is superseded by renderers.LLMTextModel. Kept temporarily for stateless fallback.
 type LLMTextRenderer struct{}
 
 func (r *LLMTextRenderer) Key() string  { return "renderer.llm_text.simple.v1" }
@@ -53,6 +54,7 @@ func (r *LLMTextRenderer) Render(props map[string]any, width int, theme string) 
 }
 
 // Tool calls panel renderer
+// Deprecated: ToolCallsPanelRenderer is superseded by renderers.ToolCallsPanelModel. Kept temporarily for stateless fallback.
 type ToolCallsPanelRenderer struct{}
 
 func (r *ToolCallsPanelRenderer) Key() string  { return "renderer.tools.panel.v1" }

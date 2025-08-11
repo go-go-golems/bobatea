@@ -97,14 +97,14 @@ var DefaultKeyMap = KeyMap{
 		key.WithHelp("alt+k", "copy source"),
 	),
 
-	ScrollUp: key.NewBinding(
-		key.WithKeys("shift+pgup"),
-		key.WithHelp("shift+pgup", "scroll up"),
-	),
-	ScrollDown: key.NewBinding(
-		key.WithKeys("shift+pgdown"),
-		key.WithHelp("shift+pgdown", "scroll down"),
-	),
+    ScrollUp: key.NewBinding(
+        key.WithKeys("pgup"),
+        key.WithHelp("pgup", "page up"),
+    ),
+    ScrollDown: key.NewBinding(
+        key.WithKeys("pgdown"),
+        key.WithHelp("pgdown", "page down"),
+    ),
 
 	Quit: key.NewBinding(
 		key.WithKeys("alt+q"),

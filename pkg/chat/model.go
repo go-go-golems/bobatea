@@ -20,6 +20,7 @@ import (
 	mode_keymap "github.com/go-go-golems/bobatea/pkg/mode-keymap"
 	"github.com/go-go-golems/bobatea/pkg/textarea"
     "github.com/go-go-golems/bobatea/pkg/timeline"
+	renderers "github.com/go-go-golems/bobatea/pkg/timeline/renderers"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
 )
@@ -157,8 +158,10 @@ func InitialModel(manager geppetto_conversation.Manager, backend Backend, option
 
     // Initialize timeline components
     ret.timelineReg = timeline.NewRegistry()
-    ret.timelineReg.Register(&timeline.LLMTextRenderer{})
-    ret.timelineReg.Register(&timeline.ToolCallsPanelRenderer{})
+    // Register interactive entity model factories
+    ret.timelineReg.RegisterModelFactory(renderers.LLMTextFactory{})
+    ret.timelineReg.RegisterModelFactory(renderers.ToolCallsPanelFactory{})
+    ret.timelineReg.RegisterModelFactory(renderers.PlainFactory{})
     if ret.timelineRegHook != nil {
         ret.timelineRegHook(ret.timelineReg)
     }
@@ -528,8 +531,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
                 m.timelineCtrl.SelectPrev()
                 m.scrollToSelected()
             case key.Matches(km, m.keyMap.ScrollDown):
-                m.viewport.LineDown(1)
+                m.viewport.PageDown()
             case key.Matches(km, m.keyMap.ScrollUp):
+                m.viewport.PageUp()
+            case km.String() == "down":
+                m.viewport.LineDown(1)
+            case km.String() == "up":
                 m.viewport.LineUp(1)
             }
         }
