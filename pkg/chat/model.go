@@ -880,7 +880,16 @@ func (m *model) submit() tea.Cmd {
 		}
 	}
 
-	userMessage := m.textArea.Value()
+	// Filter out empty submissions (spaces/newlines only)
+	rawInput := m.textArea.Value()
+	userMessage := strings.TrimSpace(rawInput)
+	if userMessage == "" {
+		log.Debug().
+			Int64("submit_call_id", submitCallID).
+			Msg("Ignoring empty submit (no message sent)")
+		return nil
+	}
+
 	if err := m.conversationManager.AppendMessages(
 		geppetto_conversation.NewChatMessage(geppetto_conversation.RoleUser, userMessage)); err != nil {
 		log.Error().Err(err).Msg("Failed to append user message")

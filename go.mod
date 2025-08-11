@@ -2,6 +2,8 @@ module github.com/go-go-golems/bobatea
 
 go 1.24.3
 
+toolchain go1.24.4
+
 require (
 	github.com/atotto/clipboard v0.1.4
 	github.com/charmbracelet/bubbles v0.21.0

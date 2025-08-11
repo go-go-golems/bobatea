@@ -32,7 +32,7 @@ func logMemoryUsage(operation string) {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
 
-	log.Debug().
+	log.Trace().
 		Str("operation", operation).
 		Uint64("alloc_mb", m.Alloc/1024/1024).
 		Uint64("total_alloc_mb", m.TotalAlloc/1024/1024).
@@ -114,7 +114,7 @@ func (m Model) updateCache(c ...*conversation2.Message) {
 	totalCacheMisses := 0
 	totalRedraws := 0
 
-	log.Debug().
+	log.Trace().
 		Str("operation", "cache_update_start").
 		Int("message_count", len(c)).
 		Int("current_cache_size", len(m.cache)).
@@ -130,7 +130,7 @@ func (m Model) updateCache(c ...*conversation2.Message) {
 			totalCacheHits++
 			cacheHit = true
 			if c_.lastUpdated.After(msg.LastUpdate) && c_.selected == selected {
-				log.Debug().
+				log.Trace().
 					Str("operation", "cache_skip").
 					Str("messageID", msg.ID.String()).
 					Time("cached_time", c_.lastUpdated).
@@ -145,7 +145,7 @@ func (m Model) updateCache(c ...*conversation2.Message) {
 
 		// Log cache entry overwrite
 		if ok {
-			log.Debug().
+			log.Trace().
 				Str("operation", "cache_overwrite").
 				Str("messageID", msg.ID.String()).
 				Time("old_cached_time", c_.lastUpdated).
@@ -160,7 +160,7 @@ func (m Model) updateCache(c ...*conversation2.Message) {
 		renderDuration := time.Since(renderStart)
 		totalRedraws++
 
-		log.Debug().
+		log.Trace().
 			Str("operation", "message_render").
 			Str("messageID", msg.ID.String()).
 			Dur("render_duration", renderDuration).
@@ -180,7 +180,7 @@ func (m Model) updateCache(c ...*conversation2.Message) {
 		m.cache[msg.ID] = c_
 
 		msgDuration := time.Since(msgStart)
-		log.Debug().
+		log.Trace().
 			Str("operation", "cache_entry_update").
 			Str("messageID", msg.ID.String()).
 			Dur("total_msg_duration", msgDuration).
@@ -190,7 +190,7 @@ func (m Model) updateCache(c ...*conversation2.Message) {
 	totalDuration := time.Since(cacheStart)
 	logMemoryUsage("cache_update_complete")
 
-	log.Debug().
+	log.Trace().
 		Str("operation", "cache_update_complete").
 		Dur("total_duration", totalDuration).
 		Int("cache_hits", totalCacheHits).
@@ -561,7 +561,7 @@ type MessagePosition struct {
 }
 
 func (m Model) ViewAndSelectedPosition() (string, MessagePosition) {
-	log.Debug().
+	log.Trace().
 		Str("operation", "view_generation_start").
 		Int("cache_size", len(m.cache)).
 		Msg("Starting view generation")
@@ -573,7 +573,7 @@ func (m Model) ViewAndSelectedPosition() (string, MessagePosition) {
 
 	msgs_ := m.manager.GetConversation()
 
-	log.Debug().
+	log.Trace().
 		Str("operation", "conversation_retrieval").
 		Int("message_count", len(msgs_)).
 		Msg("Retrieved conversation messages")
@@ -583,7 +583,7 @@ func (m Model) ViewAndSelectedPosition() (string, MessagePosition) {
 	m.updateCache(msgs_...)
 	cacheUpdateDuration := time.Since(cacheUpdateStart)
 
-	log.Debug().
+	log.Trace().
 		Str("operation", "full_cache_update").
 		Dur("duration", cacheUpdateDuration).
 		Int("processed_messages", len(msgs_)).
@@ -598,7 +598,7 @@ func (m Model) ViewAndSelectedPosition() (string, MessagePosition) {
 		c_, ok := m.cache[msg.ID]
 		if !ok {
 			skippedMessages++
-			log.Debug().
+			log.Trace().
 				Str("operation", "view_skip_message").
 				Str("messageID", msg.ID.String()).
 				Msg("Skipping message - not in cache")
