@@ -189,10 +189,10 @@ func (c *controller) render() string {
 
 ### 7) Reference renderers (first wave)
 
-- LLMTextRenderer
-  - `Key: renderer.llm_text.markdown.v1`, `Kind: llm_text`
-  - Uses glamour with pre-determined style and word wrap.
-  - Props: `{ text: string, markdown: bool, metadata?: {...} }`
+ - LLMTextRenderer
+   - `Key: renderer.llm_text.simple.v1`, `Kind: llm_text`
+   - Uses chatstyle boxed output (lipgloss) with width-aware wrapping.
+   - Props: `{ text: string, role?: string, metadata?: {...} }`
 
 - ToolCallsPanelRenderer
   - `Key: renderer.tools.panel.v1`, `Kind: tool_calls_panel`
@@ -215,12 +215,21 @@ func (c *controller) render() string {
    - For tool calls/results: create a single `tool_calls_panel` entity and patch it for each call/result.
    - Optionally emit a `diff_view` entity after final if the agent produced a patch.
 
+   Demo note: In the chat demo, tool entities can be triggered by the backend on slash commands. The fake backend sends `TriggerWeatherToolMsg` / `TriggerWebSearchToolMsg` to the UI when it sees `/weather ...` or `/search ...`, so the timeline shows real tool_call entities without needing keyboard shortcuts.
+
 2. Wire router handler
    - Subscribe to `ui.entities` and hand decoded `UIEntity*` messages to `TimelineController`.
 
 3. Embed TimelineModel in the UI
    - Replace or augment `conversationui` usage by placing the timeline view inside the main viewport.
    - Maintain scroll-to-bottom semantics when the selected entity is near the end.
+   - Keyboard triggers are bound via Bubble Tea keymap and matched using `key.Matches(...)`, so Alt-based shortcuts (e.g., `alt+w`, `alt+s`) work where terminals support them.
+
+Demo renderer keys: Weather `renderer.tool.get_weather.v1`, WebSearch `renderer.tool.web_search.v1` (both `Kind: tool_call`).
+
+LLM text renderer key used by the demo: `renderer.llm_text.simple.v1`.
+
+Logging defaults: the CLI sets the global log level to Debug to reduce noise from Trace logs. Override with `BOBATEA_LOG_LEVEL=trace|debug|info|...`.
 
 ### 10) Testing strategy
 

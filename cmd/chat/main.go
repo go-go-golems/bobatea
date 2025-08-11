@@ -10,6 +10,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/go-go-golems/bobatea/pkg/chat"
+    "github.com/go-go-golems/bobatea/pkg/timeline"
 	"github.com/gorilla/mux"
 	"github.com/spf13/cobra"
 	"github.com/rs/zerolog"
@@ -61,6 +62,16 @@ func main() {
 	defer logFile.Close()
 
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
+    // Filter out trace-level logs for readability unless overridden
+    if lvl, ok := os.LookupEnv("BOBATEA_LOG_LEVEL"); ok {
+        if parsed, err := zerolog.ParseLevel(lvl); err == nil {
+            zerolog.SetGlobalLevel(parsed)
+        } else {
+            zerolog.SetGlobalLevel(zerolog.DebugLevel)
+        }
+    } else {
+        zerolog.SetGlobalLevel(zerolog.DebugLevel)
+    }
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: logFile})
 
 	if err := rootCmd.Execute(); err != nil {
@@ -70,18 +81,20 @@ func main() {
 }
 
 func runFakeBackend(cmd *cobra.Command, args []string) {
-	runChat(func() chat.Backend {
-		return NewFakeBackend()
-	})
+    runChatWithOptions(func() chat.Backend { return NewFakeBackend() }, func(reg *timeline.Registry) {
+        reg.Register(&ToolWeatherRenderer{})
+        reg.Register(&ToolWebSearchRenderer{})
+    })
 }
 
 func runHTTPBackend(cmd *cobra.Command, args []string) {
-	runChat(func() chat.Backend {
-		return NewHTTPBackend("/backend", WithLogFile("/tmp/http-backend.log"))
-	})
+    runChatWithOptions(func() chat.Backend { return NewHTTPBackend("/backend", WithLogFile("/tmp/http-backend.log")) }, func(reg *timeline.Registry) {
+        reg.Register(&ToolWeatherRenderer{})
+        reg.Register(&ToolWebSearchRenderer{})
+    })
 }
 
-func runChat(backendFactory func() chat.Backend) {
+func runChatWithOptions(backendFactory func() chat.Backend, tlHook func(*timeline.Registry)) {
 	status := &chat.Status{}
 
 	manager := conversation.NewManager(conversation.WithMessages(
@@ -95,10 +108,8 @@ func runChat(backendFactory func() chat.Backend) {
 		tea.WithAltScreen(),
 	}
 
-	p := tea.NewProgram(
-		chat.InitialModel(manager, backend, chat.WithStatus(status)),
-		options...,
-	)
+    model := chat.InitialModel(manager, backend, chat.WithStatus(status), chat.WithTimelineRegister(tlHook))
+    p := tea.NewProgram(model, options...)
 
 	// Set up the user backend
 	userBackend := chat.NewUserBackend(status, chat.WithLogFile("/tmp/http-backend.log"))

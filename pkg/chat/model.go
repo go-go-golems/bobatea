@@ -76,6 +76,7 @@ type model struct {
     timelineReg  *timeline.Registry
     timelineCtrl *timeline.Controller
     entityVers   map[string]int64
+    timelineRegHook func(*timeline.Registry)
 
 	help help.Model
 
@@ -116,6 +117,13 @@ func WithAutoStartBackend(autoStartBackend bool) ModelOption {
 	}
 }
 
+// WithTimelineRegister allows callers to register custom renderers on the timeline registry
+func WithTimelineRegister(hook func(*timeline.Registry)) ModelOption {
+    return func(m *model) {
+        m.timelineRegHook = hook
+    }
+}
+
 // TODO(manuel, 2024-04-07) Add options to configure filepicker
 
 func InitialModel(manager geppetto_conversation.Manager, backend Backend, options ...ModelOption) model {
@@ -154,9 +162,9 @@ func InitialModel(manager geppetto_conversation.Manager, backend Backend, option
     ret.timelineReg = timeline.NewRegistry()
     ret.timelineReg.Register(&timeline.LLMTextRenderer{})
     ret.timelineReg.Register(&timeline.ToolCallsPanelRenderer{})
-    // Register tool-specific renderers
-    ret.timelineReg.Register(&timeline.ToolWeatherRenderer{})
-    ret.timelineReg.Register(&timeline.ToolWebSearchRenderer{})
+    if ret.timelineRegHook != nil {
+        ret.timelineRegHook(ret.timelineReg)
+    }
     ret.timelineCtrl = timeline.NewController(ret.timelineReg)
     ret.entityVers = map[string]int64{}
 
@@ -211,6 +219,10 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
 	switch {
+    case key.Matches(msg, m.keyMap.TriggerWeatherTool):
+        return m.handleUserAction(TriggerWeatherToolMsg{})
+    case key.Matches(msg, m.keyMap.TriggerWebSearchTool):
+        return m.handleUserAction(TriggerWebSearchToolMsg{})
 	case key.Matches(msg, m.keyMap.Help):
 		cmd = func() tea.Msg { return ToggleHelpMsg{} }
 	case key.Matches(msg, m.keyMap.UnfocusMessage):
@@ -239,7 +251,7 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		cmd = func() tea.Msg { return CancelCompletionMsg{} }
 	case key.Matches(msg, m.keyMap.DismissError):
 		cmd = func() tea.Msg { return DismissErrorMsg{} }
-	default:
+    default:
         switch m.state {
 		case StateUserInput:
 			m.textArea, cmd = m.textArea.Update(msg)
@@ -399,6 +411,44 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
         logger.Trace().Msg("Backend finished - calling finishCompletion()")
 		cmd = m.finishCompletion()
 		cmds = append(cmds, cmd)
+
+	// Accept external timeline lifecycle messages (e.g., from backend simulating agent tool calls)
+	case timeline.UIEntityCreated:
+		logger.Debug().Str("lifecycle", "created").Str("kind", msg_.ID.Kind).Str("local_id", msg_.ID.LocalID).Msg("Applying external entity event")
+		m.timelineCtrl.OnCreated(msg_)
+		if m.scrollToBottom {
+			v := m.timelineCtrl.View()
+			m.viewport.SetContent(v)
+			m.viewport.GotoBottom()
+		}
+		return m, nil
+	case timeline.UIEntityUpdated:
+		logger.Debug().Str("lifecycle", "updated").Str("kind", msg_.ID.Kind).Str("local_id", msg_.ID.LocalID).Int64("version", msg_.Version).Msg("Applying external entity event")
+		m.timelineCtrl.OnUpdated(msg_)
+		if m.scrollToBottom {
+			v := m.timelineCtrl.View()
+			m.viewport.SetContent(v)
+			m.viewport.GotoBottom()
+		}
+		return m, nil
+	case timeline.UIEntityCompleted:
+		logger.Debug().Str("lifecycle", "completed").Str("kind", msg_.ID.Kind).Str("local_id", msg_.ID.LocalID).Msg("Applying external entity event")
+		m.timelineCtrl.OnCompleted(msg_)
+		if m.scrollToBottom {
+			v := m.timelineCtrl.View()
+			m.viewport.SetContent(v)
+			m.viewport.GotoBottom()
+		}
+		return m, nil
+	case timeline.UIEntityDeleted:
+		logger.Debug().Str("lifecycle", "deleted").Str("kind", msg_.ID.Kind).Str("local_id", msg_.ID.LocalID).Msg("Applying external entity event")
+		m.timelineCtrl.OnDeleted(msg_)
+		if m.scrollToBottom {
+			v := m.timelineCtrl.View()
+			m.viewport.SetContent(v)
+			m.viewport.GotoBottom()
+		}
+		return m, nil
 
 	case refreshMessageMsg:
         logger.Trace().Bool("go_to_bottom", msg_.GoToBottom).Bool("scroll_to_bottom", m.scrollToBottom).Msg("REFRESH MESSAGE - POTENTIAL TRIGGER FOR LOOPS")
@@ -759,18 +809,16 @@ func (m *model) startBackend() tea.Cmd {
 }
 
 func (m *model) submit() tea.Cmd {
-	submitCallID := atomic.AddInt64(&updateCallCounter, 1)
-	log.Trace().
-		Int64("submit_call_id", submitCallID).
-		Bool("backend_finished", m.backend.IsFinished()).
-		Int("input_length", len(m.textArea.Value())).
-		Int("current_message_count", len(m.conversationManager.GetConversation())).
-		Msg("SUBMIT ENTRY")
+    submitCallID := atomic.AddInt64(&updateCallCounter, 1)
+    slogger := log.With().Int64("submit_call_id", submitCallID).Logger()
+    slogger.Trace().
+        Bool("backend_finished", m.backend.IsFinished()).
+        Int("input_length", len(m.textArea.Value())).
+        Int("current_message_count", len(m.conversationManager.GetConversation())).
+        Msg("SUBMIT ENTRY")
 
-	if !m.backend.IsFinished() {
-		log.Trace().
-			Int64("submit_call_id", submitCallID).
-			Msg("Backend not finished - returning error")
+    if !m.backend.IsFinished() {
+        slogger.Trace().Msg("Backend not finished - returning error")
 		return func() tea.Msg {
 			return ErrorMsg(errors.New("already streaming"))
 		}
@@ -779,17 +827,15 @@ func (m *model) submit() tea.Cmd {
 	// Filter out empty submissions (spaces/newlines only)
 	rawInput := m.textArea.Value()
 	userMessage := strings.TrimSpace(rawInput)
-	if userMessage == "" {
-		log.Debug().
-			Int64("submit_call_id", submitCallID).
-			Msg("Ignoring empty submit (no message sent)")
+    if userMessage == "" {
+        slogger.Debug().Msg("Ignoring empty submit (no message sent)")
 		return nil
 	}
 
     // Append to conversation (persistence) and timeline (rendering)
     if err := m.conversationManager.AppendMessages(
         geppetto_conversation.NewChatMessage(geppetto_conversation.RoleUser, userMessage)); err != nil {
-        log.Error().Err(err).Msg("Failed to append user message")
+        slogger.Error().Err(err).Msg("Failed to append user message")
         return func() tea.Msg { return ErrorMsg(err) }
     }
     id := geppetto_conversation.NewNodeID().String()
@@ -802,11 +848,7 @@ func (m *model) submit() tea.Cmd {
     m.timelineCtrl.OnCompleted(timeline.UIEntityCompleted{ID: timeline.EntityID{LocalID: id, Kind: "llm_text"}})
 	m.textArea.SetValue("")
 
-	log.Trace().
-		Int64("submit_call_id", submitCallID).
-		Str("user_message", userMessage).
-		Int("new_message_count", len(m.conversationManager.GetConversation())).
-		Msg("User message appended, calling startBackend()")
+    slogger.Trace().Str("user_message", userMessage).Int("new_message_count", len(m.conversationManager.GetConversation())).Msg("User message appended, calling startBackend()")
 
 	return m.startBackend()
 }
