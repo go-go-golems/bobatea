@@ -88,20 +88,14 @@ func (h *HTTPBackend) Start(ctx context.Context, msgs []*conversation2.Message) 
 	h.status = "waiting"
 
 	// Update the currentMetadata
-	parentID := conversation2.NullNode
-	if len(msgs) > 0 {
-		parentID = msgs[len(msgs)-1].ID
-	}
-	h.currentMetadata = conversationui.StreamMetadata{
-		ID:       conversation2.NewNodeID(),
-		ParentID: parentID,
-	}
+    h.currentMetadata = conversationui.StreamMetadata{
+        ID:       conversation2.NewNodeID(),
+    }
 
-	h.logger.Info().
-		Int("messageCount", len(msgs)).
-		Str("parentID", h.currentMetadata.ParentID.String()).
-		Str("messageID", h.currentMetadata.ID.String()).
-		Msg("HTTPBackend started")
+    h.logger.Info().
+        Int("messageCount", len(msgs)).
+        Str("messageID", h.currentMetadata.ID.String()).
+        Msg("HTTPBackend started")
 
 	return func() tea.Msg {
 		ctx, h.cancel = context.WithCancel(ctx)
@@ -169,61 +163,52 @@ func (h *HTTPBackend) handleStart(w http.ResponseWriter, r *http.Request) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	h.logger.Debug().
-		Str("parentID", h.currentMetadata.ParentID.String()).
-		Str("messageID", h.currentMetadata.ID.String()).
-		Msg("Handling start request")
+    h.logger.Debug().
+        Str("messageID", h.currentMetadata.ID.String()).
+        Msg("Handling start request")
 
-	if !h.isRunning {
-		h.logger.Error().
-			Str("parentID", h.currentMetadata.ParentID.String()).
-			Str("messageID", h.currentMetadata.ID.String()).
-			Msg("Backend is not running")
+    if !h.isRunning {
+        h.logger.Error().
+            Str("messageID", h.currentMetadata.ID.String()).
+            Msg("Backend is not running")
 		http.Error(w, "Backend is not running", http.StatusBadRequest)
 		return
 	}
 
 	h.completion = "" // Reset completion for new session
-	h.logger.Info().
-		Str("parentID", h.currentMetadata.ParentID.String()).
-		Str("messageID", h.currentMetadata.ID.String()).
-		Msg("Sending StreamStartMsg to program")
+    h.logger.Info().
+        Str("messageID", h.currentMetadata.ID.String()).
+        Msg("Sending StreamStartMsg to program")
 	h.p.Send(conversationui.StreamStartMsg{
 		StreamMetadata: h.currentMetadata,
 	})
 	w.WriteHeader(http.StatusOK)
 
-	h.logger.Info().
-		Str("parentID", h.currentMetadata.ParentID.String()).
-		Str("messageID", h.currentMetadata.ID.String()).
-		Msg("Stream started")
+    h.logger.Info().
+        Str("messageID", h.currentMetadata.ID.String()).
+        Msg("Stream started")
 }
 
 func (h *HTTPBackend) handleCompletion(w http.ResponseWriter, r *http.Request) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	h.logger.Debug().
-		Str("parentID", h.currentMetadata.ParentID.String()).
-		Str("messageID", h.currentMetadata.ID.String()).
-		Msg("Handling completion request")
+    l := h.logger.With().
+        Str("messageID", h.currentMetadata.ID.String()).
+        Logger()
+    l.Debug().Msg("Handling completion request")
 
-	if !h.isRunning {
-		h.logger.Error().
-			Str("parentID", h.currentMetadata.ParentID.String()).
-			Str("messageID", h.currentMetadata.ID.String()).
-			Msg("Backend is not running")
+    if !h.isRunning {
+        l.Error().Msg("Backend is not running")
 		http.Error(w, "Backend is not running", http.StatusBadRequest)
 		return
 	}
 
 	var msg conversationui.StreamCompletionMsg
-	if err := json.NewDecoder(r.Body).Decode(&msg); err != nil {
-		h.logger.Error().
-			Err(err).
-			Str("parentID", h.currentMetadata.ParentID.String()).
-			Str("messageID", h.currentMetadata.ID.String()).
-			Msg("Failed to decode StreamCompletionMsg")
+    if err := json.NewDecoder(r.Body).Decode(&msg); err != nil {
+        l.Error().
+            Err(err).
+            Msg("Failed to decode StreamCompletionMsg")
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -239,60 +224,49 @@ func (h *HTTPBackend) handleCompletion(w http.ResponseWriter, r *http.Request) {
 		h.completion = msg.Completion
 	}
 
-	h.lastMessage = &msg
-	h.logger.Info().
-		Str("delta", msg.Delta).
-		Str("completion", h.completion).
-		Str("parentID", h.currentMetadata.ParentID.String()).
-		Str("messageID", h.currentMetadata.ID.String()).
-		Msg("Sending StreamCompletionMsg to program")
+    h.lastMessage = &msg
+    l.Info().
+        Str("delta", msg.Delta).
+        Str("completion", h.completion).
+        Msg("Sending StreamCompletionMsg to program")
 	h.p.Send(msg)
 	w.WriteHeader(http.StatusOK)
 
-	h.logger.Debug().
-		Str("delta", msg.Delta).
-		Str("completion", h.completion).
-		Str("parentID", h.currentMetadata.ParentID.String()).
-		Str("messageID", h.currentMetadata.ID.String()).
-		Msg("Completion updated")
+    l.Debug().
+        Str("delta", msg.Delta).
+        Str("completion", h.completion).
+        Msg("Completion updated")
 }
 
 func (h *HTTPBackend) handleStatusUpdate(w http.ResponseWriter, r *http.Request) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	h.logger.Debug().
-		Str("parentID", h.currentMetadata.ParentID.String()).
-		Str("messageID", h.currentMetadata.ID.String()).
-		Msg("Handling status update request")
+    l := h.logger.With().
+        Str("messageID", h.currentMetadata.ID.String()).
+        Logger()
+    l.Debug().Msg("Handling status update request")
 
-	if !h.isRunning {
-		h.logger.Error().
-			Str("parentID", h.currentMetadata.ParentID.String()).
-			Str("messageID", h.currentMetadata.ID.String()).
-			Msg("Backend is not running")
+    if !h.isRunning {
+        l.Error().Msg("Backend is not running")
 		http.Error(w, "Backend is not running", http.StatusBadRequest)
 		return
 	}
 
 	var msg conversationui.StreamStatusMsg
-	if err := json.NewDecoder(r.Body).Decode(&msg); err != nil {
-		h.logger.Error().
-			Err(err).
-			Str("parentID", h.currentMetadata.ParentID.String()).
-			Str("messageID", h.currentMetadata.ID.String()).
-			Msg("Failed to decode StreamStatusMsg")
+    if err := json.NewDecoder(r.Body).Decode(&msg); err != nil {
+        l.Error().
+            Err(err).
+            Msg("Failed to decode StreamStatusMsg")
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	msg.StreamMetadata = h.currentMetadata // Use the current metadata
 
-	h.logger.Info().
-		Str("text", msg.Text).
-		Str("parentID", h.currentMetadata.ParentID.String()).
-		Str("messageID", h.currentMetadata.ID.String()).
-		Msg("Sending StreamStatusMsg to program")
+    l.Info().
+        Str("text", msg.Text).
+        Msg("Sending StreamStatusMsg to program")
 	h.p.Send(msg)
 	w.WriteHeader(http.StatusOK)
 }
@@ -301,27 +275,22 @@ func (h *HTTPBackend) handleDone(w http.ResponseWriter, r *http.Request) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	h.logger.Debug().
-		Str("parentID", h.currentMetadata.ParentID.String()).
-		Str("messageID", h.currentMetadata.ID.String()).
-		Msg("Handling done request")
+    l := h.logger.With().
+        Str("messageID", h.currentMetadata.ID.String()).
+        Logger()
+    l.Debug().Msg("Handling done request")
 
-	if !h.isRunning {
-		h.logger.Error().
-			Str("parentID", h.currentMetadata.ParentID.String()).
-			Str("messageID", h.currentMetadata.ID.String()).
-			Msg("Backend is not running")
+    if !h.isRunning {
+        l.Error().Msg("Backend is not running")
 		http.Error(w, "Backend is not running", http.StatusBadRequest)
 		return
 	}
 
 	var msg conversationui.StreamDoneMsg
-	if err := json.NewDecoder(r.Body).Decode(&msg); err != nil {
-		h.logger.Error().
-			Err(err).
-			Str("parentID", h.currentMetadata.ParentID.String()).
-			Str("messageID", h.currentMetadata.ID.String()).
-			Msg("Failed to decode StreamDoneMsg")
+    if err := json.NewDecoder(r.Body).Decode(&msg); err != nil {
+        l.Error().
+            Err(err).
+            Msg("Failed to decode StreamDoneMsg")
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -333,20 +302,15 @@ func (h *HTTPBackend) handleDone(w http.ResponseWriter, r *http.Request) {
 		msg.Completion = h.completion
 	}
 
-	h.logger.Info().
-		Str("completion", msg.Completion).
-		Str("parentID", h.currentMetadata.ParentID.String()).
-		Str("messageID", h.currentMetadata.ID.String()).
-		Msg("Sending StreamDoneMsg to program")
+    l.Info().
+        Str("completion", msg.Completion).
+        Msg("Sending StreamDoneMsg to program")
 	h.p.Send(msg)
 
 	h.isRunning = false
 	h.status = "finished"
 	h.completion = "" // Reset completion for next session
-	h.logger.Info().
-		Str("parentID", h.currentMetadata.ParentID.String()).
-		Str("messageID", h.currentMetadata.ID.String()).
-		Msg("Sending BackendFinishedMsg to program")
+    l.Info().Msg("Sending BackendFinishedMsg to program")
 	h.p.Send(chat.BackendFinishedMsg{})
 	w.WriteHeader(http.StatusOK)
 }
@@ -355,27 +319,22 @@ func (h *HTTPBackend) handleError(w http.ResponseWriter, r *http.Request) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	h.logger.Debug().
-		Str("parentID", h.currentMetadata.ParentID.String()).
-		Str("messageID", h.currentMetadata.ID.String()).
-		Msg("Handling error request")
+    l := h.logger.With().
+        Str("messageID", h.currentMetadata.ID.String()).
+        Logger()
+    l.Debug().Msg("Handling error request")
 
-	if !h.isRunning {
-		h.logger.Error().
-			Str("parentID", h.currentMetadata.ParentID.String()).
-			Str("messageID", h.currentMetadata.ID.String()).
-			Msg("Backend is not running")
+    if !h.isRunning {
+        l.Error().Msg("Backend is not running")
 		http.Error(w, "Backend is not running", http.StatusBadRequest)
 		return
 	}
 
 	var msg conversationui.StreamCompletionError
-	if err := json.NewDecoder(r.Body).Decode(&msg); err != nil {
-		h.logger.Error().
-			Err(err).
-			Str("parentID", h.currentMetadata.ParentID.String()).
-			Str("messageID", h.currentMetadata.ID.String()).
-			Msg("Failed to decode StreamCompletionError")
+    if err := json.NewDecoder(r.Body).Decode(&msg); err != nil {
+        l.Error().
+            Err(err).
+            Msg("Failed to decode StreamCompletionError")
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -385,19 +344,14 @@ func (h *HTTPBackend) handleError(w http.ResponseWriter, r *http.Request) {
 	h.lastError = msg.Err
 	h.isRunning = false
 	h.status = "error"
-	h.logger.Error().
-		Err(msg.Err).
-		Str("parentID", h.currentMetadata.ParentID.String()).
-		Str("messageID", h.currentMetadata.ID.String()).
-		Msg("Sending StreamCompletionError to program")
+    l.Error().
+        Err(msg.Err).
+        Msg("Sending StreamCompletionError to program")
 	h.p.Send(msg)
 
 	h.isRunning = false
 	h.status = "finished"
-	h.logger.Info().
-		Str("parentID", h.currentMetadata.ParentID.String()).
-		Str("messageID", h.currentMetadata.ID.String()).
-		Msg("Sending BackendFinishedMsg to program")
+    l.Info().Msg("Sending BackendFinishedMsg to program")
 	h.p.Send(chat.BackendFinishedMsg{})
 	w.WriteHeader(http.StatusOK)
 }

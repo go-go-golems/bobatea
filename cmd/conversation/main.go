@@ -52,12 +52,11 @@ func main() {
 	go func() {
 		time.Sleep(1 * time.Second)
 
-		startMsg := ui.StreamStartMsg{
-			StreamMetadata: ui.StreamMetadata{
-				ID:       conversation2.NewNodeID(),
-				ParentID: msg2.ID,
-			},
-		}
+        startMsg := ui.StreamStartMsg{
+            StreamMetadata: ui.StreamMetadata{
+                ID:       conversation2.NewNodeID(),
+            },
+        }
 		p.Send(startMsg)
 
 		time.Sleep(500 * time.Millisecond)

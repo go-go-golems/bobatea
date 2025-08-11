@@ -86,7 +86,6 @@ func newStartCmd() *cobra.Command {
 			msg := conversationui.StreamStartMsg{
 				StreamMetadata: conversationui.StreamMetadata{
 					ID:       conversation2.NewNodeID(),
-					ParentID: stringToNodeID(parentID),
 				},
 			}
 			sendRequest("start", msg)
@@ -105,7 +104,6 @@ func newCompletionCmd() *cobra.Command {
 			msg := conversationui.StreamCompletionMsg{
 				StreamMetadata: conversationui.StreamMetadata{
 					ID:       conversation2.NewNodeID(),
-					ParentID: stringToNodeID(parentID),
 				},
 				Delta: delta,
 			}
@@ -130,7 +128,6 @@ func newStatusCmd() *cobra.Command {
 			msg := conversationui.StreamStatusMsg{
 				StreamMetadata: conversationui.StreamMetadata{
 					ID:       conversation2.NewNodeID(),
-					ParentID: stringToNodeID(parentID),
 				},
 				Text: status,
 			}
@@ -150,7 +147,6 @@ func newDoneCmd() *cobra.Command {
 			msg := conversationui.StreamDoneMsg{
 				StreamMetadata: conversationui.StreamMetadata{
 					ID:       conversation2.NewNodeID(),
-					ParentID: stringToNodeID(parentID),
 				},
 				Completion: completion,
 			}
@@ -170,7 +166,6 @@ func newErrorCmd() *cobra.Command {
 			msg := conversationui.StreamCompletionError{
 				StreamMetadata: conversationui.StreamMetadata{
 					ID:       conversation2.NewNodeID(),
-					ParentID: stringToNodeID(parentID),
 				},
 				Err: fmt.Errorf("%s", errMsg),
 			}

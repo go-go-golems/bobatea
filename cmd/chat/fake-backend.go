@@ -56,7 +56,6 @@ func (f *FakeBackend) Start(ctx context.Context, msgs []*conversation2.Message) 
 
 		metadata := conversationui.StreamMetadata{
 			ID:       conversation2.NewNodeID(),
-			ParentID: lastMsg.ID,
 		}
 
 		go func() {

@@ -362,7 +362,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 		textMsg.Text = msg.Completion
 		msg_.LastUpdate = time.Now()
-		msg_.Metadata["step_metadata"] = msg.StepMetadata
+        delete(msg_.Metadata, "step_metadata")
 		msg_.Metadata["event_metadata"] = msg.EventMetadata
 		if msg.EventMetadata != nil {
 			msg_.LLMMessageMetadata = &msg.EventMetadata.LLMMessageMetadata
@@ -382,7 +382,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 		textMsg.Text = msg.Completion
 		msg_.LastUpdate = time.Now()
-		msg_.Metadata["step_metadata"] = msg.StepMetadata
+        delete(msg_.Metadata, "step_metadata")
 		msg_.Metadata["event_metadata"] = msg.EventMetadata
 		if msg.EventMetadata != nil {
 			msg_.LLMMessageMetadata = &msg.EventMetadata.LLMMessageMetadata
@@ -402,7 +402,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 		textMsg.Text = "**Error**\n\n" + msg.Err.Error()
 		msg_.LastUpdate = time.Now()
-		msg_.Metadata["step_metadata"] = msg.StepMetadata
+        delete(msg_.Metadata, "step_metadata")
 		msg_.Metadata["event_metadata"] = msg.EventMetadata
 		if msg.EventMetadata != nil {
 			msg_.LLMMessageMetadata = &msg.EventMetadata.LLMMessageMetadata
@@ -417,14 +417,13 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		// Check if this is a duplicate message
 		existingMsg, isDuplicate := m.manager.GetMessage(msg.ID)
 
-		log.Debug().
-			Str("operation", "stream_start_processing").
-			Str("messageID", msg.ID.String()).
-			Str("parentID", msg.ParentID.String()).
-			Bool("is_duplicate", isDuplicate).
-			Int("conversation_size", len(m.manager.GetConversation())).
-			Time("timestamp", startTime).
-			Msg("Processing StreamStartMsg in conversation model")
+        log.Debug().
+            Str("operation", "stream_start_processing").
+            Str("messageID", msg.ID.String()).
+            Bool("is_duplicate", isDuplicate).
+            Int("conversation_size", len(m.manager.GetConversation())).
+            Time("timestamp", startTime).
+            Msg("Processing StreamStartMsg in conversation model")
 
 		if isDuplicate {
 			log.Warn().
@@ -441,13 +440,9 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			// return m, nil
 		}
 
-		metadata := map[string]interface{}{
-			"id":        uuid.UUID(msg.ID).String(),
-			"parent_id": uuid.UUID(msg.ParentID).String(),
-		}
-		if msg.StepMetadata != nil {
-			metadata["step_metadata"] = msg.StepMetadata
-		}
+        metadata := map[string]interface{}{
+            "id":        uuid.UUID(msg.ID).String(),
+        }
 		if msg.EventMetadata != nil {
 			metadata["event_metadata"] = msg.EventMetadata
 		}
@@ -457,7 +452,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		msg_ := conversation2.NewChatMessage(
 			conversation2.RoleAssistant, "",
 			conversation2.WithID(msg.ID),
-			conversation2.WithParentID(msg.ParentID),
+            
 			conversation2.WithMetadata(metadata))
 		msgCreateDuration := time.Since(msgCreateStart)
 
@@ -482,13 +477,12 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				fmt.Sprintf("Error details: %s", err.Error()),
 				false, // not recoverable
 			)
-			errorMsg := conversation2.NewMessage(errorContent,
-				conversation2.WithMetadata(map[string]interface{}{
-					"original_message_id": msg.ID.String(),
-					"parent_id":           msg.ParentID.String(),
-					"error_type":          "append_failure",
-				}),
-			)
+            errorMsg := conversation2.NewMessage(errorContent,
+                conversation2.WithMetadata(map[string]interface{}{
+                    "original_message_id": msg.ID.String(),
+                    "error_type":          "append_failure",
+                }),
+            )
 
 			// Try to append the error message (this should succeed as it's a different ID)
 			if errAppend := m.manager.AppendMessages(errorMsg); errAppend != nil {
@@ -627,9 +621,7 @@ func (m Model) ViewAndSelectedPosition() (string, MessagePosition) {
 
 type StreamMetadata struct {
 	ID            conversation2.NodeID  `json:"id" yaml:"id"`
-	ParentID      conversation2.NodeID  `json:"parent_id" yaml:"parent_id"`
 	EventMetadata *events.EventMetadata `json:"metadata" yaml:"metadata"`
-	StepMetadata  *events.StepMetadata  `json:"step_metadata,omitempty"`
 }
 
 type StreamStartMsg struct {

@@ -304,15 +304,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		switch streamMsg := msg.(type) {
 		case conversationui.StreamStartMsg:
-			log.Trace().
-				Int64("update_call_id", updateCallID).
-				Str("operation", "stream_start_reception").
-				Str("messageID", streamMsg.ID.String()).
-				Str("parentID", streamMsg.ParentID.String()).
-				Time("timestamp", startTime).
-				Int("current_message_count", len(m.conversationManager.GetConversation())).
-				Bool("scroll_to_bottom", m.scrollToBottom).
-				Msg("StreamStartMsg details")
+            log.Trace().
+                Int64("update_call_id", updateCallID).
+                Str("operation", "stream_start_reception").
+                Str("messageID", streamMsg.ID.String()).
+                Time("timestamp", startTime).
+                Int("current_message_count", len(m.conversationManager.GetConversation())).
+                Bool("scroll_to_bottom", m.scrollToBottom).
+                Msg("StreamStartMsg details")
 		case conversationui.StreamCompletionMsg:
 			log.Trace().
 				Int64("update_call_id", updateCallID).
