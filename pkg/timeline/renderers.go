@@ -6,7 +6,7 @@ import (
     "fmt"
     "strings"
     "github.com/rs/zerolog/log"
-    chatstyle "github.com/go-go-golems/bobatea/cmd/timeline-demo/pkg/chatstyle"
+    chatstyle "github.com/go-go-golems/bobatea/pkg/timeline/chatstyle"
 )
 
 // plainRenderer is a fallback renderer that prints props as JSON-like text.

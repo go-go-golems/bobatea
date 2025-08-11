@@ -15,7 +15,6 @@ func RenderBox(s *Style, role string, text string, width int, selected bool, foc
     } else if focused {
         sty = s.FocusedMessage
     }
-    // Compute inner width with padding
     frameW, _ := sty.GetFrameSize()
     inner := width - frameW
     if inner < 0 { inner = len(line) }

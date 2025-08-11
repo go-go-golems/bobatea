@@ -20,6 +20,7 @@ import (
 	"github.com/go-go-golems/bobatea/pkg/filepicker"
 	mode_keymap "github.com/go-go-golems/bobatea/pkg/mode-keymap"
 	"github.com/go-go-golems/bobatea/pkg/textarea"
+    "github.com/go-go-golems/bobatea/pkg/timeline"
 	"github.com/go-go-golems/glazed/pkg/helpers/markdown"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
@@ -69,7 +70,12 @@ type model struct {
 
 	filepicker filepicker.Model
 
-	conversation conversationui.Model
+    conversation conversationui.Model
+
+    // Timeline controller replaces conversation view rendering
+    timelineReg  *timeline.Registry
+    timelineCtrl *timeline.Controller
+    entityVers   map[string]int64
 
 	help help.Model
 
@@ -121,7 +127,7 @@ func InitialModel(manager geppetto_conversation.Manager, backend Backend, option
 	fp.Filepicker.CurrentDirectory = dir
 	fp.Filepicker.Height = 10
 
-	ret := model{
+    ret := model{
 		conversationManager: manager,
 		conversation:        conversationui.NewModel(manager),
 		filepicker:          fp,
@@ -137,12 +143,19 @@ func InitialModel(manager geppetto_conversation.Manager, backend Backend, option
 		option(&ret)
 	}
 
-	ret.textArea = textarea.New()
+    ret.textArea = textarea.New()
 	ret.textArea.Placeholder = "Dear AI, answer my plight..."
 	ret.textArea.Focus()
 	ret.textArea.CharLimit = 20000
 	ret.textArea.MaxHeight = 500
 	ret.state = StateUserInput
+
+    // Initialize timeline components
+    ret.timelineReg = timeline.NewRegistry()
+    ret.timelineReg.Register(&timeline.LLMTextRenderer{})
+    ret.timelineReg.Register(&timeline.ToolCallsPanelRenderer{})
+    ret.timelineCtrl = timeline.NewController(ret.timelineReg)
+    ret.entityVers = map[string]int64{}
 
 	return ret
 }
@@ -158,11 +171,25 @@ func (m model) Init() tea.Cmd {
 	//	})
 	//}
 
-	cmds = append(cmds, m.filepicker.Init(), m.viewport.Init(), m.conversation.Init())
+    cmds = append(cmds, m.filepicker.Init(), m.viewport.Init(), m.conversation.Init())
 
-	// TODO(manuel, 2024-04-07) this probably belongs into init, and maybe a separate init message?
-	messages := m.conversation.View()
-	m.viewport.SetContent(messages)
+    // Seed existing chat messages as timeline entities
+    conv := m.conversationManager.GetConversation()
+    for _, msg := range conv {
+        if c, ok := msg.Content.(*geppetto_conversation.ChatMessageContent); ok {
+            role := string(c.Role)
+            m.timelineCtrl.OnCreated(timeline.UIEntityCreated{
+                ID:        timeline.EntityID{LocalID: msg.ID.String(), Kind: "llm_text"},
+                Renderer:  timeline.RendererDescriptor{Kind: "llm_text"},
+                Props:     map[string]any{"role": role, "text": c.Text},
+                StartedAt: time.Now(),
+            })
+            m.timelineCtrl.OnCompleted(timeline.UIEntityCompleted{ID: timeline.EntityID{LocalID: msg.ID.String(), Kind: "llm_text"}})
+        }
+    }
+
+    // Set initial timeline view content
+    m.viewport.SetContent(m.timelineCtrl.View())
 	m.viewport.YPosition = 0
 	m.viewport.GotoBottom()
 
@@ -210,7 +237,7 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keyMap.DismissError):
 		cmd = func() tea.Msg { return DismissErrorMsg{} }
 	default:
-		switch m.state {
+        switch m.state {
 		case StateUserInput:
 			m.textArea, cmd = m.textArea.Update(msg)
 		case StateSavingToFile:
@@ -277,9 +304,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			Int("width", msg_.Width).
 			Int("height", msg_.Height).
 			Msg("Window size changed")
-		m.width = msg_.Width
-		m.height = msg_.Height
-		m.recomputeSize()
+        m.width = msg_.Width
+        m.height = msg_.Height
+        m.timelineCtrl.SetSize(m.width, m.height)
+        m.recomputeSize()
 
 	case ErrorMsg:
 		log.Trace().
@@ -328,60 +356,45 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				Msg("StreamDoneMsg details")
 		}
 
-		// Update conversation with timing and detailed logging
-		log.Trace().
-			Int64("update_call_id", updateCallID).
-			Msg("CALLING conversation.Update() - POTENTIAL RECURSION POINT")
+        // Translate stream messages to timeline entity lifecycle
+        switch v := msg.(type) {
+        case conversationui.StreamStartMsg:
+            id := v.ID.String()
+            m.entityVers[id] = 0
+            m.timelineCtrl.OnCreated(timeline.UIEntityCreated{
+                ID:        timeline.EntityID{LocalID: id, Kind: "llm_text"},
+                Renderer:  timeline.RendererDescriptor{Kind: "llm_text"},
+                Props:     map[string]any{"role": "assistant", "text": ""},
+                StartedAt: time.Now(),
+            })
+        case conversationui.StreamCompletionMsg:
+            id := v.ID.String()
+            m.entityVers[id] = m.entityVers[id] + 1
+            m.timelineCtrl.OnUpdated(timeline.UIEntityUpdated{
+                ID:        timeline.EntityID{LocalID: id, Kind: "llm_text"},
+                Patch:     map[string]any{"text": v.Completion},
+                Version:   m.entityVers[id],
+                UpdatedAt: time.Now(),
+            })
+        case conversationui.StreamDoneMsg:
+            id := v.ID.String()
+            m.timelineCtrl.OnCompleted(timeline.UIEntityCompleted{
+                ID:     timeline.EntityID{LocalID: id, Kind: "llm_text"},
+                Result: map[string]any{"text": v.Completion},
+            })
+        case conversationui.StreamCompletionError:
+            id := v.ID.String()
+            m.timelineCtrl.OnCompleted(timeline.UIEntityCompleted{
+                ID:     timeline.EntityID{LocalID: id, Kind: "llm_text"},
+                Result: map[string]any{"text": fmt.Sprintf("**Error**\n\n%s", v.Err)},
+            })
+        }
 
-		convUpdateStart := time.Now()
-		oldConversationState := m.conversation.SelectedIdx()
-		m.conversation, cmd = m.conversation.Update(msg)
-		convUpdateDuration := time.Since(convUpdateStart)
-		newConversationState := m.conversation.SelectedIdx()
-
-		log.Trace().
-			Int64("update_call_id", updateCallID).
-			Str("operation", "conversation_update_complete").
-			Dur("duration", convUpdateDuration).
-			Int("old_selected_idx", oldConversationState).
-			Int("new_selected_idx", newConversationState).
-			Bool("cmd_returned", cmd != nil).
-			Msg("Conversation update completed")
-
-		if cmd != nil {
-			log.Trace().
-				Int64("update_call_id", updateCallID).
-				Str("cmd_type", fmt.Sprintf("%T", cmd)).
-				Msg("Command returned from conversation.Update() - POTENTIAL LOOP SOURCE")
-		}
-
-		if m.scrollToBottom {
-			log.Trace().
-				Int64("update_call_id", updateCallID).
-				Msg("SCROLL TO BOTTOM - Starting UI update sequence")
-
-			// Log UI update operations with timing
-			viewStart := time.Now()
-			v, _ := m.conversation.ViewAndSelectedPosition()
-			viewDuration := time.Since(viewStart)
-
-			setContentStart := time.Now()
-			m.viewport.SetContent(v)
-			setContentDuration := time.Since(setContentStart)
-
-			gotoBottomStart := time.Now()
-			m.viewport.GotoBottom()
-			gotoBottomDuration := time.Since(gotoBottomStart)
-
-			log.Trace().
-				Int64("update_call_id", updateCallID).
-				Str("operation", "ui_update_timing").
-				Dur("view_generation", viewDuration).
-				Dur("set_content", setContentDuration).
-				Dur("goto_bottom", gotoBottomDuration).
-				Int("content_length", len(v)).
-				Msg("UI update operations completed")
-		}
+        if m.scrollToBottom {
+            v := m.timelineCtrl.View()
+            m.viewport.SetContent(v)
+            m.viewport.GotoBottom()
+        }
 
 		totalDuration := time.Since(startTime)
 		log.Trace().
@@ -406,8 +419,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			Bool("scroll_to_bottom", m.scrollToBottom).
 			Msg("REFRESH MESSAGE - POTENTIAL TRIGGER FOR LOOPS")
 
-		v, _ := m.conversation.ViewAndSelectedPosition()
-		m.viewport.SetContent(v)
+        v := m.timelineCtrl.View()
+        m.viewport.SetContent(v)
 		m.recomputeSize()
 		if msg_.GoToBottom || m.scrollToBottom {
 			m.viewport.GotoBottom()
@@ -447,12 +460,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			Str("state", string(m.state)).
 			Msg("DEFAULT CASE - updating viewport or filepicker")
 
-		switch m.state {
+        switch m.state {
 		case StateUserInput, StateError, StateMovingAround, StateStreamCompletion:
-			log.Trace().
-				Int64("update_call_id", updateCallID).
-				Msg("Updating viewport - POTENTIAL RECURSION POINT")
-			m.viewport, cmd = m.viewport.Update(msg_)
+            m.viewport, cmd = m.viewport.Update(msg_)
 			if cmd != nil {
 				log.Trace().
 					Int64("update_call_id", updateCallID).
@@ -646,26 +656,14 @@ func (m *model) recomputeSize() {
 		Int("textarea_width", m.width-h).
 		Msg("Component dimensions updated")
 
-	// CRITICAL: This generates a new view and sets content - major cascade risk
-	viewStart := time.Now()
-	v, _ := m.conversation.ViewAndSelectedPosition()
-	viewDuration := time.Since(viewStart)
-
-	setContentStart := time.Now()
-	m.viewport.SetContent(v)
-	setContentDuration := time.Since(setContentStart)
-
-	gotoBottomStart := time.Now()
-	m.viewport.GotoBottom()
-	gotoBottomDuration := time.Since(gotoBottomStart)
-
-	log.Trace().
-		Int64("recompute_call_id", recomputeCallID).
-		Dur("view_generation", viewDuration).
-		Dur("set_content", setContentDuration).
-		Dur("goto_bottom", gotoBottomDuration).
-		Int("view_length", len(v)).
-		Msg("RECOMPUTE SIZE EXIT - View regenerated and viewport updated")
+    // CRITICAL: Regenerate timeline view and set content
+    v := m.timelineCtrl.View()
+    m.viewport.SetContent(v)
+    m.viewport.GotoBottom()
+    log.Trace().
+        Int64("recompute_call_id", recomputeCallID).
+        Int("view_length", len(v)).
+        Msg("RECOMPUTE SIZE EXIT - View regenerated and viewport updated")
 }
 
 func (m model) headerView() string {
@@ -715,35 +713,21 @@ func (m model) View() string {
 		Bool("header_empty", headerView == "").
 		Msg("Header view generated")
 
-	// CRITICAL: This call might trigger cascading updates
-	conversationViewStart := time.Now()
-	view, position := m.conversation.ViewAndSelectedPosition()
-	conversationViewDuration := time.Since(conversationViewStart)
+    // Generate timeline view instead of conversation view
+    view := m.timelineCtrl.View()
+    m.viewport.SetContent(view)
 
 	log.Trace().
 		Int64("view_call_id", viewCallID).
-		Dur("conversation_view_duration", conversationViewDuration).
-		Int("view_length", len(view)).
-		Int("position_offset", position.Offset).
-		Int("position_height", position.Height).
-		Msg("CONVERSATION VIEW GENERATED - EXPENSIVE OPERATION")
-
-	// CRITICAL: This might trigger viewport updates that cause loops
-	setContentStart := time.Now()
-	m.viewport.SetContent(view)
-	setContentDuration := time.Since(setContentStart)
-
-	log.Trace().
-		Int64("view_call_id", viewCallID).
-		Dur("set_content_duration", setContentDuration).
+        // no extra metrics for set content here
 		Int("viewport_width", m.viewport.Width).
 		Int("viewport_height", m.viewport.Height).
 		Int("viewport_y_position", m.viewport.YPosition).
 		Msg("VIEWPORT CONTENT SET - POTENTIAL TRIGGER FOR UPDATES")
 
-	viewportViewStart := time.Now()
-	viewportView := m.viewport.View()
-	viewportViewDuration := time.Since(viewportViewStart)
+    viewportViewStart := time.Now()
+    viewportView := m.viewport.View()
+    viewportViewDuration := time.Since(viewportViewStart)
 
 	textAreaStart := time.Now()
 	textAreaView := m.textAreaView()
@@ -760,11 +744,11 @@ func (m model) View() string {
 		Dur("help_duration", helpDuration).
 		Msg("UI component views generated")
 
-	// debugging heights with trace logging
-	viewportHeight := lipgloss.Height(viewportView)
-	textAreaHeight := lipgloss.Height(textAreaView)
-	headerHeight := lipgloss.Height(headerView)
-	helpViewHeight := lipgloss.Height(helpView)
+    // debugging heights with trace logging
+    viewportHeight := lipgloss.Height(viewportView)
+    textAreaHeight := lipgloss.Height(textAreaView)
+    headerHeight := lipgloss.Height(headerView)
+    helpViewHeight := lipgloss.Height(helpView)
 
 	log.Trace().
 		Int64("view_call_id", viewCallID).
@@ -889,13 +873,20 @@ func (m *model) submit() tea.Cmd {
 		return nil
 	}
 
-	if err := m.conversationManager.AppendMessages(
-		geppetto_conversation.NewChatMessage(geppetto_conversation.RoleUser, userMessage)); err != nil {
-		log.Error().Err(err).Msg("Failed to append user message")
-		return func() tea.Msg {
-			return ErrorMsg(err)
-		}
-	}
+    // Append to conversation (persistence) and timeline (rendering)
+    if err := m.conversationManager.AppendMessages(
+        geppetto_conversation.NewChatMessage(geppetto_conversation.RoleUser, userMessage)); err != nil {
+        log.Error().Err(err).Msg("Failed to append user message")
+        return func() tea.Msg { return ErrorMsg(err) }
+    }
+    id := geppetto_conversation.NewNodeID().String()
+    m.timelineCtrl.OnCreated(timeline.UIEntityCreated{
+        ID:        timeline.EntityID{LocalID: id, Kind: "llm_text"},
+        Renderer:  timeline.RendererDescriptor{Kind: "llm_text"},
+        Props:     map[string]any{"role": "user", "text": userMessage},
+        StartedAt: time.Now(),
+    })
+    m.timelineCtrl.OnCompleted(timeline.UIEntityCompleted{ID: timeline.EntityID{LocalID: id, Kind: "llm_text"}})
 	m.textArea.SetValue("")
 
 	log.Trace().
