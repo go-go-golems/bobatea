@@ -45,4 +45,12 @@ type UIEntityDeleted struct {
     ID EntityID `json:"id"`
 }
 
+// Messages sent to interactive EntityModels via their Update method
+type EntitySelectedMsg struct { ID EntityID }
+type EntityUnselectedMsg struct { ID EntityID }
+type EntityPropsUpdatedMsg struct {
+    ID    EntityID
+    Patch map[string]any
+}
+
 

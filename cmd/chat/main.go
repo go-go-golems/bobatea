@@ -87,6 +87,7 @@ func runFakeBackend(cmd *cobra.Command, args []string) {
     runChatWithOptions(func() chat.Backend { return NewFakeBackend() }, func(reg *timeline.Registry) {
         reg.Register(&ToolWeatherRenderer{})
         reg.Register(&ToolWebSearchRenderer{})
+        reg.RegisterModelFactory(CheckboxFactory{})
     })
 }
 
@@ -94,6 +95,7 @@ func runHTTPBackend(cmd *cobra.Command, args []string) {
     runChatWithOptions(func() chat.Backend { return NewHTTPBackend("/backend", WithLogFile("/tmp/http-backend.log")) }, func(reg *timeline.Registry) {
         reg.Register(&ToolWeatherRenderer{})
         reg.Register(&ToolWebSearchRenderer{})
+        reg.RegisterModelFactory(CheckboxFactory{})
     })
 }
 

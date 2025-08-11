@@ -13,6 +13,7 @@ type entityRecord struct {
     UpdatedAt int64
     Version   int64
     Completed bool
+    model     EntityModel
 }
 
 type entityStore struct {

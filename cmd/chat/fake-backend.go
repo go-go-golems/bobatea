@@ -87,6 +87,17 @@ func (f *FakeBackend) Start(ctx context.Context, msgs []*conversation2.Message) 
                 f.p.Send(conversationui.StreamDoneMsg{StreamMetadata: metadata, Completion: "Using weather tool..."})
                 return
             }
+            if strings.HasPrefix(content, "/checkbox") {
+                localID := conversation2.NewNodeID().String()
+                f.p.Send(timeline.UIEntityCreated{
+                    ID:       timeline.EntityID{LocalID: localID, Kind: "tool_call"},
+                    Renderer: timeline.RendererDescriptor{Key: "renderer.test.checkbox.v1", Kind: "tool_call"},
+                    Props:    map[string]any{"label": "Enable turbo mode", "checked": false},
+                    StartedAt: time.Now(),
+                })
+                // keep it interactive; no completion yet
+                return
+            }
             if strings.HasPrefix(content, "/search ") {
                 localID := conversation2.NewNodeID().String()
                 f.p.Send(timeline.UIEntityCreated{

@@ -1,9 +1,11 @@
 package timeline
 
 import (
-	"encoding/json"
-	"github.com/rs/zerolog/log"
-	"strings"
+    "encoding/json"
+    "fmt"
+    tea "github.com/charmbracelet/bubbletea"
+    "github.com/rs/zerolog/log"
+    "strings"
 )
 
 type Controller struct {
@@ -16,6 +18,7 @@ type Controller struct {
 	selected int
     // selectionVisible controls whether renderers receive selected=true in props
     selectionVisible bool
+    entering bool
 }
 
 func NewController(reg *Registry) *Controller {
@@ -29,7 +32,14 @@ func (c *Controller) SetTheme(theme string) { c.theme = theme }
 
 func (c *Controller) OnCreated(e UIEntityCreated) {
 	log.Debug().Str("component", "timeline_controller").Str("event", "created").Str("kind", e.ID.Kind).Str("local_id", e.ID.LocalID).Time("started_at", e.StartedAt).Int("props_len", len(e.Props)).Msg("applying created")
-	rec := &entityRecord{ID: e.ID, Renderer: e.Renderer, Props: cloneMap(e.Props), StartedAt: e.StartedAt.UnixNano()}
+    rec := &entityRecord{ID: e.ID, Renderer: e.Renderer, Props: cloneMap(e.Props), StartedAt: e.StartedAt.UnixNano()}
+    // Instantiate interactive model if a factory is registered
+    if e.Renderer.Key != "" {
+        if f, ok := c.reg.GetModelFactoryByKey(e.Renderer.Key); ok {
+            rec.model = f.NewEntityModel(rec.Props)
+            rec.model.SetSize(c.width, c.height)
+        }
+    }
 	c.store.add(rec)
 	if c.selected < 0 {
 		c.selected = 0
@@ -40,6 +50,9 @@ func (c *Controller) OnUpdated(e UIEntityUpdated) {
 	if rec, ok := c.store.get(e.ID); ok {
 		log.Debug().Str("component", "timeline_controller").Str("event", "updated").Str("kind", e.ID.Kind).Str("local_id", e.ID.LocalID).Int64("version", e.Version).Int("patch_len", len(e.Patch)).Msg("applying update")
 		applyPatch(rec.Props, e.Patch)
+        if rec.model != nil {
+            rec.model.OnProps(e.Patch)
+        }
 		rec.Version = max64(rec.Version, e.Version)
 		rec.UpdatedAt = e.UpdatedAt.UnixNano()
 		c.cache.invalidateByID(e.ID)
@@ -103,19 +116,38 @@ func (c *Controller) View() string {
         Int("entity_count", len(c.store.order)).
         Int("selected_index", c.selected).
         Bool("selection_visible", c.selectionVisible).
+        Bool("entering", c.entering).
         Msg("render start")
 	var b strings.Builder
 	hits := 0
 	misses := 0
-	for _, id := range c.store.order {
-		rec, _ := c.store.get(id)
-		r := c.pickRenderer(rec)
+    for _, id := range c.store.order {
+        rec, _ := c.store.get(id)
+        if rec.model != nil {
+            // For interactive models, update selection/focus and render
+            sel := c.selectionVisible && c.selected >= 0 && keyID(id) == keyID(c.store.order[c.selected])
+            rec.model.OnProps(map[string]any{"selected": sel})
+            if sel {
+                rec.model.Update(EntitySelectedMsg{ID: rec.ID})
+            } else {
+                rec.model.Update(EntityUnselectedMsg{ID: rec.ID})
+            }
+            if sel && c.entering { rec.model.Focus() } else { rec.model.Blur() }
+            s := rec.model.View()
+            b.WriteString(s)
+            b.WriteByte('\n')
+            continue
+        }
+        r := c.pickRenderer(rec)
         // Clone props and annotate selection/focus
         annotated := cloneMap(rec.Props)
         if c.selectionVisible && c.selected >= 0 {
             // Identify current entity index by comparing keys
             if keyID(id) == keyID(c.store.order[c.selected]) {
                 annotated["selected"] = true
+                if rec.model != nil {
+                    rec.model.Focus()
+                } else if c.entering { annotated["focused"] = true }
             }
         }
         ck := cacheKey{RendererKey: r.Key(), EntityKey: keyID(id), Width: c.width, Theme: c.theme, PropsHash: r.RelevantPropsHash(annotated)}
@@ -141,6 +173,55 @@ func (c *Controller) View() string {
         Int("output_len", len(out)).
         Msg("render done")
 	return out
+}
+
+// HandleMsg routes a Bubble Tea message to the selected entity model when entering is true.
+func (c *Controller) HandleMsg(msg tea.Msg) tea.Cmd {
+    if !c.entering { return nil }
+    if c.selected < 0 || c.selected >= len(c.store.order) { return nil }
+    id := c.store.order[c.selected]
+    rec, ok := c.store.get(id)
+    if !ok || rec.model == nil { return nil }
+    log.Debug().Str("component", "timeline_controller").Str("op", "handle_msg").
+        Str("selected_local_id", id.LocalID).Str("msg_type", fmt.Sprintf("%T", msg)).Msg("routing msg to model")
+    m2, cmd := rec.model.Update(msg)
+    if mm, ok := m2.(EntityModel); ok {
+        rec.model = mm
+    }
+    return cmd
+}
+
+// EnterSelection toggles entering mode; when true, key events should go to selected entity
+func (c *Controller) EnterSelection() { c.entering = true }
+func (c *Controller) ExitSelection()  { c.entering = false }
+func (c *Controller) IsEntering() bool { return c.entering }
+
+// GetSelectedMeta returns ID, renderer and props of the selected entity
+func (c *Controller) GetSelectedMeta() (EntityID, RendererDescriptor, map[string]any, bool) {
+    if c.selected < 0 || c.selected >= len(c.store.order) { return EntityID{}, RendererDescriptor{}, nil, false }
+    id := c.store.order[c.selected]
+    rec, ok := c.store.get(id)
+    if !ok { return EntityID{}, RendererDescriptor{}, nil, false }
+    return rec.ID, rec.Renderer, cloneMap(rec.Props), true
+}
+
+// UpdateSelected applies a patch to the selected entity props and invalidates cache
+func (c *Controller) UpdateSelected(patch map[string]any) bool {
+    if c.selected < 0 || c.selected >= len(c.store.order) { return false }
+    id := c.store.order[c.selected]
+    rec, ok := c.store.get(id)
+    if !ok { return false }
+    applyPatch(rec.Props, patch)
+    c.cache.invalidateByID(id)
+    return true
+}
+
+// Unselect clears the current selection index
+func (c *Controller) Unselect() {
+    if c.selected != -1 {
+        log.Debug().Str("component", "timeline_controller").Str("op", "unselect").Int("previous", c.selected).Msg("clearing selection")
+        c.selected = -1
+    }
 }
 
 func (c *Controller) pickRenderer(rec *entityRecord) Renderer {

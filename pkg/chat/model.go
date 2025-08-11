@@ -302,8 +302,43 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
 	switch msg_ := msg.(type) {
-	case tea.KeyMsg:
+    case tea.KeyMsg:
         logger.Trace().Str("key", msg_.String()).Str("state", string(m.state)).Msg("Handling key press in Update")
+        // Entering mode and selection routing
+        if m.state == StateMovingAround {
+            switch msg_.String() {
+            case "enter":
+                m.timelineCtrl.EnterSelection()
+                v := m.timelineCtrl.View()
+                m.viewport.SetContent(v)
+                return m, nil
+            case "esc":
+                if m.timelineCtrl.IsEntering() {
+                    m.timelineCtrl.ExitSelection()
+                    v := m.timelineCtrl.View()
+                    m.viewport.SetContent(v)
+                    return m, nil
+                }
+                // leave moving-around back to text mode
+                m.state = StateUserInput
+                m.textArea.Focus()
+                m.updateKeyBindings()
+                // hide selection highlight and unselect entity
+                m.timelineCtrl.SetSelectionVisible(false)
+                m.timelineCtrl.Unselect()
+                v := m.timelineCtrl.View()
+                m.viewport.SetContent(v)
+                return m, nil
+            }
+            // Route all keys while entering to the selected model and log
+            if m.timelineCtrl.IsEntering() {
+                logger.Debug().Str("route", "entering").Str("key", msg_.String()).Msg("Routing key to selected entity model")
+                cmd := m.timelineCtrl.HandleMsg(msg_)
+                v := m.timelineCtrl.View()
+                m.viewport.SetContent(v)
+                return m, cmd
+            }
+        }
         // Inject demo tool triggers on letters
         if msg_.String() == "alt+w" {
             return m.handleUserAction(TriggerWeatherToolMsg{})
