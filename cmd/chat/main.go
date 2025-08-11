@@ -12,6 +12,8 @@ import (
 	"github.com/go-go-golems/bobatea/pkg/chat"
 	"github.com/gorilla/mux"
 	"github.com/spf13/cobra"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 )
 
 var rootCmd = &cobra.Command{
@@ -32,16 +34,35 @@ var httpCmd = &cobra.Command{
 	Run:   runHTTPBackend,
 }
 
+// chatCmd mirrors the fake backend for convenience
+var chatCmd = &cobra.Command{
+    Use:   "chat",
+    Short: "Run the chat application (alias of fake)",
+    Run:   runFakeBackend,
+}
+
 var httpAddr string
 
 func init() {
 	rootCmd.AddCommand(fakeCmd)
 	rootCmd.AddCommand(httpCmd)
+    rootCmd.AddCommand(chatCmd)
 
 	httpCmd.Flags().StringVarP(&httpAddr, "addr", "a", ":8080", "HTTP server address")
 }
 
 func main() {
+	// Initialize zerolog to log to /tmp/fake-chat.log
+	logFile, err := os.OpenFile("/tmp/fake-chat.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	if err != nil {
+		fmt.Printf("Error opening log file: %v\n", err)
+		os.Exit(1)
+	}
+	defer logFile.Close()
+
+	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
+	log.Logger = log.Output(zerolog.ConsoleWriter{Out: logFile})
+
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Println(err)
 		os.Exit(1)
@@ -79,33 +100,32 @@ func runChat(backendFactory func() chat.Backend) {
 		options...,
 	)
 
-	// Set up the HTTP server
-	r := mux.NewRouter()
-
 	// Set up the user backend
 	userBackend := chat.NewUserBackend(status, chat.WithLogFile("/tmp/http-backend.log"))
 	userBackend.SetProgram(p)
-	r.PathPrefix("/user").Handler(http.StripPrefix("/user", userBackend.Router()))
 
 	// Set up the HTTP backend
 	if httpBackend, ok := backend.(*HTTPBackend); ok {
+		// Set up the HTTP server
+		r := mux.NewRouter()
+		r.PathPrefix("/user").Handler(http.StripPrefix("/user", userBackend.Router()))
 		httpBackend.SetRouter(r.PathPrefix("/backend").Subrouter())
-	}
 
-	// Start the HTTP server with timeouts
-	go func() {
-		server := &http.Server{
-			Addr:         httpAddr,
-			Handler:      r,
-			ReadTimeout:  10 * time.Second,
-			WriteTimeout: 10 * time.Second,
-			IdleTimeout:  120 * time.Second,
-		}
-		if err := server.ListenAndServe(); err != nil {
-			fmt.Printf("Error running HTTP server: %v\n", err)
-			os.Exit(1)
-		}
-	}()
+		// Start the HTTP server with timeouts
+		go func() {
+			server := &http.Server{
+				Addr:         httpAddr,
+				Handler:      r,
+				ReadTimeout:  10 * time.Second,
+				WriteTimeout: 10 * time.Second,
+				IdleTimeout:  120 * time.Second,
+			}
+			if err := server.ListenAndServe(); err != nil {
+				fmt.Printf("Error running HTTP server: %v\n", err)
+				os.Exit(1)
+			}
+		}()
+	}
 
 	// Set the program for the backend after initialization
 	if setterBackend, ok := backend.(interface{ SetProgram(*tea.Program) }); ok {

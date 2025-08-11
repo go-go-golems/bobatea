@@ -6,6 +6,7 @@ import (
     "fmt"
     "strings"
     "github.com/rs/zerolog/log"
+    chatstyle "github.com/go-go-golems/bobatea/cmd/timeline-demo/pkg/chatstyle"
 )
 
 // plainRenderer is a fallback renderer that prints props as JSON-like text.
@@ -31,9 +32,16 @@ func (r *LLMTextRenderer) Key() string  { return "renderer.llm_text.simple.v1" }
 func (r *LLMTextRenderer) Kind() string { return "llm_text" }
 func (r *LLMTextRenderer) RelevantPropsHash(props map[string]any) string { return hashMap(map[string]any{"text": props["text"]}) }
 func (r *LLMTextRenderer) Render(props map[string]any, width int, theme string) (string, int, error) {
+    role, _ := props["role"].(string)
+    if role == "" { role = "assistant" }
     text, _ := props["text"].(string)
-    log.Debug().Str("component", "timeline_renderer").Str("renderer", r.Key()).Int("width", width).Int("len", len(text)).Msg("rendered")
-    return text, 1, nil
+    st := chatstyle.DefaultStyles()
+    // Use Selected=false, Focused=false for demo; can be extended by props later
+    box := chatstyle.RenderBox(st, role, text, width, false, false)
+    lines := 1
+    if strings.Count(box, "\n") > 0 { lines = strings.Count(box, "\n") + 1 }
+    log.Debug().Str("component", "timeline_renderer").Str("renderer", r.Key()).Int("width", width).Int("len", len(box)).Msg("rendered")
+    return box, lines, nil
 }
 
 // Tool calls panel renderer

@@ -58,7 +58,7 @@ func NewModel(evaluator Evaluator, config Config) Model {
 
 // Init initializes the REPL model
 func (m Model) Init() tea.Cmd {
-	return textinput.Blink
+    return textinput.Blink
 }
 
 // Update handles UI events and updates the model

@@ -2,7 +2,6 @@ package conversation
 
 import (
 	"fmt"
-	"runtime"
 	"strings"
 	"time"
 
@@ -27,20 +26,6 @@ type cacheEntry struct {
 	lastUpdated time.Time
 }
 
-// logMemoryUsage logs current memory statistics
-func logMemoryUsage(operation string) {
-	var m runtime.MemStats
-	runtime.ReadMemStats(&m)
-
-	log.Trace().
-		Str("operation", operation).
-		Uint64("alloc_mb", m.Alloc/1024/1024).
-		Uint64("total_alloc_mb", m.TotalAlloc/1024/1024).
-		Uint64("sys_mb", m.Sys/1024/1024).
-		Uint32("num_gc", m.NumGC).
-		Msg("Memory usage")
-}
-
 type Model struct {
 	manager         conversation2.Manager
 	style           *Style
@@ -56,7 +41,8 @@ type Model struct {
 }
 
 func NewModel(manager conversation2.Manager) Model {
-	log.Debug().Msg("Creating initial glamour renderer in NewModel...")
+	logger := log.With().Str("operation", "new_model").Logger()
+	logger.Debug().Msg("Creating initial glamour renderer in NewModel...")
 	start := time.Now()
 
 	// Determine the style once
@@ -73,17 +59,17 @@ func NewModel(manager conversation2.Manager) Model {
 		determinedStyle = "light"
 		initialStyleOption = glamour.WithStandardStyle(determinedStyle)
 	}
-	log.Debug().Str("determinedStyle", determinedStyle).Msg("Determined initial style")
+	logger.Debug().Str("determinedStyle", determinedStyle).Msg("Determined initial style")
 
 	// Create renderer with the determined style
 	renderer, err := glamour.NewTermRenderer(
 		initialStyleOption, // Use the determined style
 	)
 	duration := time.Since(start)
-	log.Debug().Dur("duration", duration).Msg("Initial glamour renderer creation complete")
+	logger.Debug().Dur("duration", duration).Msg("Initial glamour renderer creation complete")
 
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to create initial markdown renderer")
+		logger.Error().Err(err).Msg("Failed to create initial markdown renderer")
 	}
 
 	return Model{
@@ -108,67 +94,26 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m Model) updateCache(c ...*conversation2.Message) {
-	cacheStart := time.Now()
-	logMemoryUsage("cache_update_start")
 	totalCacheHits := 0
 	totalCacheMisses := 0
 	totalRedraws := 0
 
-	log.Trace().
-		Str("operation", "cache_update_start").
-		Int("message_count", len(c)).
-		Int("current_cache_size", len(m.cache)).
-		Msg("Starting cache update")
-
 	for idx, msg := range c {
-		msgStart := time.Now()
 		c_, ok := m.cache[msg.ID]
 		selected := idx == m.selectedIdx && m.active
 
-		cacheHit := false
 		if ok {
 			totalCacheHits++
-			cacheHit = true
 			if c_.lastUpdated.After(msg.LastUpdate) && c_.selected == selected {
-				log.Trace().
-					Str("operation", "cache_skip").
-					Str("messageID", msg.ID.String()).
-					Time("cached_time", c_.lastUpdated).
-					Time("msg_time", msg.LastUpdate).
-					Bool("selected_match", c_.selected == selected).
-					Msg("Skipping cache update - cached version is newer")
 				continue
 			}
 		} else {
 			totalCacheMisses++
 		}
 
-		// Log cache entry overwrite
-		if ok {
-			log.Trace().
-				Str("operation", "cache_overwrite").
-				Str("messageID", msg.ID.String()).
-				Time("old_cached_time", c_.lastUpdated).
-				Time("msg_time", msg.LastUpdate).
-				Bool("selected_changed", c_.selected != selected).
-				Msg("Overwriting existing cache entry")
-		}
-
 		// Expensive rendering operation
-		renderStart := time.Now()
 		v_ := m.renderMessage(selected, msg)
-		renderDuration := time.Since(renderStart)
 		totalRedraws++
-
-		log.Trace().
-			Str("operation", "message_render").
-			Str("messageID", msg.ID.String()).
-			Dur("render_duration", renderDuration).
-			Int("content_length", len(msg.Content.String())).
-			Int("rendered_length", len(v_)).
-			Bool("was_cached", cacheHit).
-			Bool("selected", selected).
-			Msg("Message rendered")
 
 		c_ = cacheEntry{
 			msg:         msg,
@@ -178,26 +123,7 @@ func (m Model) updateCache(c ...*conversation2.Message) {
 		}
 
 		m.cache[msg.ID] = c_
-
-		msgDuration := time.Since(msgStart)
-		log.Trace().
-			Str("operation", "cache_entry_update").
-			Str("messageID", msg.ID.String()).
-			Dur("total_msg_duration", msgDuration).
-			Msg("Cache entry updated")
 	}
-
-	totalDuration := time.Since(cacheStart)
-	logMemoryUsage("cache_update_complete")
-
-	log.Trace().
-		Str("operation", "cache_update_complete").
-		Dur("total_duration", totalDuration).
-		Int("cache_hits", totalCacheHits).
-		Int("cache_misses", totalCacheMisses).
-		Int("redraws_performed", totalRedraws).
-		Int("final_cache_size", len(m.cache)).
-		Msg("Cache update completed")
 }
 
 func (m *Model) SetActive(active bool) {
@@ -205,49 +131,35 @@ func (m *Model) SetActive(active bool) {
 }
 
 func (m *Model) SetWidth(width int) {
-	log.Debug().Int("newWidth", width).Int("currentWidth", m.width).Msg("SetWidth called")
-	startSetWidth := time.Now()
-
 	if m.width == width {
-		log.Debug().Int("width", width).Msg("SetWidth: Width unchanged, returning early")
 		return // No change
 	}
-	log.Debug().Int("newWidth", width).Int("oldWidth", m.width).Msg("SetWidth: Width changed, proceeding")
+	logger := log.With().Str("operation", "set_width").Logger()
+	logger.Debug().Int("newWidth", width).Int("oldWidth", m.width).Msg("SetWidth: Width changed, proceeding")
 	m.width = width
 
 	// Recreate renderer with the new width and the *pre-determined* style
-	log.Debug().Int("width", width).Str("style", m.determinedStyle).Msg("SetWidth: Preparing to recreate glamour renderer with determined style...")
-	startRenderer := time.Now()
 	// XXX: Restore WithWordWrap - NO, keep it here
 	renderer, err := glamour.NewTermRenderer(
 		glamour.WithStandardStyle(m.determinedStyle),      // Use determined style
 		glamour.WithWordWrap(m.getRendererContentWidth()), // Use calculated width
 	)
-	durationRenderer := time.Since(startRenderer)
-	log.Debug().Dur("duration", durationRenderer).Int("width", width).Msg("SetWidth: glamour.NewTermRenderer call finished") // Restored log message
 
 	if err != nil {
-		log.Error().Err(err).Int("width", m.width).Msg("SetWidth: Failed to recreate markdown renderer")
+		logger.Error().Err(err).Int("width", m.width).Msg("SetWidth: Failed to recreate markdown renderer")
 		m.renderer = nil // Set to nil on error
 	} else {
-		log.Debug().Int("width", m.width).Msg("SetWidth: Successfully recreated renderer")
 		m.renderer = renderer
 	}
 
 	// Invalidate cache as rendering depends on width
-	log.Debug().Int("width", m.width).Msg("SetWidth: Invalidating cache...")
-	startCache := time.Now()
 	m.cache = make(map[conversation2.NodeID]cacheEntry)
-	durationCache := time.Since(startCache)
-	log.Debug().Dur("duration", durationCache).Int("width", m.width).Msg("SetWidth: Cache invalidated")
-
-	durationSetWidth := time.Since(startSetWidth)
-	log.Debug().Dur("totalDuration", durationSetWidth).Int("width", m.width).Msg("SetWidth finished")
 }
 
 // Helper to calculate the actual content width for the renderer
 func (m Model) getRendererContentWidth() int {
-	log.Debug().Msg("getRendererContentWidth called")
+	logger := log.With().Str("operation", "get_renderer_content_width").Logger()
+	logger.Debug().Msg("getRendererContentWidth called")
 	start := time.Now()
 	// Use UnselectedMessage style for width calculation consistency
 	style := m.style.UnselectedMessage
@@ -256,7 +168,7 @@ func (m Model) getRendererContentWidth() int {
 	padding := style.GetHorizontalPadding()
 	contentWidth := m.width - w - padding
 	duration := time.Since(start)
-	log.Debug().Dur("duration", duration).Int("frameWidth", w).Int("padding", padding).Int("resultWidth", contentWidth).Msg("getRendererContentWidth finished")
+	logger.Debug().Dur("duration", duration).Int("frameWidth", w).Int("padding", padding).Int("resultWidth", contentWidth).Msg("getRendererContentWidth finished")
 	return contentWidth
 }
 
@@ -305,12 +217,14 @@ func (m Model) renderMessage(selected bool, msg *conversation2.Message) string {
 
 	var v_ string
 	if m.renderer == nil {
-		log.Warn().Msg("Markdown renderer is nil, falling back to basic wrapping")
+		logger := log.With().Str("operation", "render_message").Logger()
+		logger.Warn().Msg("Markdown renderer is nil, falling back to basic wrapping")
 		v_ = wrapWords(v, contentWidth)
 	} else {
 		rendered, err := m.renderer.Render(v + "\n")
 		if err != nil {
-			log.Error().Err(err).Msg("Failed to render markdown")
+			logger := log.With().Str("operation", "render_message").Logger()
+			logger.Error().Err(err).Msg("Failed to render markdown")
 			v_ = wrapWords(v, contentWidth)
 		} else {
 			v_ = strings.TrimSpace(rendered)
@@ -362,7 +276,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 		textMsg.Text = msg.Completion
 		msg_.LastUpdate = time.Now()
-        delete(msg_.Metadata, "step_metadata")
+		delete(msg_.Metadata, "step_metadata")
 		msg_.Metadata["event_metadata"] = msg.EventMetadata
 		if msg.EventMetadata != nil {
 			msg_.LLMMessageMetadata = &msg.EventMetadata.LLMMessageMetadata
@@ -382,7 +296,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 		textMsg.Text = msg.Completion
 		msg_.LastUpdate = time.Now()
-        delete(msg_.Metadata, "step_metadata")
+		delete(msg_.Metadata, "step_metadata")
 		msg_.Metadata["event_metadata"] = msg.EventMetadata
 		if msg.EventMetadata != nil {
 			msg_.LLMMessageMetadata = &msg.EventMetadata.LLMMessageMetadata
@@ -402,7 +316,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 		textMsg.Text = "**Error**\n\n" + msg.Err.Error()
 		msg_.LastUpdate = time.Now()
-        delete(msg_.Metadata, "step_metadata")
+		delete(msg_.Metadata, "step_metadata")
 		msg_.Metadata["event_metadata"] = msg.EventMetadata
 		if msg.EventMetadata != nil {
 			msg_.LLMMessageMetadata = &msg.EventMetadata.LLMMessageMetadata
@@ -412,62 +326,48 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 	case StreamStartMsg:
 		startTime := time.Now()
-		logMemoryUsage("stream_start_begin")
+		logger := log.With().
+			Str("operation", "stream_start_processing").
+			Str("messageID", msg.ID.String()).
+			Int("conversation_size", len(m.manager.GetConversation())).
+			Time("timestamp", startTime).
+			Logger()
 
 		// Check if this is a duplicate message
 		existingMsg, isDuplicate := m.manager.GetMessage(msg.ID)
 
-        log.Debug().
-            Str("operation", "stream_start_processing").
-            Str("messageID", msg.ID.String()).
-            Bool("is_duplicate", isDuplicate).
-            Int("conversation_size", len(m.manager.GetConversation())).
-            Time("timestamp", startTime).
-            Msg("Processing StreamStartMsg in conversation model")
+		logger.Debug().Bool("is_duplicate", isDuplicate).Msg("Processing StreamStartMsg in conversation model")
 
 		if isDuplicate {
-			log.Warn().
-				Str("operation", "duplicate_message_detection").
-				Str("messageID", msg.ID.String()).
+			logger.Warn().
 				Time("existing_last_update", existingMsg.LastUpdate).
 				Str("existing_content", existingMsg.Content.String()).
 				Msg("Duplicate StreamStartMsg detected - same ID already exists")
 
 			// Skip duplicate processing to prevent tree corruption
-			log.Debug().
-				Str("messageID", msg.ID.String()).
-				Msg("Skipping duplicate StreamStartMsg to prevent tree corruption")
+			logger.Debug().Msg("Skipping duplicate StreamStartMsg to prevent tree corruption")
 			// return m, nil
 		}
 
-        metadata := map[string]interface{}{
-            "id":        uuid.UUID(msg.ID).String(),
-        }
+		metadata := map[string]interface{}{
+			"id": uuid.UUID(msg.ID).String(),
+		}
 		if msg.EventMetadata != nil {
 			metadata["event_metadata"] = msg.EventMetadata
 		}
 
 		// Create new message (even if duplicate exists)
-		msgCreateStart := time.Now()
 		msg_ := conversation2.NewChatMessage(
 			conversation2.RoleAssistant, "",
 			conversation2.WithID(msg.ID),
-            
-			conversation2.WithMetadata(metadata))
-		msgCreateDuration := time.Since(msgCreateStart)
 
-		log.Debug().
-			Str("operation", "message_creation").
-			Str("messageID", msg.ID.String()).
-			Dur("duration", msgCreateDuration).
-			Msg("New message object created")
+			conversation2.WithMetadata(metadata))
 
 		// Append to manager
 		appendStart := time.Now()
 		if err := m.manager.AppendMessages(msg_); err != nil {
-			log.Error().
+			logger.Error().
 				Err(err).
-				Str("messageID", msg.ID.String()).
 				Msg("Failed to append message - creating error message")
 
 			// Create an error message to display to the user
@@ -477,16 +377,16 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				fmt.Sprintf("Error details: %s", err.Error()),
 				false, // not recoverable
 			)
-            errorMsg := conversation2.NewMessage(errorContent,
-                conversation2.WithMetadata(map[string]interface{}{
-                    "original_message_id": msg.ID.String(),
-                    "error_type":          "append_failure",
-                }),
-            )
+			errorMsg := conversation2.NewMessage(errorContent,
+				conversation2.WithMetadata(map[string]interface{}{
+					"original_message_id": msg.ID.String(),
+					"error_type":          "append_failure",
+				}),
+			)
 
 			// Try to append the error message (this should succeed as it's a different ID)
 			if errAppend := m.manager.AppendMessages(errorMsg); errAppend != nil {
-				log.Error().
+				logger.Error().
 					Err(errAppend).
 					Msg("Failed to append error message - critical error")
 			} else {
@@ -496,34 +396,13 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		}
 		appendDuration := time.Since(appendStart)
 
-		log.Debug().
+		logger.Debug().
 			Str("operation", "message_append").
-			Str("messageID", msg.ID.String()).
 			Dur("duration", appendDuration).
 			Int("new_conversation_size", len(m.manager.GetConversation())).
 			Msg("Message appended to manager")
 
-		// Update cache
-		cacheStart := time.Now()
 		m.updateCache(msg_)
-		cacheDuration := time.Since(cacheStart)
-
-		log.Debug().
-			Str("operation", "cache_update").
-			Str("messageID", msg.ID.String()).
-			Dur("duration", cacheDuration).
-			Int("cache_size", len(m.cache)).
-			Msg("Cache updated for new message")
-
-		totalDuration := time.Since(startTime)
-		logMemoryUsage("stream_start_complete")
-
-		log.Debug().
-			Str("operation", "stream_start_complete").
-			Str("messageID", msg.ID.String()).
-			Dur("total_duration", totalDuration).
-			Bool("was_duplicate", isDuplicate).
-			Msg("StreamStartMsg processing completed")
 
 	case StreamStatusMsg:
 
@@ -555,10 +434,11 @@ type MessagePosition struct {
 }
 
 func (m Model) ViewAndSelectedPosition() (string, MessagePosition) {
-	log.Trace().
+	logger := log.With().
 		Str("operation", "view_generation_start").
 		Int("cache_size", len(m.cache)).
-		Msg("Starting view generation")
+		Logger()
+	logger.Trace().Msg("Starting view generation")
 
 	ret := ""
 	height := 0
@@ -567,21 +447,7 @@ func (m Model) ViewAndSelectedPosition() (string, MessagePosition) {
 
 	msgs_ := m.manager.GetConversation()
 
-	log.Trace().
-		Str("operation", "conversation_retrieval").
-		Int("message_count", len(msgs_)).
-		Msg("Retrieved conversation messages")
-
-	// This triggers cache update for ALL messages
-	cacheUpdateStart := time.Now()
 	m.updateCache(msgs_...)
-	cacheUpdateDuration := time.Since(cacheUpdateStart)
-
-	log.Trace().
-		Str("operation", "full_cache_update").
-		Dur("duration", cacheUpdateDuration).
-		Int("processed_messages", len(msgs_)).
-		Msg("Full cache update completed in view generation")
 
 	// Assemble the view
 	renderedMessages := 0
@@ -592,10 +458,6 @@ func (m Model) ViewAndSelectedPosition() (string, MessagePosition) {
 		c_, ok := m.cache[msg.ID]
 		if !ok {
 			skippedMessages++
-			log.Trace().
-				Str("operation", "view_skip_message").
-				Str("messageID", msg.ID.String()).
-				Msg("Skipping message - not in cache")
 			continue
 		}
 
