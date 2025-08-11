@@ -89,15 +89,30 @@ func (f *FakeBackend) Start(ctx context.Context, msgs []*conversation2.Message) 
             }
             if strings.HasPrefix(content, "/search ") {
                 localID := conversation2.NewNodeID().String()
-                f.p.Send(
-                    timeline.UIEntityCreated{
-                        ID:       timeline.EntityID{LocalID: localID, Kind: "tool_call"},
-                        Renderer: timeline.RendererDescriptor{Key: "renderer.tool.web_search.v1", Kind: "tool_call"},
-                        Props:    map[string]any{"query": "golang bubbletea timeline ui"},
-                        StartedAt: time.Now(),
-                    },
-                )
-                f.p.Send(timeline.UIEntityUpdated{ID: timeline.EntityID{LocalID: localID, Kind: "tool_call"}, Patch: map[string]any{"result": "Found 3 relevant links"}, Version: 1, UpdatedAt: time.Now()})
+                f.p.Send(timeline.UIEntityCreated{
+                    ID:       timeline.EntityID{LocalID: localID, Kind: "tool_call"},
+                    Renderer: timeline.RendererDescriptor{Key: "renderer.tool.web_search.v1", Kind: "tool_call"},
+                    Props:    map[string]any{"query": "golang bubbletea timeline ui", "spin": 0},
+                    StartedAt: time.Now(),
+                })
+                // Stream progressive updates to showcase UIEntityUpdated
+                links := []string{
+                    "https://golang.org",
+                    "https://github.com/charmbracelet/bubbletea",
+                    "https://github.com/go-go-golems/bobatea",
+                }
+                acc := ""
+                for i, link := range links {
+                    time.Sleep(300 * time.Millisecond)
+                    if acc != "" { acc += ", " }
+                    acc += link
+                    f.p.Send(timeline.UIEntityUpdated{
+                        ID:        timeline.EntityID{LocalID: localID, Kind: "tool_call"},
+                        Patch:     map[string]any{"results": strings.Split(acc, ", "), "spin": i + 1},
+                        Version:   int64(i + 1),
+                        UpdatedAt: time.Now(),
+                    })
+                }
                 f.p.Send(timeline.UIEntityCompleted{ID: timeline.EntityID{LocalID: localID, Kind: "tool_call"}})
                 f.p.Send(conversationui.StreamDoneMsg{StreamMetadata: metadata, Completion: "Searching the web..."})
                 return

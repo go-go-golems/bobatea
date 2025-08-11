@@ -3,6 +3,7 @@ package main
 import (
     "fmt"
     "strings"
+    "github.com/charmbracelet/bubbles/spinner"
     "github.com/go-go-golems/bobatea/pkg/timeline"
     chatstyle "github.com/go-go-golems/bobatea/pkg/timeline/chatstyle"
     "github.com/rs/zerolog/log"
@@ -32,7 +33,10 @@ func (r *ToolWeatherRenderer) Render(props map[string]any, width int, theme stri
     if res, ok := props["result"].(string); ok && res != "" {
         lines = append(lines, truncate("- Result: "+res, inner))
     } else {
-        lines = append(lines, truncate("- Status: in progress…", inner))
+        // show spinner while fetching
+        spinIdx := 0
+        if v, ok := props["spin"].(int); ok { spinIdx = v }
+        lines = append(lines, truncate(fmt.Sprintf("- Status: fetching %s", spinnerFrame(spinIdx)), inner))
     }
 
     content := strings.Join(lines, "\n")
@@ -61,11 +65,30 @@ func (r *ToolWebSearchRenderer) Render(props map[string]any, width int, theme st
     title := fmt.Sprintf("[Web Search] %s", safeText(query))
     lines := []string{truncate(title, inner)}
 
-    if res, ok := props["result"].(string); ok && res != "" {
-        // For demo, show summarized result line
-        lines = append(lines, truncate("- Summary: "+res, inner))
-    } else {
-        lines = append(lines, truncate("- Status: querying…", inner))
+    if resultsAny, ok := props["results"].([]string); ok {
+        if len(resultsAny) > 0 {
+            lines = append(lines, truncate("- Results:", inner))
+            for i, link := range resultsAny {
+                lines = append(lines, truncate(fmt.Sprintf("  %d) %s", i+1, link), inner))
+            }
+        }
+    } else if resListAny, ok := props["results"].([]any); ok {
+        if len(resListAny) > 0 {
+            lines = append(lines, truncate("- Results:", inner))
+            for i, v := range resListAny {
+                lines = append(lines, truncate(fmt.Sprintf("  %d) %v", i+1, v), inner))
+            }
+        }
+    }
+
+    if _, hasResults := props["results"]; !hasResults {
+        if res, ok := props["result"].(string); ok && res != "" {
+            lines = append(lines, truncate("- Summary: "+res, inner))
+        } else {
+            spinIdx := 0
+            if v, ok := props["spin"].(int); ok { spinIdx = v }
+            lines = append(lines, truncate(fmt.Sprintf("- Status: querying %s", spinnerFrame(spinIdx)), inner))
+        }
     }
 
     content := strings.Join(lines, "\n")
@@ -85,6 +108,14 @@ func truncate(s string, n int) string {
 func safeText(s string) string {
     if s == "" { return "N/A" }
     return s
+}
+
+func spinnerFrame(idx int) string {
+    // Use bubbles spinner frames without a running model; just pick by index
+    frames := spinner.Line.Frames
+    if len(frames) == 0 { return "-" }
+    if idx < 0 { idx = 0 }
+    return frames[idx%len(frames)]
 }
 
 
