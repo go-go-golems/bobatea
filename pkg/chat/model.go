@@ -517,18 +517,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
                 logger.Trace().Str("viewport_cmd_type", fmt.Sprintf("%T", cmd)).Msg("Viewport returned command")
             }
             cmds = append(cmds, cmd)
-        case StateMovingAround:
-            // In moving-around mode, use timeline selection controls
-            if km, ok := msg_.(tea.KeyMsg); ok {
-                switch {
-                case key.Matches(km, m.keyMap.SelectNextMessage):
-                    m.timelineCtrl.SelectNext()
-                case key.Matches(km, m.keyMap.SelectPrevMessage):
-                    m.timelineCtrl.SelectPrev()
-                }
-                v := m.timelineCtrl.View()
-                m.viewport.SetContent(v)
+    case StateMovingAround:
+        // In moving-around mode, use timeline selection controls and scroll
+        if km, ok := msg_.(tea.KeyMsg); ok {
+            switch {
+            case key.Matches(km, m.keyMap.SelectNextMessage):
+                m.timelineCtrl.SelectNext()
+                m.scrollToSelected()
+            case key.Matches(km, m.keyMap.SelectPrevMessage):
+                m.timelineCtrl.SelectPrev()
+                m.scrollToSelected()
+            case key.Matches(km, m.keyMap.ScrollDown):
+                m.viewport.LineDown(1)
+            case key.Matches(km, m.keyMap.ScrollUp):
+                m.viewport.LineUp(1)
             }
+        }
         case StateSavingToFile:
             log.Trace().
                 Int64("update_call_id", updateCallID).
@@ -574,7 +578,55 @@ func (m *model) updateKeyBindings() {
 	mode_keymap.EnableMode(&m.keyMap, string(m.state))
 }
 
-// scrollToSelected removed; timeline selection is rendered directly
+// scrollToSelected scrolls the viewport to keep the selected entity in view
+func (m *model) scrollToSelected() {
+    scrollCallID := atomic.AddInt64(&updateCallCounter, 1)
+    log.Trace().
+        Int64("scroll_call_id", scrollCallID).
+        Int("viewport_y_offset", m.viewport.YOffset).
+        Int("viewport_height", m.viewport.Height).
+        Msg("SCROLL TO SELECTED ENTRY - TIMELINE")
+
+    viewStart := time.Now()
+    v, off, h := m.timelineCtrl.ViewAndSelectedPosition()
+    viewDuration := time.Since(viewStart)
+
+    log.Trace().
+        Int64("scroll_call_id", scrollCallID).
+        Dur("view_generation", viewDuration).
+        Int("view_length", len(v)).
+        Int("pos_offset", off).
+        Int("pos_height", h).
+        Msg("View generated for scroll calculation")
+
+    setContentStart := time.Now()
+    m.viewport.SetContent(v)
+    setContentDuration := time.Since(setContentStart)
+
+    midScreenOffset := m.viewport.YOffset + m.viewport.Height/2
+    msgEndOffset := off + h
+    bottomOffset := m.viewport.YOffset + m.viewport.Height
+
+    if off > midScreenOffset && msgEndOffset > bottomOffset {
+        newOffset := off - max(m.viewport.Height-h-1, m.viewport.Height/2)
+        m.viewport.SetYOffset(newOffset)
+        log.Trace().
+            Int64("scroll_call_id", scrollCallID).
+            Int("new_y_offset", newOffset).
+            Msg("Scrolled down to show entity")
+    } else if off < m.viewport.YOffset {
+        m.viewport.SetYOffset(off)
+        log.Trace().
+            Int64("scroll_call_id", scrollCallID).
+            Int("new_y_offset", off).
+            Msg("Scrolled up to show entity")
+    }
+
+    log.Trace().
+        Int64("scroll_call_id", scrollCallID).
+        Dur("set_content_duration", setContentDuration).
+        Msg("SCROLL TO SELECTED EXIT")
+}
 
 func (m *model) recomputeSize() {
 	recomputeCallID := atomic.AddInt64(&updateCallCounter, 1)
@@ -989,14 +1041,12 @@ func (m model) handleUserAction(msg UserActionMsg) (tea.Model, tea.Cmd) {
 
     case SelectNextMessageMsg:
         m.timelineCtrl.SelectNext()
-        v := m.timelineCtrl.View()
-        m.viewport.SetContent(v)
+        m.scrollToSelected()
 
     case SelectPrevMessageMsg:
         m.timelineCtrl.SelectPrev()
         m.scrollToBottom = false
-        v := m.timelineCtrl.View()
-        m.viewport.SetContent(v)
+        m.scrollToSelected()
 
 	case SubmitMessageMsg:
 		cmd = m.submit()

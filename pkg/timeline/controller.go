@@ -158,10 +158,10 @@ func (c *Controller) View() string {
             continue
         }
         s, h, _ := r.Render(annotated, c.width, c.theme)
-        _ = h
+        if h <= 0 { h = lipLines(s) }
         c.cache.set(ck, s, h)
-		b.WriteString(s)
-		b.WriteByte('\n')
+        b.WriteString(s)
+        b.WriteByte('\n')
 		misses++
 	}
 	out := b.String()
@@ -173,6 +173,41 @@ func (c *Controller) View() string {
         Int("output_len", len(out)).
         Msg("render done")
 	return out
+}
+
+// ViewAndSelectedPosition returns the full rendered view and the offset/height of the selected entity
+func (c *Controller) ViewAndSelectedPosition() (string, int, int) {
+    view := c.View()
+    if c.selected < 0 || c.selected >= len(c.store.order) {
+        return view, 0, 0
+    }
+    // naive computation: split by lines and sum heights of entities until selected
+    offset := 0
+    for idx, id := range c.store.order {
+        rec, _ := c.store.get(id)
+        r := c.pickRenderer(rec)
+        annotated := cloneMap(rec.Props)
+        if idx == c.selected { annotated["selected"] = true }
+        ck := cacheKey{RendererKey: r.Key(), EntityKey: keyID(id), Width: c.width, Theme: c.theme, PropsHash: r.RelevantPropsHash(annotated)}
+        if s, h, ok := c.cache.get(ck); ok {
+            if h <= 0 { h = lipLines(s) }
+            if idx == c.selected { return view, offset, h }
+            offset += h
+            continue
+        }
+        s, h, _ := r.Render(annotated, c.width, c.theme)
+        if h <= 0 { h = lipLines(s) }
+        if idx == c.selected { return view, offset, h }
+        offset += h
+    }
+    return view, 0, 0
+}
+
+func lipLines(s string) int {
+    if s == "" { return 0 }
+    n := 1
+    for i := 0; i < len(s); i++ { if s[i] == '\n' { n++ } }
+    return n
 }
 
 // HandleMsg routes a Bubble Tea message to the selected entity model when entering is true.
