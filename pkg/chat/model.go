@@ -10,7 +10,6 @@ import (
 
 	geppetto_conversation "github.com/go-go-golems/geppetto/pkg/conversation"
 
-	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -21,7 +20,6 @@ import (
 	mode_keymap "github.com/go-go-golems/bobatea/pkg/mode-keymap"
 	"github.com/go-go-golems/bobatea/pkg/textarea"
     "github.com/go-go-golems/bobatea/pkg/timeline"
-	"github.com/go-go-golems/glazed/pkg/helpers/markdown"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
 )
@@ -70,7 +68,7 @@ type model struct {
 
 	filepicker filepicker.Model
 
-    conversation conversationui.Model
+    // conversation conversationui.Model // removed in favor of timeline selection
 
     // Timeline controller replaces conversation view rendering
     timelineReg  *timeline.Registry
@@ -137,7 +135,6 @@ func InitialModel(manager geppetto_conversation.Manager, backend Backend, option
 
     ret := model{
 		conversationManager: manager,
-		conversation:        conversationui.NewModel(manager),
 		filepicker:          fp,
 		style:               conversationui.DefaultStyles(),
 		keyMap:              DefaultKeyMap,
@@ -182,29 +179,19 @@ func (m model) Init() tea.Cmd {
 	//	})
 	//}
 
-    cmds = append(cmds, m.filepicker.Init(), m.viewport.Init(), m.conversation.Init())
+    cmds = append(cmds, m.filepicker.Init(), m.viewport.Init())
 
     // Seed existing chat messages as timeline entities
-    conv := m.conversationManager.GetConversation()
-    for _, msg := range conv {
-        if c, ok := msg.Content.(*geppetto_conversation.ChatMessageContent); ok {
-            role := string(c.Role)
-            m.timelineCtrl.OnCreated(timeline.UIEntityCreated{
-                ID:        timeline.EntityID{LocalID: msg.ID.String(), Kind: "llm_text"},
-                Renderer:  timeline.RendererDescriptor{Kind: "llm_text"},
-                Props:     map[string]any{"role": role, "text": c.Text},
-                StartedAt: time.Now(),
-            })
-            m.timelineCtrl.OnCompleted(timeline.UIEntityCompleted{ID: timeline.EntityID{LocalID: msg.ID.String(), Kind: "llm_text"}})
-        }
-    }
+    // Seeding from conversation is disabled; timeline should be sourced from entity events
 
     // Set initial timeline view content
     m.viewport.SetContent(m.timelineCtrl.View())
 	m.viewport.YPosition = 0
 	m.viewport.GotoBottom()
 
-	m.updateKeyBindings()
+    m.updateKeyBindings()
+    // Select last entity if any
+    m.timelineCtrl.SelectLast()
 
 	if m.autoStartBackend {
 		cmds = append(cmds, func() tea.Msg {
@@ -220,21 +207,29 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	switch {
     case key.Matches(msg, m.keyMap.TriggerWeatherTool):
+        log.Debug().Str("component", "chat").Str("key", msg.String()).Msg("TriggerWeatherTool pressed")
         return m.handleUserAction(TriggerWeatherToolMsg{})
     case key.Matches(msg, m.keyMap.TriggerWebSearchTool):
+        log.Debug().Str("component", "chat").Str("key", msg.String()).Msg("TriggerWebSearchTool pressed")
         return m.handleUserAction(TriggerWebSearchToolMsg{})
-	case key.Matches(msg, m.keyMap.Help):
-		cmd = func() tea.Msg { return ToggleHelpMsg{} }
-	case key.Matches(msg, m.keyMap.UnfocusMessage):
-		cmd = func() tea.Msg { return UnfocusMessageMsg{} }
-	case key.Matches(msg, m.keyMap.Quit):
-		cmd = func() tea.Msg { return QuitMsg{} }
-	case key.Matches(msg, m.keyMap.FocusMessage):
-		cmd = func() tea.Msg { return FocusMessageMsg{} }
-	case key.Matches(msg, m.keyMap.SelectNextMessage):
-		cmd = func() tea.Msg { return SelectNextMessageMsg{} }
-	case key.Matches(msg, m.keyMap.SelectPrevMessage):
-		cmd = func() tea.Msg { return SelectPrevMessageMsg{} }
+    case key.Matches(msg, m.keyMap.Help):
+        log.Debug().Str("component", "chat").Str("key", msg.String()).Msg("Help pressed")
+        cmd = func() tea.Msg { return ToggleHelpMsg{} }
+    case key.Matches(msg, m.keyMap.UnfocusMessage):
+        log.Debug().Str("component", "chat").Str("key", msg.String()).Msg("Unfocus (ESC) pressed")
+        cmd = func() tea.Msg { return UnfocusMessageMsg{} }
+    case key.Matches(msg, m.keyMap.Quit):
+        log.Debug().Str("component", "chat").Str("key", msg.String()).Msg("Quit pressed")
+        cmd = func() tea.Msg { return QuitMsg{} }
+    case key.Matches(msg, m.keyMap.FocusMessage):
+        log.Debug().Str("component", "chat").Str("key", msg.String()).Msg("Focus pressed")
+        cmd = func() tea.Msg { return FocusMessageMsg{} }
+    case key.Matches(msg, m.keyMap.SelectNextMessage) || msg.String() == "down":
+        log.Debug().Str("component", "chat").Str("key", msg.String()).Msg("SelectNext pressed")
+        cmd = func() tea.Msg { return SelectNextMessageMsg{} }
+    case key.Matches(msg, m.keyMap.SelectPrevMessage) || msg.String() == "up":
+        log.Debug().Str("component", "chat").Str("key", msg.String()).Msg("SelectPrev pressed")
+        cmd = func() tea.Msg { return SelectPrevMessageMsg{} }
 	case key.Matches(msg, m.keyMap.SubmitMessage):
 		cmd = func() tea.Msg { return SubmitMessageMsg{} }
 	case key.Matches(msg, m.keyMap.CopyToClipboard):
@@ -261,7 +256,7 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.filepicker = updatedModel.(filepicker.Model)
 		case StateMovingAround, StateStreamCompletion, StateError:
 			prevAtBottom := m.viewport.AtBottom()
-			m.viewport, cmd = m.viewport.Update(msg)
+            m.viewport, cmd = m.viewport.Update(msg)
 			if m.viewport.AtBottom() && !prevAtBottom {
 				m.scrollToBottom = false
 			}
@@ -308,7 +303,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg_ := msg.(type) {
 	case tea.KeyMsg:
-        logger.Trace().Str("key", msg_.String()).Msg("Handling key press")
+        logger.Trace().Str("key", msg_.String()).Str("state", string(m.state)).Msg("Handling key press in Update")
         // Inject demo tool triggers on letters
         if msg_.String() == "alt+w" {
             return m.handleUserAction(TriggerWeatherToolMsg{})
@@ -481,36 +476,49 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
         logger.Trace().Str("msg_type", msgType).Str("state", string(m.state)).Msg("DEFAULT CASE - updating viewport or filepicker")
 
         switch m.state {
-		case StateUserInput, StateError, StateMovingAround, StateStreamCompletion:
+        case StateUserInput, StateError, StateStreamCompletion:
             m.viewport, cmd = m.viewport.Update(msg_)
-			if cmd != nil {
+            if cmd != nil {
                 logger.Trace().Str("viewport_cmd_type", fmt.Sprintf("%T", cmd)).Msg("Viewport returned command")
-			}
-			cmds = append(cmds, cmd)
-		case StateSavingToFile:
-			log.Trace().
-				Int64("update_call_id", updateCallID).
-				Msg("Updating filepicker")
-			var updatedModel tea.Model
-			updatedModel, cmd = m.filepicker.Update(msg_)
-			m.filepicker = updatedModel.(filepicker.Model)
-			cmds = append(cmds, cmd)
-		}
+            }
+            cmds = append(cmds, cmd)
+        case StateMovingAround:
+            // In moving-around mode, use timeline selection controls
+            if km, ok := msg_.(tea.KeyMsg); ok {
+                switch {
+                case key.Matches(km, m.keyMap.SelectNextMessage):
+                    m.timelineCtrl.SelectNext()
+                case key.Matches(km, m.keyMap.SelectPrevMessage):
+                    m.timelineCtrl.SelectPrev()
+                }
+                v := m.timelineCtrl.View()
+                m.viewport.SetContent(v)
+            }
+        case StateSavingToFile:
+            log.Trace().
+                Int64("update_call_id", updateCallID).
+                Msg("Updating filepicker")
+            var updatedModel tea.Model
+            updatedModel, cmd = m.filepicker.Update(msg_)
+            m.filepicker = updatedModel.(filepicker.Model)
+            cmds = append(cmds, cmd)
+        }
 	}
 
-	// Update status if it's not nil
-	if m.status != nil {
-		oldMessageCount := m.status.MessageCount
-		m.status.State = m.state
-		m.status.InputText = m.textArea.Value()
-		m.status.SelectedIdx = m.conversation.SelectedIdx()
-		m.status.MessageCount = len(m.conversation.Conversation())
-		m.status.Error = m.err
+    // Update status if it's not nil
+    if m.status != nil {
+        oldMessageCount := m.status.MessageCount
+        m.status.State = m.state
+        m.status.InputText = m.textArea.Value()
+        m.status.SelectedIdx = m.timelineCtrl.SelectedIndex()
+        // Fallback approximation using rendered height if entity count is not available
+        m.status.MessageCount = lipgloss.Height(m.timelineCtrl.View())
+        m.status.Error = m.err
 
-		if oldMessageCount != m.status.MessageCount {
+        if oldMessageCount != m.status.MessageCount {
             logger.Trace().Int("old_count", oldMessageCount).Int("new_count", m.status.MessageCount).Msg("MESSAGE COUNT CHANGED")
-		}
-	}
+        }
+    }
 
 	updateDuration := time.Since(updateStartTime)
 	cmdCount := len(cmds)
@@ -531,55 +539,7 @@ func (m *model) updateKeyBindings() {
 	mode_keymap.EnableMode(&m.keyMap, string(m.state))
 }
 
-func (m *model) scrollToSelected() {
-	scrollCallID := atomic.AddInt64(&updateCallCounter, 1)
-	log.Trace().
-		Int64("scroll_call_id", scrollCallID).
-		Int("selected_idx", m.conversation.SelectedIdx()).
-		Int("viewport_y_offset", m.viewport.YOffset).
-		Int("viewport_height", m.viewport.Height).
-		Msg("SCROLL TO SELECTED ENTRY - POTENTIAL VIEW TRIGGER")
-
-	viewStart := time.Now()
-	v, pos := m.conversation.ViewAndSelectedPosition()
-	viewDuration := time.Since(viewStart)
-
-	log.Trace().
-		Int64("scroll_call_id", scrollCallID).
-		Dur("view_generation", viewDuration).
-		Int("view_length", len(v)).
-		Int("pos_offset", pos.Offset).
-		Int("pos_height", pos.Height).
-		Msg("View generated for scroll calculation")
-
-	setContentStart := time.Now()
-	m.viewport.SetContent(v)
-	setContentDuration := time.Since(setContentStart)
-
-	midScreenOffset := m.viewport.YOffset + m.viewport.Height/2
-	msgEndOffset := pos.Offset + pos.Height
-	bottomOffset := m.viewport.YOffset + m.viewport.Height
-
-	if pos.Offset > midScreenOffset && msgEndOffset > bottomOffset {
-		newOffset := pos.Offset - max(m.viewport.Height-pos.Height-1, m.viewport.Height/2)
-		m.viewport.SetYOffset(newOffset)
-		log.Trace().
-			Int64("scroll_call_id", scrollCallID).
-			Int("new_y_offset", newOffset).
-			Msg("Scrolled down to show message")
-	} else if pos.Offset < m.viewport.YOffset {
-		m.viewport.SetYOffset(pos.Offset)
-		log.Trace().
-			Int64("scroll_call_id", scrollCallID).
-			Int("new_y_offset", pos.Offset).
-			Msg("Scrolled up to show message")
-	}
-
-	log.Trace().
-		Int64("scroll_call_id", scrollCallID).
-		Dur("set_content_duration", setContentDuration).
-		Msg("SCROLL TO SELECTED EXIT")
-}
+// scrollToSelected removed; timeline selection is rendered directly
 
 func (m *model) recomputeSize() {
 	recomputeCallID := atomic.AddInt64(&updateCallCounter, 1)
@@ -637,11 +597,6 @@ func (m *model) recomputeSize() {
 		Int("calculated_viewport_height", newHeight).
 		Msg("Text area computed, viewport height calculated")
 
-	// Set conversation width - might trigger internal updates
-	convWidthStart := time.Now()
-	m.conversation.SetWidth(m.width)
-	convWidthDuration := time.Since(convWidthStart)
-
 	// Update viewport dimensions
 	m.viewport.Width = m.width
 	m.viewport.Height = newHeight
@@ -650,10 +605,9 @@ func (m *model) recomputeSize() {
 	h, _ := m.style.SelectedMessage.GetFrameSize()
 	m.textArea.SetWidth(m.width - h)
 
-	log.Trace().
-		Int64("recompute_call_id", recomputeCallID).
-		Dur("conversation_width_duration", convWidthDuration).
-		Int("viewport_width", m.viewport.Width).
+    log.Trace().
+        Int64("recompute_call_id", recomputeCallID).
+        Int("viewport_width", m.viewport.Width).
 		Int("viewport_height", m.viewport.Height).
 		Int("viewport_y_position", m.viewport.YPosition).
 		Int("textarea_width", m.width-h).
@@ -682,13 +636,16 @@ func (m model) textAreaView() string {
 	}
 
 	v := m.textArea.View()
-	switch m.state {
-	case StateUserInput:
-		v = m.style.FocusedMessage.Render(v)
-	case StateMovingAround, StateStreamCompletion:
-		v = m.style.UnselectedMessage.Render(v)
-	case StateError, StateSavingToFile:
-	}
+    switch m.state {
+    case StateUserInput:
+        v = m.style.FocusedMessage.Render(v)
+    case StateMovingAround:
+        // Grey out input when in selection mode
+        v = m.style.UnselectedMessage.Foreground(lipgloss.Color("240")).Render(v)
+    case StateStreamCompletion:
+        v = m.style.UnselectedMessage.Render(v)
+    case StateError, StateSavingToFile:
+    }
 
 	return v
 }
@@ -740,10 +697,14 @@ func (m model) View() string {
 		ret = headerView
 	}
 
-	switch m.state {
-	case StateUserInput, StateError, StateMovingAround, StateStreamCompletion:
-		ret += viewportView + "\n" + textAreaView + "\n" + helpView
+    switch m.state {
+    case StateUserInput, StateError, StateStreamCompletion:
+        ret += viewportView + "\n" + textAreaView + "\n" + helpView
         vlogger.Trace().Str("combined_state", "viewport+textarea+help").Int("final_length", len(ret)).Msg("Combined view for main states")
+    case StateMovingAround:
+        // Keep input visible (greyed) while selecting entities
+        ret += viewportView + "\n" + textAreaView + "\n" + helpView
+        vlogger.Trace().Str("combined_state", "viewport+textarea+help (selection mode)").Int("final_length", len(ret)).Msg("Combined view for moving-around state")
 
 	case StateSavingToFile:
 		ret += m.filepicker.View()
@@ -762,7 +723,7 @@ func (m *model) startBackend() tea.Cmd {
 		Int64("start_call_id", startCallID).
 		Str("previous_state", string(m.state)).
 		Bool("backend_finished", m.backend.IsFinished()).
-		Int("conversation_length", len(m.conversationManager.GetConversation())).
+        Int("conversation_length", len(m.conversationManager.GetConversation())).
 		Msg("START BACKEND ENTRY - MAJOR COMMAND GENERATOR")
 
 	m.state = StateStreamCompletion
@@ -787,7 +748,7 @@ func (m *model) startBackend() tea.Cmd {
 			Int64("start_call_id", startCallID).
 			Msg("BACKEND START COMMAND EXECUTING")
 		ctx := context2.Background()
-		cmd, err := m.backend.Start(ctx, m.conversationManager.GetConversation())
+        cmd, err := m.backend.Start(ctx, m.conversationManager.GetConversation())
 		if err != nil {
 			log.Trace().
 				Int64("start_call_id", startCallID).
@@ -952,11 +913,11 @@ func (m model) handleUserAction(msg UserActionMsg) (tea.Model, tea.Cmd) {
 		if m.state == StateUserInput {
 			m.textArea.Blur()
 			m.state = StateMovingAround
-			m.conversation.SetActive(true)
-			if m.scrollToBottom {
-				m.conversation.SetSelectedIdx(len(m.conversation.Conversation()) - 1)
-			}
-			m.scrollToSelected()
+		// Enter moving around; select last entity and show selection highlight
+		m.timelineCtrl.SelectLast()
+		m.timelineCtrl.SetSelectionVisible(true)
+        v := m.timelineCtrl.View()
+        m.viewport.SetContent(v)
 			m.updateKeyBindings()
 		}
 
@@ -986,166 +947,37 @@ func (m model) handleUserAction(msg UserActionMsg) (tea.Model, tea.Cmd) {
 		m.scrollToBottom = true
 		m.viewport.GotoBottom()
 
-		m.conversation.SetActive(false)
 		m.state = StateUserInput
-		m.updateKeyBindings()
+		// Hide highlight in input mode
+		m.timelineCtrl.SetSelectionVisible(false)
+        m.updateKeyBindings()
 
-	case SelectNextMessageMsg:
-		messages := m.conversation.Conversation()
-		if m.conversation.SelectedIdx() < len(messages)-1 {
-			m.conversation.SetSelectedIdx(m.conversation.SelectedIdx() + 1)
-			m.scrollToSelected()
-		} else if m.conversation.SelectedIdx() == len(messages)-1 {
-			m.scrollToBottom = true
-			m.viewport.GotoBottom()
-		}
+    case SelectNextMessageMsg:
+        m.timelineCtrl.SelectNext()
+        v := m.timelineCtrl.View()
+        m.viewport.SetContent(v)
 
-	case SelectPrevMessageMsg:
-		if m.conversation.SelectedIdx() > 0 {
-			m.conversation.SetSelectedIdx(m.conversation.SelectedIdx() - 1)
-			m.scrollToSelected()
-			m.scrollToBottom = false
-		}
+    case SelectPrevMessageMsg:
+        m.timelineCtrl.SelectPrev()
+        m.scrollToBottom = false
+        v := m.timelineCtrl.View()
+        m.viewport.SetContent(v)
 
 	case SubmitMessageMsg:
 		cmd = m.submit()
 
-	case CopyToClipboardMsg:
-		msgs := m.conversation.Conversation()
-		if len(msgs) > 0 {
-			if m.state == StateMovingAround {
-				selectedIdx := m.conversation.SelectedIdx()
-				if selectedIdx < len(msgs) && selectedIdx >= 0 {
-					msg_ := msgs[selectedIdx]
-					err := clipboard.WriteAll(msg_.Content.String())
-					if err != nil {
-						cmd = func() tea.Msg {
-							return ErrorMsg(err)
-						}
-					}
-				}
-			} else {
-				text := ""
-				for _, m := range msgs {
-					if content, ok := m.Content.(*geppetto_conversation.ChatMessageContent); ok {
-						if content.Role == geppetto_conversation.RoleAssistant {
-							text += content.Text + "\n"
-						}
-					}
-				}
-				err := clipboard.WriteAll(text)
-				if err != nil {
-					cmd = func() tea.Msg {
-						return ErrorMsg(err)
-					}
-				}
-			}
-		}
+    case CopyToClipboardMsg:
+        // TODO: extract text from selected timeline entity props when moving-around
+        // For now, no-op or future implementation
 
-	case CopyLastResponseToClipboardMsg:
-		msgs := m.conversation.Conversation()
-		if len(msgs) > 0 {
-			if m.state == StateMovingAround {
-				selectedIdx := m.conversation.SelectedIdx()
-				if selectedIdx < len(msgs) && selectedIdx >= 0 {
-					msg_ := msgs[selectedIdx]
-					if content, ok := msg_.Content.(*geppetto_conversation.ChatMessageContent); ok {
-						err := clipboard.WriteAll(content.Text)
-						if err != nil {
-							cmd = func() tea.Msg {
-								return ErrorMsg(err)
-							}
-						}
-					}
-				}
-			} else {
-				if m.state == StateUserInput {
-					lastMsg := msgs[len(msgs)-1]
-					if content, ok := lastMsg.Content.(*geppetto_conversation.ChatMessageContent); ok {
-						err := clipboard.WriteAll(content.Text)
-						if err != nil {
-							cmd = func() tea.Msg {
-								return ErrorMsg(err)
-							}
-						}
-					}
-				}
-			}
-		}
+    case CopyLastResponseToClipboardMsg:
+        // TODO: extract last assistant entity text from timeline
 
-	case CopyLastSourceBlocksToClipboardMsg:
-		msgs := m.conversation.Conversation()
-		if len(msgs) > 0 {
-			if m.state == StateMovingAround {
-				selectedIdx := m.conversation.SelectedIdx()
-				if selectedIdx < len(msgs) && selectedIdx >= 0 {
-					msg_ := msgs[selectedIdx]
-					if content, ok := msg_.Content.(*geppetto_conversation.ChatMessageContent); ok {
-						code := markdown.ExtractQuotedBlocks(content.Text, false)
-						err := clipboard.WriteAll(strings.Join(code, "\n"))
-						if err != nil {
-							cmd = func() tea.Msg {
-								return ErrorMsg(err)
-							}
-						}
-					}
-				}
-			} else {
-				if m.state == StateUserInput {
-					text := ""
-					for _, m := range msgs {
-						if content, ok := m.Content.(*geppetto_conversation.ChatMessageContent); ok {
-							if content.Role == geppetto_conversation.RoleAssistant {
-								text += content.Text + "\n"
-							}
-						}
-					}
-					code := markdown.ExtractQuotedBlocks(text, false)
-					err := clipboard.WriteAll(strings.Join(code, "\n"))
-					if err != nil {
-						cmd = func() tea.Msg {
-							return ErrorMsg(err)
-						}
-					}
-				}
-			}
-		}
+    case CopyLastSourceBlocksToClipboardMsg:
+        // TODO: extract code blocks from timeline entities
 
-	case CopySourceBlocksToClipboardMsg:
-		msgs := m.conversation.Conversation()
-		if len(msgs) > 0 {
-			if m.state == StateMovingAround {
-				selectedIdx := m.conversation.SelectedIdx()
-				if selectedIdx < len(msgs) && selectedIdx >= 0 {
-					msg_ := msgs[selectedIdx]
-					if content, ok := msg_.Content.(*geppetto_conversation.ChatMessageContent); ok {
-						code := markdown.ExtractQuotedBlocks(content.Text, false)
-						err := clipboard.WriteAll(strings.Join(code, "\n"))
-						if err != nil {
-							cmd = func() tea.Msg {
-								return ErrorMsg(err)
-							}
-						}
-					}
-				}
-			} else {
-				text := ""
-				for _, m := range msgs {
-					if content, ok := m.Content.(*geppetto_conversation.ChatMessageContent); ok {
-						if content.Role == geppetto_conversation.RoleAssistant {
-							text += content.Text + "\n"
-						}
-					}
-				}
-				code := markdown.ExtractQuotedBlocks(text, false)
-				err := clipboard.WriteAll(strings.Join(code, "\n"))
-				if err != nil {
-					cmd = func() tea.Msg {
-						return ErrorMsg(err)
-					}
-				}
-			}
-		}
+    case CopySourceBlocksToClipboardMsg:
+        // TODO: extract code blocks from selected timeline entity
 
 	case SaveToFileMsg:
 		m.state = StateSavingToFile

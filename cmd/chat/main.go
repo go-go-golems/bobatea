@@ -61,7 +61,7 @@ func main() {
 	}
 	defer logFile.Close()
 
-	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
+    zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
     // Filter out trace-level logs for readability unless overridden
     if lvl, ok := os.LookupEnv("BOBATEA_LOG_LEVEL"); ok {
         if parsed, err := zerolog.ParseLevel(lvl); err == nil {
@@ -72,7 +72,10 @@ func main() {
     } else {
         zerolog.SetGlobalLevel(zerolog.DebugLevel)
     }
-	log.Logger = log.Output(zerolog.ConsoleWriter{Out: logFile})
+    // Configure writer without colors/non-ASCII for file logs and add caller info
+    cw := zerolog.ConsoleWriter{Out: logFile, NoColor: true, PartsOrder: []string{"time","level","caller","message"}}
+    logger := zerolog.New(cw).With().Caller().Timestamp().Logger()
+    log.Logger = logger
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Println(err)

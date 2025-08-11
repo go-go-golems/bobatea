@@ -16,10 +16,13 @@ var _ timeline.Renderer = (*ToolWeatherRenderer)(nil)
 
 func (r *ToolWeatherRenderer) Key() string  { return "renderer.tool.get_weather.v1" }
 func (r *ToolWeatherRenderer) Kind() string { return "tool_call" }
-func (r *ToolWeatherRenderer) RelevantPropsHash(props map[string]any) string { return fmt.Sprintf("%v", props) }
+func (r *ToolWeatherRenderer) RelevantPropsHash(props map[string]any) string {
+    return fmt.Sprintf("%v|sel=%v", props, props["selected"])
+}
 func (r *ToolWeatherRenderer) Render(props map[string]any, width int, theme string) (string, int, error) {
     st := chatstyle.DefaultStyles()
     sty := st.UnselectedMessage
+    if sel, _ := props["selected"].(bool); sel { sty = st.SelectedMessage }
     frameW, _ := sty.GetFrameSize()
     inner := width - frameW
     if inner < 0 { inner = 0 }
@@ -53,10 +56,13 @@ var _ timeline.Renderer = (*ToolWebSearchRenderer)(nil)
 
 func (r *ToolWebSearchRenderer) Key() string  { return "renderer.tool.web_search.v1" }
 func (r *ToolWebSearchRenderer) Kind() string { return "tool_call" }
-func (r *ToolWebSearchRenderer) RelevantPropsHash(props map[string]any) string { return fmt.Sprintf("%v", props) }
+func (r *ToolWebSearchRenderer) RelevantPropsHash(props map[string]any) string {
+    return fmt.Sprintf("%v|sel=%v", props, props["selected"])
+}
 func (r *ToolWebSearchRenderer) Render(props map[string]any, width int, theme string) (string, int, error) {
     st := chatstyle.DefaultStyles()
     sty := st.UnselectedMessage
+    if sel, _ := props["selected"].(bool); sel { sty = st.SelectedMessage }
     frameW, _ := sty.GetFrameSize()
     inner := width - frameW
     if inner < 0 { inner = 0 }

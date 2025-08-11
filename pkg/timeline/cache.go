@@ -23,7 +23,7 @@ func newRenderCache() *renderCache { return &renderCache{m: map[cacheKey]string{
 func (c *renderCache) get(k cacheKey) (string, int, bool) {
     s, ok := c.m[k]
     if ok {
-        log.Debug().Str("component", "timeline_cache").Str("op", "get").Str("renderer", k.RendererKey).Str("entity", k.EntityKey).Msg("hit")
+        log.Trace().Str("component", "timeline_cache").Str("op", "get").Str("renderer", k.RendererKey).Str("entity", k.EntityKey).Msg("hit")
     }
     if !ok { return "", 0, false }
     return s, c.h[k], true
@@ -32,7 +32,7 @@ func (c *renderCache) get(k cacheKey) (string, int, bool) {
 func (c *renderCache) set(k cacheKey, v string, h int) {
     c.m[k] = v
     c.h[k] = h
-    log.Debug().Str("component", "timeline_cache").Str("op", "set").Str("renderer", k.RendererKey).Str("entity", k.EntityKey).Int("len", len(v)).Msg("stored")
+    log.Trace().Str("component", "timeline_cache").Str("op", "set").Str("renderer", k.RendererKey).Str("entity", k.EntityKey).Int("len", len(v)).Msg("stored")
 }
 
 func (c *renderCache) invalidateByID(id EntityID) {
@@ -41,7 +41,7 @@ func (c *renderCache) invalidateByID(id EntityID) {
         if k.EntityKey == string(idk) {
             delete(c.m, k)
             delete(c.h, k)
-            log.Debug().Str("component", "timeline_cache").Str("op", "invalidate").Str("entity", string(idk)).Msg("invalidated")
+            log.Trace().Str("component", "timeline_cache").Str("op", "invalidate").Str("entity", string(idk)).Msg("invalidated")
         }
     }
 }

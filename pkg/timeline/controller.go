@@ -14,10 +14,12 @@ type Controller struct {
 	height   int
 	theme    string
 	selected int
+    // selectionVisible controls whether renderers receive selected=true in props
+    selectionVisible bool
 }
 
 func NewController(reg *Registry) *Controller {
-	c := &Controller{store: newEntityStore(), cache: newRenderCache(), reg: reg, selected: -1}
+    c := &Controller{store: newEntityStore(), cache: newRenderCache(), reg: reg, selected: -1}
 	log.Debug().Str("component", "timeline_controller").Msg("initialized controller")
 	return c
 }
@@ -66,39 +68,78 @@ func (c *Controller) OnDeleted(e UIEntityDeleted) {
 
 func (c *Controller) SelectNext() {
 	if c.selected+1 < len(c.store.order) {
-		c.selected++
+        c.selected++
+        log.Debug().Str("component", "timeline_controller").Str("op", "select_next").Int("selected", c.selected).Int("count", len(c.store.order)).Msg("selection changed")
 	}
 }
 func (c *Controller) SelectPrev() {
 	if c.selected > 0 {
-		c.selected--
+        c.selected--
+        log.Debug().Str("component", "timeline_controller").Str("op", "select_prev").Int("selected", c.selected).Int("count", len(c.store.order)).Msg("selection changed")
 	}
 }
 
+// SelectLast selects the last entity if any exist.
+func (c *Controller) SelectLast() {
+    if len(c.store.order) > 0 {
+        c.selected = len(c.store.order) - 1
+        log.Debug().Str("component", "timeline_controller").Str("op", "select_last").Int("selected", c.selected).Int("count", len(c.store.order)).Msg("selection changed")
+    }
+}
+
+// SelectedIndex returns the current selected index or -1 if none.
+func (c *Controller) SelectedIndex() int { return c.selected }
+
+// SetSelectionVisible toggles whether renderers should highlight selection.
+func (c *Controller) SetSelectionVisible(v bool) {
+    c.selectionVisible = v
+    log.Debug().Str("component", "timeline_controller").Str("op", "set_selection_visible").Bool("visible", v).Msg("selection visibility updated")
+}
+
 func (c *Controller) View() string {
-	log.Debug().Str("component", "timeline_controller").Str("phase", "view").Int("entity_count", len(c.store.order)).Msg("render start")
+    log.Debug().
+        Str("component", "timeline_controller").
+        Str("phase", "view").
+        Int("entity_count", len(c.store.order)).
+        Int("selected_index", c.selected).
+        Bool("selection_visible", c.selectionVisible).
+        Msg("render start")
 	var b strings.Builder
 	hits := 0
 	misses := 0
 	for _, id := range c.store.order {
 		rec, _ := c.store.get(id)
 		r := c.pickRenderer(rec)
-		ck := cacheKey{RendererKey: r.Key(), EntityKey: keyID(id), Width: c.width, Theme: c.theme, PropsHash: r.RelevantPropsHash(rec.Props)}
-		if s, _, ok := c.cache.get(ck); ok {
-			b.WriteString(s)
-			b.WriteByte('\n')
-			hits++
-			continue
-		}
-		s, h, _ := r.Render(rec.Props, c.width, c.theme)
-		_ = h
-		c.cache.set(ck, s, h)
+        // Clone props and annotate selection/focus
+        annotated := cloneMap(rec.Props)
+        if c.selectionVisible && c.selected >= 0 {
+            // Identify current entity index by comparing keys
+            if keyID(id) == keyID(c.store.order[c.selected]) {
+                annotated["selected"] = true
+            }
+        }
+        ck := cacheKey{RendererKey: r.Key(), EntityKey: keyID(id), Width: c.width, Theme: c.theme, PropsHash: r.RelevantPropsHash(annotated)}
+        if s, _, ok := c.cache.get(ck); ok {
+            b.WriteString(s)
+            b.WriteByte('\n')
+            hits++
+            continue
+        }
+        s, h, _ := r.Render(annotated, c.width, c.theme)
+        _ = h
+        c.cache.set(ck, s, h)
 		b.WriteString(s)
 		b.WriteByte('\n')
 		misses++
 	}
 	out := b.String()
-	log.Debug().Str("component", "timeline_controller").Str("phase", "view").Int("cache_hits", hits).Int("cache_misses", misses).Int("output_len", len(out)).Msg("render done")
+    log.Debug().
+        Str("component", "timeline_controller").
+        Str("phase", "view").
+        Int("cache_hits", hits).
+        Int("cache_misses", misses).
+        Int("output_len", len(out)).
+        Msg("render done")
 	return out
 }
 
