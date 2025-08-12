@@ -53,4 +53,12 @@ type EntityPropsUpdatedMsg struct {
     Patch map[string]any
 }
 
+// Actions that parent can request from models
+type EntityCopyTextMsg struct { ID EntityID }
+type EntityCopyCodeMsg struct { ID EntityID }
+
+// Messages emitted by models for side-effects handled by parent
+type CopyTextRequestedMsg struct { Text string }
+type CopyCodeRequestedMsg struct { Code string }
+
 
