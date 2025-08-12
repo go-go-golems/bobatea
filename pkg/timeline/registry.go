@@ -47,6 +47,7 @@ func NewRegistry() *Registry {
 }
 
 func (r *Registry) Register(renderer Renderer) {
+    log.Debug().Str("component", "timeline_registry").Str("op", "register").Str("key", renderer.Key()).Str("kind", renderer.Kind()).Msg("registering")
     r.mu.Lock()
     defer r.mu.Unlock()
     if k := renderer.Key(); k != "" {
@@ -59,6 +60,7 @@ func (r *Registry) Register(renderer Renderer) {
 }
 
 func (r *Registry) RegisterModelFactory(factory EntityModelFactory) {
+    log.Debug().Str("component", "timeline_registry").Str("op", "register_model_factory").Str("key", factory.Key()).Str("kind", factory.Kind()).Msg("registering")
     r.mu.Lock()
     defer r.mu.Unlock()
     if k := factory.Key(); k != "" {
@@ -85,16 +87,20 @@ func (r *Registry) GetByKind(kind string) (Renderer, bool) {
 }
 
 func (r *Registry) GetModelFactoryByKey(key string) (EntityModelFactory, bool) {
+    log.Debug().Str("component", "timeline_registry").Str("when", "get_model_factory_by_key").Str("key", key).Msg("Getting model factory by key")
     r.mu.RLock()
     defer r.mu.RUnlock()
     v, ok := r.modelByKey[key]
+    log.Debug().Str("component", "timeline_registry").Str("when", "get_model_factory_by_key").Str("key", key).Bool("ok", ok).Msg("Got model factory by key")
     return v, ok
 }
 
 func (r *Registry) GetModelFactoryByKind(kind string) (EntityModelFactory, bool) {
+    log.Debug().Str("component", "timeline_registry").Str("when", "get_model_factory_by_kind").Str("kind", kind).Msg("Getting model factory by kind")
     r.mu.RLock()
     defer r.mu.RUnlock()
     v, ok := r.modelByKind[kind]
+    log.Debug().Str("component", "timeline_registry").Str("when", "get_model_factory_by_kind").Str("kind", kind).Bool("ok", ok).Msg("Got model factory by kind")
     return v, ok
 }
 
