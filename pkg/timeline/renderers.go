@@ -6,7 +6,6 @@ import (
     "fmt"
     "strings"
     "github.com/rs/zerolog/log"
-    chatstyle "github.com/go-go-golems/bobatea/pkg/timeline/chatstyle"
 )
 
 // plainRenderer is a fallback renderer that prints props as JSON-like text.
@@ -25,60 +24,7 @@ func (p *plainRenderer) Render(props map[string]any, width int, theme string) (s
     return s, 1, nil
 }
 
-// LLM text renderer (simple, no markdown to keep demo self-contained)
-// Deprecated: LLMTextRenderer is superseded by renderers.LLMTextModel. Kept temporarily for stateless fallback.
-type LLMTextRenderer struct{}
-
-func (r *LLMTextRenderer) Key() string  { return "renderer.llm_text.simple.v1" }
-func (r *LLMTextRenderer) Kind() string { return "llm_text" }
-func (r *LLMTextRenderer) RelevantPropsHash(props map[string]any) string {
-    // Include selection and role to ensure cache invalidates when highlight or role changes
-    return hashMap(map[string]any{
-        "text":     props["text"],
-        "selected": props["selected"],
-        "role":     props["role"],
-    })
-}
-func (r *LLMTextRenderer) Render(props map[string]any, width int, theme string) (string, int, error) {
-    role, _ := props["role"].(string)
-    if role == "" { role = "assistant" }
-    text, _ := props["text"].(string)
-    selected, _ := props["selected"].(bool)
-    st := chatstyle.DefaultStyles()
-    // Selected state is passed via props by the controller
-    box := chatstyle.RenderBox(st, role, text, width, selected, false)
-    lines := 1
-    if strings.Count(box, "\n") > 0 { lines = strings.Count(box, "\n") + 1 }
-    log.Debug().Str("component", "timeline_renderer").Str("renderer", r.Key()).Int("width", width).Int("len", len(box)).Msg("rendered")
-    return box, lines, nil
-}
-
-// Tool calls panel renderer
-// Deprecated: ToolCallsPanelRenderer is superseded by renderers.ToolCallsPanelModel. Kept temporarily for stateless fallback.
-type ToolCallsPanelRenderer struct{}
-
-func (r *ToolCallsPanelRenderer) Key() string  { return "renderer.tools.panel.v1" }
-func (r *ToolCallsPanelRenderer) Kind() string { return "tool_calls_panel" }
-func (r *ToolCallsPanelRenderer) RelevantPropsHash(props map[string]any) string { return hashMap(props) }
-func (r *ToolCallsPanelRenderer) Render(props map[string]any, width int, theme string) (string, int, error) {
-    selected, _ := props["selected"].(bool)
-    st := chatstyle.DefaultStyles()
-    sty := st.UnselectedMessage
-    if selected {
-        sty = st.SelectedMessage
-    }
-
-    s := "[tools]"
-    if calls, ok := props["calls"].([]any); ok {
-        s += fmt.Sprintf(" %d call(s)", len(calls))
-    }
-    // Box it similar to chat messages for consistency
-    panel := sty.Width(width - sty.GetHorizontalPadding()).Render(s)
-    h := 1
-    if strings.Count(panel, "\n") > 0 { h = strings.Count(panel, "\n") + 1 }
-    log.Debug().Str("component", "timeline_renderer").Str("renderer", r.Key()).Int("width", width).Int("len", len(panel)).Msg("rendered")
-    return panel, h, nil
-}
+// Deprecated stateless renderers have been removed in favor of Bubble Tea models.
 
 func hashMap(m map[string]any) string {
     // simple non-stable across types: for demo only
