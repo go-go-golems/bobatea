@@ -7,6 +7,7 @@ import (
     tea "github.com/charmbracelet/bubbletea"
     "github.com/charmbracelet/bubbles/viewport"
     "github.com/go-go-golems/bobatea/pkg/timeline"
+    renderers "github.com/go-go-golems/bobatea/pkg/timeline/renderers"
     "github.com/rs/zerolog"
     "github.com/rs/zerolog/log"
 )
@@ -107,8 +108,9 @@ func main() {
         log.Info().Msg("logger initialized")
     }
     reg := timeline.NewRegistry()
-    reg.Register(&timeline.LLMTextRenderer{})
-    reg.Register(&timeline.ToolCallsPanelRenderer{})
+    reg.RegisterModelFactory(renderers.NewLLMTextFactory())
+    reg.RegisterModelFactory(renderers.ToolCallsPanelFactory{})
+    reg.RegisterModelFactory(renderers.PlainFactory{})
     ctrl := timeline.NewController(reg)
     m := demoModel{vp: viewport.New(0, 0), ctrl: ctrl}
     p := tea.NewProgram(m)
