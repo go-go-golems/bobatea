@@ -10,8 +10,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/go-go-golems/bobatea/pkg/chat"
 	conversationui "github.com/go-go-golems/bobatea/pkg/chat/conversation"
-    "github.com/go-go-golems/bobatea/pkg/timeline"
+	"github.com/go-go-golems/bobatea/pkg/timeline"
 	"github.com/pkg/errors"
+	"github.com/rs/zerolog/log"
 )
 
 type FakeBackend struct {
@@ -37,105 +38,122 @@ func (f *FakeBackend) Start(ctx context.Context, msgs []*conversation2.Message) 
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
+	log.Debug().Str("component", "fake_backend").Msg("Start: starting")
+
 	if f.isRunning {
+		log.Debug().Str("component", "fake_backend").Msg("Start: already running")
 		return nil, errors.New("Step is already running")
 	}
 
 	if f.p == nil {
+		log.Debug().Str("component", "fake_backend").Msg("Start: program not set")
 		return nil, errors.New("Program not set")
 	}
 
+	f.isRunning = true
+	log.Debug().Str("component", "fake_backend").Bool("is_running", f.isRunning).Int("msgs_len", len(msgs)).Msg("Start: initializing")
+
 	return func() tea.Msg {
+		log.Debug().Str("component", "fake_backend").Msg("Backend command: executing")
 		ctx, f.cancel = context.WithCancel(ctx)
 		if len(msgs) == 0 {
+			log.Debug().Str("component", "fake_backend").Msg("No messages; returning nil")
 			return nil
 		}
-        lastMsg := msgs[len(msgs)-1]
-        content := lastMsg.Content.String()
-        words := strings.Fields(content)
+		lastMsg := msgs[len(msgs)-1]
+		content := lastMsg.Content.String()
+		words := strings.Fields(content)
 		reversedWords := reverseWords(words)
 		msg := strings.Join(reversedWords, " ")
-
+		localID := conversation2.NewNodeID().String()
 		metadata := conversationui.StreamMetadata{
-			ID:       conversation2.NewNodeID(),
+			ID: conversation2.NewNodeID(),
 		}
 
-        go func() {
-			tick := time.Tick(200 * time.Millisecond)
+		go func() {
+			log.Debug().Str("component", "fake_backend").Msg("Goroutine: started streaming loop")
+			tick := time.Tick(100 * time.Millisecond)
 			idx := 0
 			defer func() {
+				log.Debug().Str("component", "fake_backend").Msg("Goroutine: finishing, sending BackendFinishedMsg")
 				f.p.Send(chat.BackendFinishedMsg{})
 				f.cancel()
 				f.cancel = nil
 				f.isRunning = false
+				log.Debug().Str("component", "fake_backend").Bool("is_running", f.isRunning).Msg("Goroutine: isRunning=false")
 			}()
-            // Recognize tool commands and emit timeline tool entities, as if produced by a real agent tool call
-            if strings.HasPrefix(content, "/weather ") {
-                // Emit entity lifecycle messages directly (created -> updated -> completed)
-                localID := conversation2.NewNodeID().String()
-                f.p.Send(
-                    timeline.UIEntityCreated{
-                        ID:       timeline.EntityID{LocalID: localID, Kind: "tool_call"},
-                        Renderer: timeline.RendererDescriptor{Key: "renderer.tool.get_weather.v1", Kind: "tool_call"},
-                        Props:    map[string]any{"location": "Paris", "units": "celsius"},
-                        StartedAt: time.Now(),
-                    },
-                )
-                f.p.Send(timeline.UIEntityUpdated{ID: timeline.EntityID{LocalID: localID, Kind: "tool_call"}, Patch: map[string]any{"result": "22C, Sunny"}, Version: 1, UpdatedAt: time.Now()})
-                f.p.Send(timeline.UIEntityCompleted{ID: timeline.EntityID{LocalID: localID, Kind: "tool_call"}})
-                // Also send assistant confirmation text via normal stream to exercise both paths
-                f.p.Send(conversationui.StreamDoneMsg{StreamMetadata: metadata, Completion: "Using weather tool..."})
-                return
-            }
-            if strings.HasPrefix(content, "/checkbox") {
-                localID := conversation2.NewNodeID().String()
-                f.p.Send(timeline.UIEntityCreated{
-                    ID:       timeline.EntityID{LocalID: localID, Kind: "tool_call"},
-                    Renderer: timeline.RendererDescriptor{Key: "renderer.test.checkbox.v1", Kind: "tool_call"},
-                    Props:    map[string]any{"label": "Enable turbo mode", "checked": false},
-                    StartedAt: time.Now(),
-                })
-                // keep it interactive; no completion yet
-                return
-            }
-            if strings.HasPrefix(content, "/search ") {
-                localID := conversation2.NewNodeID().String()
-                f.p.Send(timeline.UIEntityCreated{
-                    ID:       timeline.EntityID{LocalID: localID, Kind: "tool_call"},
-                    Renderer: timeline.RendererDescriptor{Key: "renderer.tool.web_search.v1", Kind: "tool_call"},
-                    Props:    map[string]any{"query": "golang bubbletea timeline ui", "spin": 0},
-                    StartedAt: time.Now(),
-                })
-                // Stream progressive updates to showcase UIEntityUpdated
-                links := []string{
-                    "https://golang.org",
-                    "https://github.com/charmbracelet/bubbletea",
-                    "https://github.com/go-go-golems/bobatea",
-                }
-                acc := ""
-                for i, link := range links {
-                    time.Sleep(300 * time.Millisecond)
-                    if acc != "" { acc += ", " }
-                    acc += link
-                    f.p.Send(timeline.UIEntityUpdated{
-                        ID:        timeline.EntityID{LocalID: localID, Kind: "tool_call"},
-                        Patch:     map[string]any{"results": strings.Split(acc, ", "), "spin": i + 1},
-                        Version:   int64(i + 1),
-                        UpdatedAt: time.Now(),
-                    })
-                }
-                f.p.Send(timeline.UIEntityCompleted{ID: timeline.EntityID{LocalID: localID, Kind: "tool_call"}})
-                f.p.Send(conversationui.StreamDoneMsg{StreamMetadata: metadata, Completion: "Searching the web..."})
-                return
-            }
-            for {
+			// Recognize tool commands and emit timeline tool entities, as if produced by a real agent tool call
+			if strings.HasPrefix(content, "/weather ") {
+				// Emit entity lifecycle messages directly (created -> updated -> completed)
+				f.p.Send(
+					timeline.UIEntityCreated{
+						ID:        timeline.EntityID{LocalID: localID, Kind: "tool_call"},
+						Renderer:  timeline.RendererDescriptor{Key: "renderer.tool.get_weather.v1", Kind: "tool_call"},
+						Props:     map[string]any{"location": "Paris", "units": "celsius"},
+						StartedAt: time.Now(),
+					},
+				)
+				f.p.Send(timeline.UIEntityUpdated{ID: timeline.EntityID{LocalID: localID, Kind: "tool_call"}, Patch: map[string]any{"result": "22C, Sunny"}, Version: 1, UpdatedAt: time.Now()})
+				f.p.Send(timeline.UIEntityCompleted{ID: timeline.EntityID{LocalID: localID, Kind: "tool_call"}})
+				// Also send assistant confirmation text via normal stream to exercise both paths
+				f.p.Send(conversationui.StreamDoneMsg{StreamMetadata: metadata, Completion: "Using weather tool..."})
+				return
+			}
+			if strings.HasPrefix(content, "/checkbox") {
+				f.p.Send(timeline.UIEntityCreated{
+					ID:        timeline.EntityID{LocalID: localID, Kind: "tool_call"},
+					Renderer:  timeline.RendererDescriptor{Key: "renderer.test.checkbox.v1", Kind: "tool_call"},
+					Props:     map[string]any{"label": "Enable turbo mode", "checked": false},
+					StartedAt: time.Now(),
+				})
+				// keep it interactive; no completion yet
+				return
+			}
+			if strings.HasPrefix(content, "/search ") {
+				f.p.Send(timeline.UIEntityCreated{
+					ID:        timeline.EntityID{LocalID: localID, Kind: "tool_call"},
+					Renderer:  timeline.RendererDescriptor{Key: "renderer.tool.web_search.v1", Kind: "tool_call"},
+					Props:     map[string]any{"query": "golang bubbletea timeline ui", "spin": 0},
+					StartedAt: time.Now(),
+				})
+				// Stream progressive updates to showcase UIEntityUpdated
+				links := []string{
+					"https://golang.org",
+					"https://github.com/charmbracelet/bubbletea",
+					"https://github.com/go-go-golems/bobatea",
+				}
+				acc := ""
+				for i, link := range links {
+					time.Sleep(300 * time.Millisecond)
+					if acc != "" {
+						acc += ", "
+					}
+					acc += link
+					f.p.Send(timeline.UIEntityUpdated{
+						ID:        timeline.EntityID{LocalID: localID, Kind: "tool_call"},
+						Patch:     map[string]any{"results": strings.Split(acc, ", "), "spin": i + 1},
+						Version:   int64(i + 1),
+						UpdatedAt: time.Now(),
+					})
+				}
+				f.p.Send(timeline.UIEntityCompleted{ID: timeline.EntityID{LocalID: localID, Kind: "tool_call"}})
+				f.p.Send(conversationui.StreamDoneMsg{StreamMetadata: metadata, Completion: "Searching the web..."})
+				return
+			}
+			log.Debug().Str("component", "fake_backend").Msg("Goroutine: sending StreamStartMsg")
+			f.p.Send(conversationui.StreamStartMsg{
+				StreamMetadata: metadata,
+			})
+			for {
 				select {
 				case <-ctx.Done():
+					log.Debug().Str("component", "fake_backend").Msg("Goroutine: ctx.Done")
 					return
 
 				case <-tick:
 					if idx < len(reversedWords) {
 						completion := strings.Join(reversedWords[:idx+1], " ")
+						log.Debug().Int("idx", idx).Str("delta", reversedWords[idx]+" ").Str("completion", completion).Str("component", "fake_backend").Msg("Goroutine: sending StreamCompletionMsg")
 						f.p.Send(
 							conversationui.StreamCompletionMsg{
 								StreamMetadata: metadata,
@@ -145,6 +163,7 @@ func (f *FakeBackend) Start(ctx context.Context, msgs []*conversation2.Message) 
 						)
 						idx++
 					} else {
+						log.Debug().Str("component", "fake_backend").Msg("Goroutine: sending StreamDoneMsg")
 						f.p.Send(conversationui.StreamDoneMsg{
 							StreamMetadata: metadata,
 							Completion:     msg,
@@ -155,9 +174,8 @@ func (f *FakeBackend) Start(ctx context.Context, msgs []*conversation2.Message) 
 			}
 		}()
 
-		return conversationui.StreamStartMsg{
-			StreamMetadata: metadata,
-		}
+		log.Debug().Str("component", "fake_backend").Msg("Backend command: returning StreamStartMsg")
+		return nil
 	}, nil
 }
 
