@@ -6,25 +6,10 @@ import (
     tea "github.com/charmbracelet/bubbletea"
 )
 
-type Renderer interface {
-    Key() string
-    Kind() string
-    Render(props map[string]any, width int, theme string) (string, int, error)
-    RelevantPropsHash(props map[string]any) string
-}
-
 // EntityModel represents an interactive per-entity UI model
 // It renders itself and can handle messages routed by the controller.
 // For simplicity, View takes selection/focus flags.
-type EntityModel interface {
-    tea.Model
-    View() string
-    OnProps(patch map[string]any)
-    OnCompleted(result map[string]any)
-    SetSize(width, height int)
-    Focus()
-    Blur()
-}
+type EntityModel interface{ tea.Model }
 
 // EntityModelFactory constructs an EntityModel for a given renderer Key/Kind
 type EntityModelFactory interface {
@@ -34,8 +19,6 @@ type EntityModelFactory interface {
 }
 
 type Registry struct {
-    byKey  map[string]Renderer
-    byKind map[string]Renderer
     mu     sync.RWMutex
     modelByKey  map[string]EntityModelFactory
     modelByKind map[string]EntityModelFactory
@@ -43,20 +26,7 @@ type Registry struct {
 
 func NewRegistry() *Registry {
     log.Debug().Str("component", "timeline_registry").Msg("initialized registry")
-    return &Registry{byKey: map[string]Renderer{}, byKind: map[string]Renderer{}, modelByKey: map[string]EntityModelFactory{}, modelByKind: map[string]EntityModelFactory{}}
-}
-
-func (r *Registry) Register(renderer Renderer) {
-    log.Debug().Str("component", "timeline_registry").Str("op", "register").Str("key", renderer.Key()).Str("kind", renderer.Kind()).Msg("registering")
-    r.mu.Lock()
-    defer r.mu.Unlock()
-    if k := renderer.Key(); k != "" {
-        r.byKey[k] = renderer
-    }
-    if k := renderer.Kind(); k != "" {
-        r.byKind[k] = renderer
-    }
-    log.Debug().Str("component", "timeline_registry").Str("op", "register").Str("key", renderer.Key()).Str("kind", renderer.Kind()).Msg("registered")
+    return &Registry{modelByKey: map[string]EntityModelFactory{}, modelByKind: map[string]EntityModelFactory{}}
 }
 
 func (r *Registry) RegisterModelFactory(factory EntityModelFactory) {
@@ -70,20 +40,6 @@ func (r *Registry) RegisterModelFactory(factory EntityModelFactory) {
         r.modelByKind[k] = factory
     }
     log.Debug().Str("component", "timeline_registry").Str("op", "register_model_factory").Str("key", factory.Key()).Str("kind", factory.Kind()).Msg("registered")
-}
-
-func (r *Registry) GetByKey(key string) (Renderer, bool) {
-    r.mu.RLock()
-    defer r.mu.RUnlock()
-    v, ok := r.byKey[key]
-    return v, ok
-}
-
-func (r *Registry) GetByKind(kind string) (Renderer, bool) {
-    r.mu.RLock()
-    defer r.mu.RUnlock()
-    v, ok := r.byKind[kind]
-    return v, ok
 }
 
 func (r *Registry) GetModelFactoryByKey(key string) (EntityModelFactory, bool) {

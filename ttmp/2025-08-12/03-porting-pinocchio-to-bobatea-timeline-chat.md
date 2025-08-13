@@ -356,13 +356,13 @@ Pitfalls and tips:
   - Rewrote `StepChatForwardFunc` to emit `UIEntityCreated/Updated/Completed` for `llm_text` and send `BackendFinishedMsg` when done.
 
 - Chat runner and CLI wiring
-  - `chatrunner`: `bobachat.InitialModel(backend, ...)` with router-based readiness and seeding of the backend from conversation (for now) so timeline shows history.
-  - CLI chat mode (`cmds/cmd.go`): waits for `<-router.Running()` before auto-submitting; seeds backend from a Turn built out of `system`, pre-seeded `messages`, and (later) the runtime prompt.
-  - When seeding, backend now emits UI entities for prior blocks (user/assistant only) to avoid missing history in chat; system blocks are intentionally not emitted to prevent duplication with other previews.
+  - `chatrunner`: `bobachat.InitialModel(backend, ...)` with router-based readiness. Seeds backend from prior conversation or rendered Turn so timeline shows history.
+  - CLI chat mode (`cmds/cmd.go`): waits for `<-router.Running()` before auto-submitting; seeds backend from a rendered Turn built out of `system`, pre-seeded `messages` (now strings mapped to user blocks), and the runtime prompt.
+  - When seeding, backend now emits UI entities for prior blocks (user/assistant only) to avoid missing history in chat; system blocks are intentionally not emitted to prevent duplication with other previews. Block IDs are used to deduplicate emissions.
 
 - Prompt templating (render templates before model invocation)
   - Added `Variables map[string]interface{}` to `run.RunContext` and `run.WithVariables(...)` to pass parsed layer variables.
-  - Implemented `buildInitialTurnRendered` in `cmd.go` to render `systemPrompt`, each `message`, and the `prompt` using `glazed/pkg/helpers/templating` prior to building a `turns.Turn`.
+  - Implemented `PinocchioCommand.buildInitialTurn(vars)` in `cmd.go` to render `systemPrompt`, each block text (converted from YAML messages), and the `prompt` using `glazed/pkg/helpers/templating` prior to building a `turns.Turn`.
   - Used rendered Turn in blocking mode, for chat seeding, and for chat auto-start submission (so the UI sends the rendered prompt text, not the raw template).
   - Example wiring when invoking the run:
 
@@ -393,8 +393,9 @@ Pitfalls and tips:
   ```
 
 - Turn-first flows
-  - Added `buildInitialTurn(systemPrompt, messages, userPrompt)` and used it in blocking and chat flows. Blocking mode runs inference on a Turn and converts back to conversation only for output.
-  - Backend gained `SetSeedTurn` and `SetSeedFromConversation`. Chat flow now seeds from Turn before auto-submit.
+  - YAML `messages` switched to `[]string`. Loader converts strings to `turns.NewUserTextBlock` and stores them in `PinocchioCommand.Blocks`.
+  - `PinocchioCommand.buildInitialTurn(vars)` used in blocking and chat flows. Blocking mode runs inference on a Turn and converts back to conversation only for output.
+  - Backend gained `SetSeedTurn` (and can still accept `SetSeedFromConversation` for legacy), and chat flow now seeds from the rendered Turn before auto-submit.
 
 - Logging and readiness
   - Avoid arbitrary sleeps. Use the Watermill router’s `Running()` channel before sending auto-submit messages.

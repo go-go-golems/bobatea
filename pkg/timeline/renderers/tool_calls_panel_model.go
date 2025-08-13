@@ -25,6 +25,17 @@ func (m *ToolCallsPanelModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
         m.selected = false
     case timeline.EntityPropsUpdatedMsg:
         if v.Patch != nil { m.OnProps(v.Patch) }
+    case timeline.EntitySetSizeMsg:
+        m.width = v.Width
+        return m, nil
+    case timeline.EntityCopyTextMsg:
+        // Copy the summary or a simple textual representation
+        text := m.View()
+        return m, func() tea.Msg { return timeline.CopyTextRequestedMsg{Text: text} }
+    case timeline.EntityCopyCodeMsg:
+        // No code blocks here; fall back to text
+        text := m.View()
+        return m, func() tea.Msg { return timeline.CopyTextRequestedMsg{Text: text} }
     }
     return m, nil
 }
@@ -44,10 +55,7 @@ func (m *ToolCallsPanelModel) OnProps(patch map[string]any) {
     if v, ok := patch["summary"].(string); ok { m.summary = v }
     if v, ok := patch["selected"].(bool); ok { m.selected = v }
 }
-func (m *ToolCallsPanelModel) OnCompleted(_ map[string]any) {}
-func (m *ToolCallsPanelModel) SetSize(w, _ int) { m.width = w }
-func (m *ToolCallsPanelModel) Focus() {}
-func (m *ToolCallsPanelModel) Blur()  {}
+// Removed OnCompleted/SetSize/Focus/Blur; handled via messages
 
 type ToolCallsPanelFactory struct{}
 func (ToolCallsPanelFactory) Key() string  { return "renderer.tools.panel.v1" }

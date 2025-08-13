@@ -52,6 +52,10 @@ type EntityPropsUpdatedMsg struct {
     ID    EntityID
     Patch map[string]any
 }
+// Size and focus messages
+type EntitySetSizeMsg struct { Width, Height int }
+type EntityFocusMsg struct{ ID EntityID }
+type EntityBlurMsg struct{ ID EntityID }
 
 // Actions that parent can request from models
 type EntityCopyTextMsg struct { ID EntityID }
@@ -60,5 +64,17 @@ type EntityCopyCodeMsg struct { ID EntityID }
 // Messages emitted by models for side-effects handled by parent
 type CopyTextRequestedMsg struct { Text string }
 type CopyCodeRequestedMsg struct { Code string }
+
+// Entity lifecycle messages as Bubble Tea messages (optional alternative to direct calls)
+type EntityCreatedMsg struct {
+    ID       EntityID
+    Renderer RendererDescriptor
+    Props    map[string]any
+    StartedAt time.Time
+}
+type EntityCompletedMsg struct {
+    ID     EntityID
+    Result map[string]any
+}
 
 

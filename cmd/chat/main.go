@@ -75,8 +75,8 @@ func main() {
 func runFakeBackend(cmd *cobra.Command, args []string) {
     runChatWithOptions(func() chat.Backend { return NewFakeBackend() }, func(reg *timeline.Registry) {
         log.Debug().Str("component", "main").Msg("registering tool renderers via timeline hook")
-        reg.Register(&ToolWeatherRenderer{})
-        reg.Register(&ToolWebSearchRenderer{})
+        reg.RegisterModelFactory(ToolWeatherFactory{})
+        reg.RegisterModelFactory(ToolWebSearchFactory{})
         reg.RegisterModelFactory(CheckboxFactory{})
     })
 }

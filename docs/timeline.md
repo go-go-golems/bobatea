@@ -16,20 +16,20 @@ SectionType: Tutorial
 
 ## Timeline UI (Turn-centric) for Bobatea
 
-The Timeline package provides a self-contained, append-only visualization layer for chat/agent UIs. It decouples provider streaming and orchestration from rendering: engines and middlewares emit provider-agnostic events that are translated into UI entities; the timeline renders those entities using pluggable renderers, with width/theme-aware caching. This yields a flexible UI capable of simple text, tool-call panels, diffs, and more.
+The Timeline package provides a self-contained, append-only visualization layer for chat/agent UIs. It decouples provider streaming and orchestration from rendering: engines and middlewares emit provider-agnostic events that are translated into UI entities; the timeline renders those entities using Bubble Tea entity models (no stateless renderers or cache). This yields a flexible UI capable of simple text, tool-call panels, diffs, and more.
 
 ### What you’ll build
 
 - A standalone demo that shows streaming text and tool calls, with no LLM dependency
 - A reusable `timeline` package with:
   - An append-only controller and store
-  - A renderer registry (plug in text/panels/diffs)
-  - A per-entity render cache
+  - A model factory registry (plug in text/panels/diffs)
+  - No render cache (models render directly)
   - Bubble Tea-friendly surface (viewport-based)
 
 ## Core concepts
 
-The timeline visualizes immutable creation order with incremental updates. An entity has a stable identity and lifecycle. Renderers convert entity props into strings (for now) that fit the current width/theme. Caching ensures we only re-render pieces that changed.
+The timeline visualizes immutable creation order with incremental updates. An entity has a stable identity and lifecycle. Bubble Tea models convert entity props into strings that fit the current width/theme.
 
 - Entity identity: `{ RunID?, TurnID?, BlockID?, LocalID, Kind }`
 - Lifecycle messages:
@@ -43,11 +43,11 @@ The timeline visualizes immutable creation order with incremental updates. An en
 ## Package layout
 
 - `bobatea/pkg/timeline/types.go` — entity IDs, descriptors, lifecycle messages
-- `bobatea/pkg/timeline/registry.go` — renderer registry
+- `bobatea/pkg/timeline/registry.go` — entity model factory registry
 - `bobatea/pkg/timeline/store.go` — append-only entity store
-- `bobatea/pkg/timeline/cache.go` — per-entity render cache
+- `bobatea/pkg/timeline/cache.go` — removed (models render directly)
 - `bobatea/pkg/timeline/controller.go` — applies lifecycle messages, renders via registry
-- `bobatea/pkg/timeline/renderers.go` — minimal renderers (`llm_text`, `tool_calls_panel`, fallback)
+- `bobatea/pkg/timeline/renderers` — Bubble Tea models (`llm_text`, `tool_calls_panel`, `plain`)
 - Demo: `bobatea/cmd/timeline-demo/main.go`
 
 ## Minimal API (pseudocode)
@@ -78,12 +78,15 @@ type UIEntityUpdated struct {
 type UIEntityCompleted struct { ID EntityID; Result map[string]any }
 type UIEntityDeleted struct { ID EntityID }
 
-// Renderer interface
-type Renderer interface {
-  Key() string
-  Kind() string
-  Render(props map[string]any, width int, theme string) (string, int, error)
-  RelevantPropsHash(props map[string]any) string
+// EntityModel interface
+type EntityModel interface {
+  tea.Model
+  View() string
+  OnProps(patch map[string]any)
+  OnCompleted(result map[string]any)
+  SetSize(width, height int)
+  Focus()
+  Blur()
 }
 
 // Controller (selected methods)
@@ -148,34 +151,29 @@ Rendering is additive and width-aware:
 
 - The viewport height reserves 2 lines for a fixed header (see `bobatea/cmd/timeline-demo/main.go`).
 - For each entity (in append order):
-  1) The controller asks the registry for a renderer, by key then by kind
-  2) A cache lookup decides whether to reuse a previous render (same width, theme, props hash)
-  3) On a miss, the renderer produces a string; we cache and append it
+  1) The controller instantiates/updates a Bubble Tea model via the registered factory
+  2) The model receives selection/focus hints and renders itself with `View()`
 
 Example sequence (simplified):
 
 ```text
-Created llm_text → render "" (miss, store)
-Updated llm_text ("Hello") → invalidate → render (miss, store)
-Completed llm_text ("Hello, world!") → invalidate → render (miss, store)
+Created llm_text → model.OnProps → model.View
+Updated llm_text ("Hello") → model.OnProps → model.Update(EntityPropsUpdatedMsg)
+Completed llm_text ("Hello, world!") → model.OnCompleted → model.View
 ```
 
-## Extending with custom renderers
+## Extending with custom models
 
-Add a new renderer by implementing the interface and registering it:
+Add a new model by implementing the interface and registering a factory:
 
 ```go
-type MyRenderer struct{}
-func (r *MyRenderer) Key() string  { return "renderer.my_widget.v1" }
-func (r *MyRenderer) Kind() string { return "my_widget" }
-func (r *MyRenderer) RelevantPropsHash(p map[string]any) string { return hashOf(p) }
-func (r *MyRenderer) Render(p map[string]any, width int, theme string) (string, int, error) {
-  // return a wrapped string for now
-  return fmt.Sprintf("[my_widget] %v", p["title"]), 1, nil
-}
+type MyModelFactory struct{}
+func (MyModelFactory) Key() string  { return "renderer.my_widget.v1" }
+func (MyModelFactory) Kind() string { return "my_widget" }
+func (MyModelFactory) NewEntityModel(initialProps map[string]any) timeline.EntityModel { /* return Bubble Tea model */ }
 
 reg := timeline.NewRegistry()
-reg.Register(&MyRenderer{})
+reg.RegisterModelFactory(MyModelFactory{})
 ```
 
 Then create/update entities with `RendererDescriptor{Kind: "my_widget"}` (or Key).
@@ -183,14 +181,14 @@ Then create/update entities with `RendererDescriptor{Kind: "my_widget"}` (or Key
 ## Design choices
 
 - Append-only ordering provides durable, predictable timelines for user navigation and debugging
-- Minimal string-based renderers keep the first iteration simple and composable; future work can adopt richer widget components
+- Bubble Tea models provide richer interactivity and composition
 - TurnStore translation (outside this package) is the intended source of UIEntity messages; it maps provider/middleware events to entities without inspecting Turn state
 
 ## Troubleshooting
 
 - Black screen or missing header: ensure WindowSizeMsg arrives; the demo reserves 2 header lines and logs viewport size. Resize the terminal to force a size event.
 - No updates on keypress: verify logs show `KeyMsg`; if not, the terminal may not be focused.
-- Performance/caching issues: inspect cache hit/miss logs; confirm props hashes are stable when content is unchanged.
+- Performance issues: ensure models avoid excessive recomputation in `View()`.
 
 ## Next steps
 

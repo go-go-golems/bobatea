@@ -25,6 +25,13 @@ func (m *PlainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
         m.selected = false
     case timeline.EntityPropsUpdatedMsg:
         if v.Patch != nil { m.OnProps(v.Patch) }
+    case timeline.EntitySetSizeMsg:
+        m.width = v.Width
+        return m, nil
+    case timeline.EntityCopyTextMsg:
+        return m, func() tea.Msg { return timeline.CopyTextRequestedMsg{Text: m.View()} }
+    case timeline.EntityCopyCodeMsg:
+        return m, func() tea.Msg { return timeline.CopyTextRequestedMsg{Text: m.View()} }
     }
     return m, nil
 }
@@ -44,10 +51,7 @@ func (m *PlainModel) OnProps(patch map[string]any) {
     for k, v := range patch { m.props[k] = v }
     if v, ok := patch["selected"].(bool); ok { m.selected = v }
 }
-func (m *PlainModel) OnCompleted(_ map[string]any) {}
-func (m *PlainModel) SetSize(w, _ int) { m.width = w }
-func (m *PlainModel) Focus() {}
-func (m *PlainModel) Blur()  {}
+// Removed OnCompleted/SetSize/Focus/Blur; handled via messages
 
 type PlainFactory struct{}
 func (PlainFactory) Key() string  { return "renderer.plain.v1" }

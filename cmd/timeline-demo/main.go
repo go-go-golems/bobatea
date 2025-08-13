@@ -60,6 +60,10 @@ func (m demoModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
         switch v.String() {
         case "q", "ctrl+c":
             return m, tea.Quit
+        case "c":
+            // Ask selected entity to copy either code block or text
+            // First try code; if none, model should fall back to plain text
+            return m, m.ctrl.SendToSelected(timeline.EntityCopyCodeMsg{})
         case "t":
             // start a streaming text entity
             id := timeline.EntityID{LocalID: fmt.Sprintf("text-%d", m.counter), Kind: "llm_text"}
@@ -95,6 +99,10 @@ func (m demoModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
         log.Info().Str("entity", v.id.LocalID).Int64("version", v.version).Msg("addTool")
         // Replace calls entirely for simplicity in demo
         m.ctrl.OnUpdated(timeline.UIEntityUpdated{ID: v.id, Patch: map[string]any{"calls": []any{v.call}}, Version: v.version, UpdatedAt: time.Now()})
+    case timeline.CopyTextRequestedMsg:
+        log.Info().Str("copied_text_len", fmt.Sprintf("%d", len(v.Text))).Msg("CopyTextRequested")
+    case timeline.CopyCodeRequestedMsg:
+        log.Info().Str("copied_code_len", fmt.Sprintf("%d", len(v.Code))).Msg("CopyCodeRequested")
     }
     m.vp.SetContent(m.ctrl.View())
     return m, nil

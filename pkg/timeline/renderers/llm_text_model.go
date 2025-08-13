@@ -43,11 +43,24 @@ func (m *LLMTextModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
             m.OnProps(v.Patch)
         }
         return m, nil
+    case timeline.EntitySetSizeMsg:
+        m.width = v.Width
+        return m, nil
+    case timeline.EntityFocusMsg:
+        m.focused = true
+        return m, nil
+    case timeline.EntityBlurMsg:
+        m.focused = false
+        return m, nil
     case timeline.EntityCopyTextMsg:
         return m, func() tea.Msg { return timeline.CopyTextRequestedMsg{Text: m.text} }
     case timeline.EntityCopyCodeMsg:
         code := extractFirstCodeBlock(m.text)
-        return m, func() tea.Msg { return timeline.CopyCodeRequestedMsg{Code: code} }
+        if code != "" {
+            return m, func() tea.Msg { return timeline.CopyCodeRequestedMsg{Code: code} }
+        }
+        // Fallback to copying text when no code block present
+        return m, func() tea.Msg { return timeline.CopyTextRequestedMsg{Text: m.text} }
     }
     return m, nil
 }
@@ -101,15 +114,7 @@ func (m *LLMTextModel) OnProps(patch map[string]any) {
     if v, ok := patch["metadata"].(map[string]any); ok { m.metadata = v }
 }
 
-func (m *LLMTextModel) OnCompleted(result map[string]any) {
-    if v, ok := result["text"].(string); ok { m.text = v }
-}
-
-func (m *LLMTextModel) SetSize(w, _ int) {
-    m.width = w
-}
-func (m *LLMTextModel) Focus()            { m.focused = true }
-func (m *LLMTextModel) Blur()             { m.focused = false }
+// Removed OnCompleted/SetSize/Focus/Blur; handled via messages
 
 // LLMTextFactory registers the model for llm_text renderer.
 type LLMTextFactory struct{

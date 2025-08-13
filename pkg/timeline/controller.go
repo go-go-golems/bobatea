@@ -10,8 +10,7 @@ import (
 
 type Controller struct {
 	store    *entityStore
-	cache    *renderCache
-	reg      *Registry
+    reg      *Registry
 	width    int
 	height   int
 	theme    string
@@ -22,32 +21,32 @@ type Controller struct {
 }
 
 func NewController(reg *Registry) *Controller {
-	c := &Controller{store: newEntityStore(), cache: newRenderCache(), reg: reg, selected: -1}
+    c := &Controller{store: newEntityStore(), reg: reg, selected: -1}
 	log.Debug().Str("component", "timeline_controller").Msg("initialized controller")
 	return c
 }
 
 func (c *Controller) SetSize(w, h int) {
 	c.width, c.height = w, h
-	// Propagate new size to interactive models
-	for _, id := range c.store.order {
-		if rec, ok := c.store.get(id); ok {
-			if rec.model != nil {
-				rec.model.SetSize(w, h)
-			}
-		}
-	}
+    // Broadcast size to models via message
+    for _, id := range c.store.order {
+        if rec, ok := c.store.get(id); ok {
+            if rec.model != nil {
+                rec.model.Update(EntitySetSizeMsg{Width: w, Height: h})
+            }
+        }
+    }
 }
 func (c *Controller) SetTheme(theme string) {
 	c.theme = theme
-	// Propagate theme to interactive models
-	for _, id := range c.store.order {
-		if rec, ok := c.store.get(id); ok {
-			if rec.model != nil {
-				rec.model.OnProps(map[string]any{"theme": theme})
-			}
-		}
-	}
+    // Propagate theme to interactive models via props update message
+    for _, id := range c.store.order {
+        if rec, ok := c.store.get(id); ok {
+            if rec.model != nil {
+                rec.model.Update(EntityPropsUpdatedMsg{ID: rec.ID, Patch: map[string]any{"theme": theme}})
+            }
+        }
+    }
 }
 
 func (c *Controller) OnCreated(e UIEntityCreated) {
@@ -56,21 +55,17 @@ func (c *Controller) OnCreated(e UIEntityCreated) {
 	// Instantiate interactive model if a factory is registered
 	if e.Renderer.Key != "" {
 		if f, ok := c.reg.GetModelFactoryByKey(e.Renderer.Key); ok {
-			rec.model = f.NewEntityModel(rec.Props)
-			rec.model.SetSize(c.width, c.height)
-			if c.theme != "" {
-				rec.model.OnProps(map[string]any{"theme": c.theme})
-			}
+            rec.model = f.NewEntityModel(rec.Props)
+            if c.width > 0 || c.height > 0 { rec.model.Update(EntitySetSizeMsg{Width: c.width, Height: c.height}) }
+            if c.theme != "" { rec.model.Update(EntityPropsUpdatedMsg{ID: rec.ID, Patch: map[string]any{"theme": c.theme}}) }
 		}
 	}
 	// Fallback: try factory by kind when no key-specific factory is found
 	if rec.model == nil && e.Renderer.Kind != "" {
 		if f, ok := c.reg.GetModelFactoryByKind(e.Renderer.Kind); ok {
-			rec.model = f.NewEntityModel(rec.Props)
-			rec.model.SetSize(c.width, c.height)
-			if c.theme != "" {
-				rec.model.OnProps(map[string]any{"theme": c.theme})
-			}
+            rec.model = f.NewEntityModel(rec.Props)
+            if c.width > 0 || c.height > 0 { rec.model.Update(EntitySetSizeMsg{Width: c.width, Height: c.height}) }
+            if c.theme != "" { rec.model.Update(EntityPropsUpdatedMsg{ID: rec.ID, Patch: map[string]any{"theme": c.theme}}) }
 		}
 	}
 	c.store.add(rec)
@@ -83,14 +78,9 @@ func (c *Controller) OnUpdated(e UIEntityUpdated) {
 	if rec, ok := c.store.get(e.ID); ok {
 		log.Debug().Str("component", "timeline_controller").Str("event", "updated").Str("kind", e.ID.Kind).Str("local_id", e.ID.LocalID).Int64("version", e.Version).Int("patch_len", len(e.Patch)).Msg("applying update")
 		applyPatch(rec.Props, e.Patch)
-		if rec.model != nil {
-			rec.model.OnProps(e.Patch)
-			// Also emit a structured props-updated message for models that react in Update
-			rec.model.Update(EntityPropsUpdatedMsg{ID: rec.ID, Patch: e.Patch})
-		}
+        if rec.model != nil { rec.model.Update(EntityPropsUpdatedMsg{ID: rec.ID, Patch: e.Patch}) }
 		rec.Version = max64(rec.Version, e.Version)
 		rec.UpdatedAt = e.UpdatedAt.UnixNano()
-		c.cache.invalidateByID(e.ID)
 	}
 }
 
@@ -101,17 +91,13 @@ func (c *Controller) OnCompleted(e UIEntityCompleted) {
 			applyPatch(rec.Props, e.Result)
 		}
 		rec.Completed = true
-		if rec.model != nil {
-			rec.model.OnCompleted(e.Result)
-		}
-		c.cache.invalidateByID(e.ID)
+        if rec.model != nil { rec.model.Update(EntityPropsUpdatedMsg{ID: rec.ID, Patch: e.Result}) }
 	}
 }
 
 func (c *Controller) OnDeleted(e UIEntityDeleted) {
 	log.Debug().Str("component", "timeline_controller").Str("event", "deleted").Str("kind", e.ID.Kind).Str("local_id", e.ID.LocalID).Msg("applying delete")
 	c.store.remove(e.ID)
-	c.cache.invalidateByID(e.ID)
 	if c.selected >= len(c.store.order) {
 		c.selected = len(c.store.order) - 1
 	}
@@ -159,57 +145,25 @@ func (c *Controller) View() string {
 	var b strings.Builder
 	hits := 0
 	misses := 0
-	for _, id := range c.store.order {
-		rec, _ := c.store.get(id)
-		if rec.model != nil {
-			// For interactive models, update selection/focus and render
-			sel := c.selectionVisible && c.selected >= 0 && keyID(id) == keyID(c.store.order[c.selected])
-			rec.model.OnProps(map[string]any{"selected": sel})
-			if sel {
-				rec.model.Update(EntitySelectedMsg{ID: rec.ID})
-			} else {
-				rec.model.Update(EntityUnselectedMsg{ID: rec.ID})
-			}
-			if sel && c.entering {
-				rec.model.Focus()
-			} else {
-				rec.model.Blur()
-			}
-			s := rec.model.View()
-			b.WriteString(s)
-			b.WriteByte('\n')
-			continue
-		}
-		r := c.pickRenderer(rec)
-		// Clone props and annotate selection/focus
-		annotated := cloneMap(rec.Props)
-		if c.selectionVisible && c.selected >= 0 {
-			// Identify current entity index by comparing keys
-			if keyID(id) == keyID(c.store.order[c.selected]) {
-				annotated["selected"] = true
-				if rec.model != nil {
-					rec.model.Focus()
-				} else if c.entering {
-					annotated["focused"] = true
-				}
-			}
-		}
-		ck := cacheKey{RendererKey: r.Key(), EntityKey: keyID(id), Width: c.width, Theme: c.theme, PropsHash: r.RelevantPropsHash(annotated)}
-		if s, _, ok := c.cache.get(ck); ok {
-			b.WriteString(s)
-			b.WriteByte('\n')
-			hits++
-			continue
-		}
-		s, h, _ := r.Render(annotated, c.width, c.theme)
-		if h <= 0 {
-			h = lipLines(s)
-		}
-		c.cache.set(ck, s, h)
-		b.WriteString(s)
-		b.WriteByte('\n')
-		misses++
-	}
+    for _, id := range c.store.order {
+        rec, _ := c.store.get(id)
+        // Interactive models are now the only rendering path
+        sel := c.selectionVisible && c.selected >= 0 && keyID(id) == keyID(c.store.order[c.selected])
+        if rec.model != nil {
+            rec.model.Update(EntityPropsUpdatedMsg{ID: rec.ID, Patch: map[string]any{"selected": sel}})
+            if sel { rec.model.Update(EntitySelectedMsg{ID: rec.ID}) } else { rec.model.Update(EntityUnselectedMsg{ID: rec.ID}) }
+            if sel && c.entering { rec.model.Update(EntityFocusMsg{ID: rec.ID}) } else { rec.model.Update(EntityBlurMsg{ID: rec.ID}) }
+            s := rec.model.View()
+            b.WriteString(s)
+            b.WriteByte('\n')
+            continue
+        }
+        // If no model, render a minimal plain line
+        s := "[entity] " + rec.ID.Kind
+        b.WriteString(s)
+        b.WriteByte('\n')
+        misses++
+    }
 	out := b.String()
 	log.Trace().
 		Str("component", "timeline_controller").
@@ -224,56 +178,26 @@ func (c *Controller) View() string {
 // ViewAndSelectedPosition returns the full rendered view and the offset/height of the selected entity
 func (c *Controller) ViewAndSelectedPosition() (string, int, int) {
 	view := c.View()
-	if c.selected < 0 || c.selected >= len(c.store.order) {
-		return view, 0, 0
-	}
-	// naive computation: split by lines and sum heights of entities until selected
-	offset := 0
-	for idx, id := range c.store.order {
-		rec, _ := c.store.get(id)
-		// If we have an interactive model, render and measure directly
-		if rec.model != nil {
-			sel := idx == c.selected && c.selectionVisible
-			rec.model.OnProps(map[string]any{"selected": sel})
-			if sel {
-				rec.model.Update(EntitySelectedMsg{ID: rec.ID})
-			} else {
-				rec.model.Update(EntityUnselectedMsg{ID: rec.ID})
-			}
-			s := rec.model.View()
-			h := lipLines(s)
-			if idx == c.selected {
-				return view, offset, h
-			}
-			offset += h
-			continue
-		}
-		// Stateless renderer path with cache
-		r := c.pickRenderer(rec)
-		annotated := cloneMap(rec.Props)
-		if idx == c.selected {
-			annotated["selected"] = true
-		}
-		ck := cacheKey{RendererKey: r.Key(), EntityKey: keyID(id), Width: c.width, Theme: c.theme, PropsHash: r.RelevantPropsHash(annotated)}
-		if s, h, ok := c.cache.get(ck); ok {
-			if h <= 0 {
-				h = lipLines(s)
-			}
-			if idx == c.selected {
-				return view, offset, h
-			}
-			offset += h
-			continue
-		}
-		s, h, _ := r.Render(annotated, c.width, c.theme)
-		if h <= 0 {
-			h = lipLines(s)
-		}
-		if idx == c.selected {
-			return view, offset, h
-		}
-		offset += h
-	}
+    if c.selected < 0 || c.selected >= len(c.store.order) { return view, 0, 0 }
+    // naive computation: split by lines and sum heights
+    offset := 0
+    for idx, id := range c.store.order {
+        rec, _ := c.store.get(id)
+        sel := idx == c.selected && c.selectionVisible
+        if rec.model != nil {
+            rec.model.Update(EntityPropsUpdatedMsg{ID: rec.ID, Patch: map[string]any{"selected": sel}})
+            if sel { rec.model.Update(EntitySelectedMsg{ID: rec.ID}) } else { rec.model.Update(EntityUnselectedMsg{ID: rec.ID}) }
+            s := rec.model.View()
+            h := lipLines(s)
+            if idx == c.selected { return view, offset, h }
+            offset += h
+            continue
+        }
+        s := "[entity] " + rec.ID.Kind
+        h := lipLines(s)
+        if idx == c.selected { return view, offset, h }
+        offset += h
+    }
 	return view, 0, 0
 }
 
@@ -381,7 +305,7 @@ func (c *Controller) UpdateSelected(patch map[string]any) bool {
 		return false
 	}
 	applyPatch(rec.Props, patch)
-	c.cache.invalidateByID(id)
+    if rec.model != nil { rec.model.Update(EntityPropsUpdatedMsg{ID: rec.ID, Patch: patch}) }
 	return true
 }
 
@@ -393,15 +317,7 @@ func (c *Controller) Unselect() {
 	}
 }
 
-func (c *Controller) pickRenderer(rec *entityRecord) Renderer {
-	if r, ok := c.reg.GetByKey(rec.Renderer.Key); ok {
-		return r
-	}
-	if r, ok := c.reg.GetByKind(rec.Renderer.Kind); ok {
-		return r
-	}
-	return &plainRenderer{}
-}
+// pickRenderer removed; models render themselves now.
 
 func cloneMap(m map[string]any) map[string]any {
 	if m == nil {

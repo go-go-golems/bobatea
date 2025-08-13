@@ -10,99 +10,133 @@ import (
     "github.com/rs/zerolog/log"
 )
 
-// ToolWeatherRenderer renders a weather tool call/result
-type ToolWeatherRenderer struct{}
-
-var _ timeline.Renderer = (*ToolWeatherRenderer)(nil)
-
-func (r *ToolWeatherRenderer) Key() string  { return "renderer.tool.get_weather.v1" }
-func (r *ToolWeatherRenderer) Kind() string { return "tool_call" }
-func (r *ToolWeatherRenderer) RelevantPropsHash(props map[string]any) string {
-    return fmt.Sprintf("%v|sel=%v", props, props["selected"])
+// ToolWeatherModel renders a weather tool call/result as a Bubble Tea entity model
+type ToolWeatherModel struct{
+    location string
+    units    string
+    result   string
+    spin     int
+    width    int
+    selected bool
 }
-func (r *ToolWeatherRenderer) Render(props map[string]any, width int, theme string) (string, int, error) {
+
+func (m *ToolWeatherModel) Init() tea.Cmd { return nil }
+func (m *ToolWeatherModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+    switch v := msg.(type) {
+    case timeline.EntitySelectedMsg:
+        m.selected = true
+    case timeline.EntityUnselectedMsg:
+        m.selected = false
+    case timeline.EntityPropsUpdatedMsg:
+        if v.Patch != nil { m.OnProps(v.Patch) }
+    case timeline.EntitySetSizeMsg:
+        m.width = v.Width
+        return m, nil
+    }
+    return m, nil
+}
+func (m *ToolWeatherModel) View() string {
     st := chatstyle.DefaultStyles()
     sty := st.UnselectedMessage
-    if sel, _ := props["selected"].(bool); sel { sty = st.SelectedMessage }
+    if m.selected { sty = st.SelectedMessage }
     frameW, _ := sty.GetFrameSize()
-    inner := width - frameW
+    inner := m.width - frameW
     if inner < 0 { inner = 0 }
 
-    location, _ := props["location"].(string)
-    units, _ := props["units"].(string)
+    units := m.units
     if units == "" { units = "celsius" }
-    title := fmt.Sprintf("[Weather] %s (%s)", safeText(location), units)
+    title := fmt.Sprintf("[Weather] %s (%s)", safeText(m.location), units)
     lines := []string{truncate(title, inner)}
-
-    if res, ok := props["result"].(string); ok && res != "" {
-        lines = append(lines, truncate("- Result: "+res, inner))
+    if m.result != "" {
+        lines = append(lines, truncate("- Result: "+m.result, inner))
     } else {
-        // show spinner while fetching
-        spinIdx := 0
-        if v, ok := props["spin"].(int); ok { spinIdx = v }
-        lines = append(lines, truncate(fmt.Sprintf("- Status: fetching %s", spinnerFrame(spinIdx)), inner))
+        lines = append(lines, truncate(fmt.Sprintf("- Status: fetching %s", spinnerFrame(m.spin)), inner))
     }
-
     content := strings.Join(lines, "\n")
-    panel := sty.Width(width - sty.GetHorizontalPadding()).Render(content)
-    h := 1 + strings.Count(panel, "\n")
-    log.Debug().Str("renderer", r.Key()).Int("len", len(panel)).Msg("rendered")
-    return panel, h, nil
+    return sty.Width(m.width - sty.GetHorizontalPadding()).Render(content)
+}
+func (m *ToolWeatherModel) OnProps(patch map[string]any) {
+    if v, ok := patch["location"].(string); ok { m.location = v }
+    if v, ok := patch["units"].(string); ok { m.units = v }
+    if v, ok := patch["result"].(string); ok { m.result = v }
+    if v, ok := patch["spin"].(int); ok { m.spin = v }
+    if v, ok := patch["selected"].(bool); ok { m.selected = v }
+}
+// Removed OnCompleted/SetSize/Focus/Blur; handled via messages
+
+type ToolWeatherFactory struct{}
+func (ToolWeatherFactory) Key() string  { return "renderer.tool.get_weather.v1" }
+func (ToolWeatherFactory) Kind() string { return "tool_call" }
+func (ToolWeatherFactory) NewEntityModel(initialProps map[string]any) timeline.EntityModel {
+    m := &ToolWeatherModel{}
+    m.OnProps(initialProps)
+    return m
 }
 
-// ToolWebSearchRenderer renders a web_search tool call/result
-type ToolWebSearchRenderer struct{}
-
-var _ timeline.Renderer = (*ToolWebSearchRenderer)(nil)
-
-func (r *ToolWebSearchRenderer) Key() string  { return "renderer.tool.web_search.v1" }
-func (r *ToolWebSearchRenderer) Kind() string { return "tool_call" }
-func (r *ToolWebSearchRenderer) RelevantPropsHash(props map[string]any) string {
-    return fmt.Sprintf("%v|sel=%v", props, props["selected"])
+// ToolWebSearchModel renders a web_search tool call/result as a Bubble Tea model
+type ToolWebSearchModel struct{
+    query   string
+    results []string
+    result  string
+    spin    int
+    width   int
+    selected bool
 }
-func (r *ToolWebSearchRenderer) Render(props map[string]any, width int, theme string) (string, int, error) {
+
+func (m *ToolWebSearchModel) Init() tea.Cmd { return nil }
+func (m *ToolWebSearchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+    switch v := msg.(type) {
+    case timeline.EntitySelectedMsg:
+        m.selected = true
+    case timeline.EntityUnselectedMsg:
+        m.selected = false
+    case timeline.EntityPropsUpdatedMsg:
+        if v.Patch != nil { m.OnProps(v.Patch) }
+    case timeline.EntitySetSizeMsg:
+        m.width = v.Width
+        return m, nil
+    }
+    return m, nil
+}
+func (m *ToolWebSearchModel) View() string {
     st := chatstyle.DefaultStyles()
     sty := st.UnselectedMessage
-    if sel, _ := props["selected"].(bool); sel { sty = st.SelectedMessage }
+    if m.selected { sty = st.SelectedMessage }
     frameW, _ := sty.GetFrameSize()
-    inner := width - frameW
+    inner := m.width - frameW
     if inner < 0 { inner = 0 }
 
-    query, _ := props["query"].(string)
-    title := fmt.Sprintf("[Web Search] %s", safeText(query))
+    title := fmt.Sprintf("[Web Search] %s", safeText(m.query))
     lines := []string{truncate(title, inner)}
-
-    if resultsAny, ok := props["results"].([]string); ok {
-        if len(resultsAny) > 0 {
-            lines = append(lines, truncate("- Results:", inner))
-            for i, link := range resultsAny {
-                lines = append(lines, truncate(fmt.Sprintf("  %d) %s", i+1, link), inner))
-            }
+    if len(m.results) > 0 {
+        lines = append(lines, truncate("- Results:", inner))
+        for i, link := range m.results {
+            lines = append(lines, truncate(fmt.Sprintf("  %d) %s", i+1, link), inner))
         }
-    } else if resListAny, ok := props["results"].([]any); ok {
-        if len(resListAny) > 0 {
-            lines = append(lines, truncate("- Results:", inner))
-            for i, v := range resListAny {
-                lines = append(lines, truncate(fmt.Sprintf("  %d) %v", i+1, v), inner))
-            }
-        }
+    } else if m.result != "" {
+        lines = append(lines, truncate("- Summary: "+m.result, inner))
+    } else {
+        lines = append(lines, truncate(fmt.Sprintf("- Status: querying %s", spinnerFrame(m.spin)), inner))
     }
-
-    if _, hasResults := props["results"]; !hasResults {
-        if res, ok := props["result"].(string); ok && res != "" {
-            lines = append(lines, truncate("- Summary: "+res, inner))
-        } else {
-            spinIdx := 0
-            if v, ok := props["spin"].(int); ok { spinIdx = v }
-            lines = append(lines, truncate(fmt.Sprintf("- Status: querying %s", spinnerFrame(spinIdx)), inner))
-        }
-    }
-
     content := strings.Join(lines, "\n")
-    panel := sty.Width(width - sty.GetHorizontalPadding()).Render(content)
-    h := 1 + strings.Count(panel, "\n")
-    log.Debug().Str("renderer", r.Key()).Int("len", len(panel)).Msg("rendered")
-    return panel, h, nil
+    return sty.Width(m.width - sty.GetHorizontalPadding()).Render(content)
+}
+func (m *ToolWebSearchModel) OnProps(patch map[string]any) {
+    if v, ok := patch["query"].(string); ok { m.query = v }
+    if v, ok := patch["results"].([]string); ok { m.results = v }
+    if v, ok := patch["result"].(string); ok { m.result = v }
+    if v, ok := patch["spin"].(int); ok { m.spin = v }
+    if v, ok := patch["selected"].(bool); ok { m.selected = v }
+}
+// Removed OnCompleted/SetSize/Focus/Blur; handled via messages
+
+type ToolWebSearchFactory struct{}
+func (ToolWebSearchFactory) Key() string  { return "renderer.tool.web_search.v1" }
+func (ToolWebSearchFactory) Kind() string { return "tool_call" }
+func (ToolWebSearchFactory) NewEntityModel(initialProps map[string]any) timeline.EntityModel {
+    m := &ToolWebSearchModel{}
+    m.OnProps(initialProps)
+    return m
 }
 
 func truncate(s string, n int) string {
