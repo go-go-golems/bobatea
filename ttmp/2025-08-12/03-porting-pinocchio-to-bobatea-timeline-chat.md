@@ -358,6 +358,39 @@ Pitfalls and tips:
 - Chat runner and CLI wiring
   - `chatrunner`: `bobachat.InitialModel(backend, ...)` with router-based readiness and seeding of the backend from conversation (for now) so timeline shows history.
   - CLI chat mode (`cmds/cmd.go`): waits for `<-router.Running()` before auto-submitting; seeds backend from a Turn built out of `system`, pre-seeded `messages`, and (later) the runtime prompt.
+  - When seeding, backend now emits UI entities for prior blocks (user/assistant only) to avoid missing history in chat; system blocks are intentionally not emitted to prevent duplication with other previews.
+
+- Prompt templating (render templates before model invocation)
+  - Added `Variables map[string]interface{}` to `run.RunContext` and `run.WithVariables(...)` to pass parsed layer variables.
+  - Implemented `buildInitialTurnRendered` in `cmd.go` to render `systemPrompt`, each `message`, and the `prompt` using `glazed/pkg/helpers/templating` prior to building a `turns.Turn`.
+  - Used rendered Turn in blocking mode, for chat seeding, and for chat auto-start submission (so the UI sends the rendered prompt text, not the raw template).
+  - Example wiring when invoking the run:
+
+  ```246:255:pinocchio/pkg/cmds/cmd.go
+  messages, err := g.RunWithOptions(ctx,
+      run.WithStepSettings(stepSettings),
+      run.WithWriter(w),
+      run.WithRunMode(runMode),
+      run.WithUISettings(uiSettings),
+      run.WithConversationManager(manager),
+      run.WithRouter(router),
+      run.WithVariables(parsedLayers.GetDefaultParameterLayer().Parameters.ToMap()),
+  )
+  ```
+
+  Rendering helper and usage:
+
+  ```88:101:pinocchio/pkg/cmds/cmd.go
+  func buildInitialTurnRendered(systemPrompt string, msgs []*conversation.Message, userPrompt string, vars map[string]interface{}) (*turns.Turn, error) {
+      sp, err := renderTemplateString("system-prompt", systemPrompt, vars)
+      if err != nil { return nil, err }
+      renderedMsgs, err := renderMessages(msgs, vars)
+      if err != nil { return nil, err }
+      up, err := renderTemplateString("prompt", userPrompt, vars)
+      if err != nil { return nil, err }
+      return buildInitialTurn(sp, renderedMsgs, up), nil
+  }
+  ```
 
 - Turn-first flows
   - Added `buildInitialTurn(systemPrompt, messages, userPrompt)` and used it in blocking and chat flows. Blocking mode runs inference on a Turn and converts back to conversation only for output.
