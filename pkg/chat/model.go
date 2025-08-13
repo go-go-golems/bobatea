@@ -211,6 +211,13 @@ func (m model) Init() tea.Cmd {
 func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
+	// If an error is visible, allow quick dismissal with Esc or Enter
+	if m.state == StateError {
+		if msg.String() == "esc" || msg.String() == "enter" {
+			return m.handleUserAction(DismissErrorMsg{})
+		}
+	}
+
 	switch {
 	case key.Matches(msg, m.keyMap.TriggerWeatherTool):
 		log.Debug().Str("component", "chat").Str("key", msg.String()).Msg("TriggerWeatherTool pressed")
@@ -378,6 +385,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ErrorMsg:
 		logger.Trace().Str("error", msg_.Error()).Msg("Error message received")
 		m.err = msg_
+		m.state = StateError
+		m.updateKeyBindings()
 		return m, nil
 
 	case conversationui.StreamCompletionMsg,
@@ -1137,11 +1146,9 @@ func (m model) handleUserAction(msg UserActionMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case DismissErrorMsg:
-		if m.state == StateError {
-			m.err = nil
-			m.state = StateUserInput
-			m.updateKeyBindings()
-		}
+		m.err = nil
+		m.state = StateUserInput
+		m.updateKeyBindings()
 
 	case ReplaceInputTextMsg:
 		m.replaceInputText(msg_.Text)
