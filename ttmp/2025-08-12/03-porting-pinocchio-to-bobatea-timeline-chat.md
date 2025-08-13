@@ -286,14 +286,119 @@ func StepChatForwardFunc(p *tea.Program) func(msg *message.Message) error {
 - If Pinocchio still needs a stored conversation for non-UI flows (e.g., exporting), it can maintain it independently of the chat UI.
 - Ensure the backend respects the “single stream at a time” invariant used by the chat model (ignore submits while streaming). The chat widget already guards this.
 
+## Carrying conversation context across Turns (critical)
+
+Turns are a normalized, provider-agnostic representation of interaction state. To continue a cohesive conversation from one step to the next, you must carry forward all prior Blocks when constructing the next Turn. Practically, this means:
+
+- On each new user action (submit), build the next Turn by starting from the previous Turn’s Blocks, then append the new user Block.
+- Engines read this full Turn and produce additional Blocks (e.g., `llm_text`, `tool_call`, `tool_use`).
+- After the engine completes, persist the updated Turn (or merge the new Blocks back into your long-lived Turn state) so the next iteration includes the full context again.
+
+Two common patterns:
+
+1) Rolling Turn (single growing Turn)
+
+```go
+// Keep one Turn that accumulates Blocks over time
+type Session struct{ Current *turns.Turn }
+
+// On each prompt:
+turn := clone(session.Current)              // shallow copy slice and metadata as needed
+turns.AppendBlock(turn, turns.NewUserTextBlock(userPrompt))
+updated, _ := engine.RunInference(ctx, turn)
+session.Current = updated                   // now contains prior + newly appended Blocks
+```
+
+2) Turn log + reduce (append immutable Turns, then derive current Blocks)
+
+```go
+type Session struct{ History []*turns.Turn }
+
+func reduce(history []*turns.Turn) *turns.Turn {
+    out := &turns.Turn{}
+    for _, t := range history { turns.AppendBlocks(out, t.Blocks...) }
+    return out
+}
+
+// On prompt:
+seed := reduce(session.History)
+turns.AppendBlock(seed, turns.NewUserTextBlock(userPrompt))
+updated, _ := engine.RunInference(ctx, seed)
+session.History = append(session.History, updated)
+```
+
+UI implications:
+
+- The backend should maintain and update this Turn (or the reduced Turn) so timeline entities reflect the whole conversation as it evolves.
+- When starting the chat UI mid-session, seed the backend with the fully reduced Turn so the timeline contains prior assistant/user/tool Blocks.
+
+Pitfalls and tips:
+
+- Do not drop prior Blocks, or the provider will lose context and replies will drift.
+- Avoid duplicating Blocks. If you capture streaming partials as a growing assistant text, either patch a single `llm_text` entity (and update the corresponding Block’s text) or replace the last assistant text Block; don’t append a fresh assistant text Block per token.
+- Tool workflows: carry both `tool_call` and `tool_use` Blocks forward between iterations so the provider can see prior tool results.
+
 ## Checklist (migration tasks)
 
-- [ ] Update pinocchio/pkg/chatrunner/chat_runner.go to use bobachat.InitialModel(backend, ...).
-- [ ] Change pinocchio/pkg/ui/backend.go EngineBackend to implement Start(ctx, prompt string).
-- [ ] Rewrite StepChatForwardFunc to emit timeline.UIEntity* and boba_chat.BackendFinishedMsg, remove conversation sends.
-- [ ] Remove bobatea/pkg/chat/conversation imports from Pinocchio code paths.
+- [x] Update `pinocchio/pkg/chatrunner/chat_runner.go` to use `bobachat.InitialModel(backend, ...)`.
+- [x] Change `pinocchio/pkg/ui/backend.go` EngineBackend to implement `Start(ctx, prompt string)`.
+- [x] Rewrite `StepChatForwardFunc` to emit `timeline.UIEntity*` and `boba_chat.BackendFinishedMsg`, remove conversation sends.
+- [ ] Remove `bobatea/pkg/chat/conversation` imports from Pinocchio code paths (partially done; still present in some files for legacy compatibility).
 - [ ] Verify interactive behaviors (selection, focus, copy) work with the timeline models.
 - [ ] Delete or refactor any dev tooling that depended on Stream* messages.
+- [x] Turn-first flows: build initial Turn from `system` + pre-seeded `messages` + `prompt` (`buildInitialTurn`) and seed backend before auto-submit.
+- [x] Implement log + reduce strategy in backend (`history []*turns.Turn` + `reduceHistory()`) so each run carries full prior Blocks.
+
+## What we changed in this codebase (so far)
+
+- Backend API and event mapping
+  - Implemented `Start(ctx, prompt string)` in the Pinocchio backend; engines stream to UI via timeline UIEntity*.
+  - Rewrote `StepChatForwardFunc` to emit `UIEntityCreated/Updated/Completed` for `llm_text` and send `BackendFinishedMsg` when done.
+
+- Chat runner and CLI wiring
+  - `chatrunner`: `bobachat.InitialModel(backend, ...)` with router-based readiness and seeding of the backend from conversation (for now) so timeline shows history.
+  - CLI chat mode (`cmds/cmd.go`): waits for `<-router.Running()` before auto-submitting; seeds backend from a Turn built out of `system`, pre-seeded `messages`, and (later) the runtime prompt.
+
+- Turn-first flows
+  - Added `buildInitialTurn(systemPrompt, messages, userPrompt)` and used it in blocking and chat flows. Blocking mode runs inference on a Turn and converts back to conversation only for output.
+  - Backend gained `SetSeedTurn` and `SetSeedFromConversation`. Chat flow now seeds from Turn before auto-submit.
+
+- Logging and readiness
+  - Avoid arbitrary sleeps. Use the Watermill router’s `Running()` channel before sending auto-submit messages.
+  - Consolidated logging via standard zerolog; removed ad-hoc local loggers.
+
+## What we learned
+
+- UI auto-start must be aligned with router readiness (use `<-Running()`); otherwise messages can be dropped and the UI appears stuck.
+- The chat widget is timeline-first; conversation trees are not needed for rendering and should not be pushed into the UI layer.
+- Turns must carry the full set of Blocks across iterations to maintain provider context. Treat intermediate streaming as patching a single logical assistant message, not a series of disjoint messages.
+- Seeding is important: when transitioning into chat (or resuming), reduce prior state into a Turn and seed the backend, then continue the conversation with a new appended user Block.
+
+## Next steps
+
+1) Complete removal of `conversation.Manager`
+- Replace `chatrunner` seeding from Manager with `buildInitialTurn` (system/messages/prompt) and drop direct `conversation` APIs.
+- Update `run/context.go`, agents, and examples to produce Turns directly. Use `turns.BuildConversationFromTurn` only at output boundaries.
+
+---
+
+Later: 
+2) Tool visualization and workflows
+- Map `tool_call`/`tool_use` Blocks into timeline entities with dedicated interactive models (params/result viewers, copy actions).
+- Ensure tool Blocks are carried across iterations (log+reduce) so context is visible to the provider and the UI.
+
+3) Persistence and export
+- Introduce a session storage for `history []*turns.Turn` with save/load and export to conversation or JSON for reproducibility.
+- Add CLI flags to write/read history files.
+
+4) Robustness and UX
+- Add tests for `buildInitialTurn`, `reduceHistory`, and auto-start gating on `<-Running()`.
+- Handle engine errors and interrupts with clear UI entities and statuses.
+- Provide configuration for auto-start (on/off), prompt sources, and logging verbosity.
+
+5) Documentation and examples
+- Update examples/agents to Turn-first patterns.
+- Expand docs with a mini end-to-end sample (build Turn, run engine, map events to timeline, log+reduce follow-up Turn).
 
 ## References
 
