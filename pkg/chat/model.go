@@ -316,7 +316,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg_ := msg.(type) {
 	case tea.KeyMsg:
-		logger.Debug().Str("key", msg_.String()).Str("state", string(m.state)).Int("selected_index", m.timelineCtrl.SelectedIndex()).Bool("selection_visible", true).Bool("entering", m.timelineCtrl.IsEntering()).Msg("Key received")
 		// Entering mode and selection routing
 		if m.state == StateMovingAround {
 			switch msg_.String() {
@@ -797,7 +796,6 @@ func (m model) View() string {
 
 	// Generate timeline view instead of conversation view
 	view := m.timelineCtrl.View()
-	log.Debug().Str("component", "chat").Str("when", "View").Int("view_len", len(view)).Int("y_offset", m.viewport.YOffset).Msg("SetContent")
 	m.viewport.SetContent(view)
 
 	vlogger.Trace().Int("viewport_width", m.viewport.Width).Int("viewport_height", m.viewport.Height).Int("viewport_y_position", m.viewport.YPosition).Msg("VIEWPORT CONTENT SET - POTENTIAL TRIGGER FOR UPDATES")
