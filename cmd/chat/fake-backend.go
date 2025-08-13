@@ -95,8 +95,6 @@ func (f *FakeBackend) Start(ctx context.Context, msgs []*conversation2.Message) 
 				)
 				f.p.Send(timeline.UIEntityUpdated{ID: timeline.EntityID{LocalID: localID, Kind: "tool_call"}, Patch: map[string]any{"result": "22C, Sunny"}, Version: 1, UpdatedAt: time.Now()})
 				f.p.Send(timeline.UIEntityCompleted{ID: timeline.EntityID{LocalID: localID, Kind: "tool_call"}})
-				// Also send assistant confirmation text via normal stream to exercise both paths
-				f.p.Send(conversationui.StreamDoneMsg{StreamMetadata: metadata, Completion: "Using weather tool..."})
 				return
 			}
 			if strings.HasPrefix(content, "/checkbox") {

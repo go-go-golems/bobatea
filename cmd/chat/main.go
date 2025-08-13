@@ -74,13 +74,12 @@ func main() {
 
 func runFakeBackend(cmd *cobra.Command, args []string) {
     runChatWithOptions(func() chat.Backend { return NewFakeBackend() }, func(reg *timeline.Registry) {
+        log.Debug().Str("component", "main").Msg("registering tool renderers via timeline hook")
         reg.Register(&ToolWeatherRenderer{})
         reg.Register(&ToolWebSearchRenderer{})
         reg.RegisterModelFactory(CheckboxFactory{})
     })
 }
-
-// removed http backend runner
 
 func runChatWithOptions(backendFactory func() chat.Backend, tlHook func(*timeline.Registry)) {
 	status := &chat.Status{}
@@ -94,8 +93,6 @@ func runChatWithOptions(backendFactory func() chat.Backend, tlHook func(*timelin
 
     model := chat.InitialModel(backend, chat.WithStatus(status), chat.WithTimelineRegister(tlHook))
     p := tea.NewProgram(model, options...)
-
-    // removed user/http backend plumbing
 
 	// Set the program for the backend after initialization
 	if setterBackend, ok := backend.(interface{ SetProgram(*tea.Program) }); ok {

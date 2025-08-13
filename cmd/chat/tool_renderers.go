@@ -185,7 +185,7 @@ func (m *CheckboxModel) Blur()   { m.focused = false }
 
 type CheckboxFactory struct{}
 func (CheckboxFactory) Key() string  { return "renderer.test.checkbox.v1" }
-func (CheckboxFactory) Kind() string { return "tool_call" }
+func (CheckboxFactory) Kind() string { return "" }
 func (CheckboxFactory) NewEntityModel(initialProps map[string]any) timeline.EntityModel {
     m := &CheckboxModel{}
     m.OnProps(initialProps)
