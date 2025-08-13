@@ -1,18 +1,18 @@
 package main
 
 import (
-	"context"
-	conversation2 "github.com/go-go-golems/geppetto/pkg/conversation"
-	"strings"
-	"sync"
-	"time"
+    "context"
+    conversation2 "github.com/go-go-golems/geppetto/pkg/conversation"
+    "strings"
+    "sync"
+    "time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/go-go-golems/bobatea/pkg/chat"
-	conversationui "github.com/go-go-golems/bobatea/pkg/chat/conversation"
-	"github.com/go-go-golems/bobatea/pkg/timeline"
-	"github.com/pkg/errors"
-	"github.com/rs/zerolog/log"
+    tea "github.com/charmbracelet/bubbletea"
+    "github.com/go-go-golems/bobatea/pkg/chat"
+    conversationui "github.com/go-go-golems/bobatea/pkg/chat/conversation"
+    "github.com/go-go-golems/bobatea/pkg/timeline"
+    "github.com/pkg/errors"
+    "github.com/rs/zerolog/log"
 )
 
 type FakeBackend struct {
@@ -177,6 +177,13 @@ func (f *FakeBackend) Start(ctx context.Context, msgs []*conversation2.Message) 
 		log.Debug().Str("component", "fake_backend").Msg("Backend command: returning StreamStartMsg")
 		return nil
 	}, nil
+}
+
+// SubmitPrompt starts a streaming run from a single prompt string.
+func (f *FakeBackend) SubmitPrompt(ctx context.Context, prompt string) (tea.Cmd, error) {
+    // Reuse Start logic by adapting prompt into a single-message conversation
+    msg := conversation2.NewChatMessage(conversation2.RoleUser, prompt)
+    return f.Start(ctx, []*conversation2.Message{msg})
 }
 
 func (f *FakeBackend) Interrupt() {

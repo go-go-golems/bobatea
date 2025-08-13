@@ -1,29 +1,29 @@
 package chat
 
 import (
-	context2 "context"
-	"fmt"
-	"os"
-	"strings"
-	"sync/atomic"
-	"time"
+    context2 "context"
+    "fmt"
+    "os"
+    "strings"
+    "sync/atomic"
+    "time"
 
-	geppetto_conversation "github.com/go-go-golems/geppetto/pkg/conversation"
+    geppetto_conversation "github.com/go-go-golems/geppetto/pkg/conversation"
 
-	"github.com/atotto/clipboard"
-	"github.com/charmbracelet/bubbles/help"
-	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-	conversationui "github.com/go-go-golems/bobatea/pkg/chat/conversation"
-	"github.com/go-go-golems/bobatea/pkg/filepicker"
-	mode_keymap "github.com/go-go-golems/bobatea/pkg/mode-keymap"
-	"github.com/go-go-golems/bobatea/pkg/textarea"
-	"github.com/go-go-golems/bobatea/pkg/timeline"
-	renderers "github.com/go-go-golems/bobatea/pkg/timeline/renderers"
-	"github.com/pkg/errors"
-	"github.com/rs/zerolog/log"
+    "github.com/atotto/clipboard"
+    "github.com/charmbracelet/bubbles/help"
+    "github.com/charmbracelet/bubbles/key"
+    "github.com/charmbracelet/bubbles/viewport"
+    tea "github.com/charmbracelet/bubbletea"
+    "github.com/charmbracelet/lipgloss"
+    conversationui "github.com/go-go-golems/bobatea/pkg/chat/conversation"
+    "github.com/go-go-golems/bobatea/pkg/filepicker"
+    mode_keymap "github.com/go-go-golems/bobatea/pkg/mode-keymap"
+    "github.com/go-go-golems/bobatea/pkg/textarea"
+    "github.com/go-go-golems/bobatea/pkg/timeline"
+    renderers "github.com/go-go-golems/bobatea/pkg/timeline/renderers"
+    "github.com/pkg/errors"
+    "github.com/rs/zerolog/log"
 )
 
 // Tracing counters for debugging recursive calls
@@ -58,7 +58,6 @@ type Status struct {
 }
 
 type model struct {
-	conversationManager geppetto_conversation.Manager
 	autoStartBackend    bool
 
 	viewport       viewport.Model
@@ -126,7 +125,7 @@ func WithTimelineRegister(hook func(*timeline.Registry)) ModelOption {
 
 // TODO(manuel, 2024-04-07) Add options to configure filepicker
 
-func InitialModel(manager geppetto_conversation.Manager, backend Backend, options ...ModelOption) model {
+func InitialModel(backend Backend, options ...ModelOption) model {
 	fp := filepicker.NewModel()
 
 	fp.Filepicker.DirAllowed = false
@@ -135,16 +134,15 @@ func InitialModel(manager geppetto_conversation.Manager, backend Backend, option
 	fp.Filepicker.CurrentDirectory = dir
 	fp.Filepicker.Height = 10
 
-	ret := model{
-		conversationManager: manager,
-		filepicker:          fp,
-		style:               conversationui.DefaultStyles(),
-		keyMap:              DefaultKeyMap,
-		backend:             backend,
-		viewport:            viewport.New(0, 0),
-		help:                help.New(),
-		scrollToBottom:      true,
-	}
+    ret := model{
+        filepicker:          fp,
+        style:               conversationui.DefaultStyles(),
+        keyMap:              DefaultKeyMap,
+        backend:             backend,
+        viewport:            viewport.New(0, 0),
+        help:                help.New(),
+        scrollToBottom:      true,
+    }
 
 	for _, option := range options {
 		option(&ret)
@@ -275,12 +273,12 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) saveToFile(path string) (tea.Model, tea.Cmd) {
-	err := m.conversationManager.SaveToFile(path)
-	if err != nil {
-		return m, func() tea.Msg {
-			return ErrorMsg(err)
-		}
-	}
+    // No conversation manager; writing viewport content as a simple fallback
+    // In a real backend, this should request an export from the backend.
+    content := m.timelineCtrl.View()
+    if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+        return m, func() tea.Msg { return ErrorMsg(err) }
+    }
 
 	m.state = StateUserInput
 	m.updateKeyBindings()
@@ -297,14 +295,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Consolidated logger for this update call
 	logger := log.With().Int64("update_call_id", updateCallID).Logger()
-	logger.Trace().
-		Str("msg_type", msgType).
-		Str("current_state", string(m.state)).
-		Int("message_count", len(m.conversationManager.GetConversation())).
-		Bool("scroll_to_bottom", m.scrollToBottom).
-		Bool("backend_finished", m.backend.IsFinished()).
-		Time("start_time", updateStartTime).
-		Msg("UPDATE ENTRY")
+    logger.Trace().
+        Str("msg_type", msgType).
+        Str("current_state", string(m.state)).
+        Bool("scroll_to_bottom", m.scrollToBottom).
+        Bool("backend_finished", m.backend.IsFinished()).
+        Time("start_time", updateStartTime).
+        Msg("UPDATE ENTRY")
 
 	var cmds []tea.Cmd
 	var cmd tea.Cmd
@@ -395,12 +392,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		switch streamMsg := msg.(type) {
 		case conversationui.StreamStartMsg:
-			logger.Debug().Str("operation", "stream_start_reception").
-				Str("messageID", streamMsg.ID.String()).
-				Time("timestamp", startTime).
-				Int("current_message_count", len(m.conversationManager.GetConversation())).
-				Bool("scroll_to_bottom", m.scrollToBottom).
-				Msg("StreamStartMsg details")
+        logger.Debug().Str("operation", "stream_start_reception").
+                Str("messageID", streamMsg.ID.String()).
+                Time("timestamp", startTime).
+                Bool("scroll_to_bottom", m.scrollToBottom).
+                Msg("StreamStartMsg details")
 		case conversationui.StreamCompletionMsg:
 			logger.Debug().Str("operation", "stream_completion_reception").
 				Str("messageID", streamMsg.ID.String()).
@@ -785,8 +781,8 @@ func (m model) View() string {
 	viewCallID := atomic.AddInt64(&viewCallCounter, 1)
 	viewStartTime := time.Now()
 
-	vlogger := log.With().Int64("view_call_id", viewCallID).Logger()
-	vlogger.Trace().Str("state", string(m.state)).Int("message_count", len(m.conversationManager.GetConversation())).Bool("scroll_to_bottom", m.scrollToBottom).Time("start_time", viewStartTime).Msg("VIEW ENTRY - POTENTIAL EXCESSIVE CALL POINT")
+    vlogger := log.With().Int64("view_call_id", viewCallID).Logger()
+    vlogger.Trace().Str("state", string(m.state)).Bool("scroll_to_bottom", m.scrollToBottom).Time("start_time", viewStartTime).Msg("VIEW ENTRY - POTENTIAL EXCESSIVE CALL POINT")
 
 	headerStart := time.Now()
 	headerView := m.headerView()
@@ -850,12 +846,11 @@ func (m model) View() string {
 
 func (m *model) startBackend() tea.Cmd {
 	startCallID := atomic.AddInt64(&updateCallCounter, 1)
-	log.Debug().
-		Int64("start_call_id", startCallID).
-		Str("previous_state", string(m.state)).
-		Bool("backend_finished", m.backend.IsFinished()).
-		Int("conversation_length", len(m.conversationManager.GetConversation())).
-		Msg("START BACKEND ENTRY - MAJOR COMMAND GENERATOR")
+    log.Debug().
+        Int64("start_call_id", startCallID).
+        Str("previous_state", string(m.state)).
+        Bool("backend_finished", m.backend.IsFinished()).
+        Msg("START BACKEND ENTRY - MAJOR COMMAND GENERATOR")
 
 	m.state = StateStreamCompletion
 	m.updateKeyBindings()
@@ -874,24 +869,12 @@ func (m *model) startBackend() tea.Cmd {
 		}
 	}
 
-	backendCmd := func() tea.Msg {
-		log.Debug().
-			Int64("start_call_id", startCallID).
-			Msg("BACKEND START COMMAND EXECUTING")
-		ctx := context2.Background()
-		cmd, err := m.backend.Start(ctx, m.conversationManager.GetConversation())
-		if err != nil {
-			log.Debug().
-				Int64("start_call_id", startCallID).
-				Err(err).
-				Msg("Backend start error")
-			return ErrorMsg(err)
-		}
-		log.Debug().
-			Int64("start_call_id", startCallID).
-			Msg("Backend started successfully, executing returned command")
-		return cmd()
-	}
+    backendCmd := func() tea.Msg {
+        log.Debug().
+            Int64("start_call_id", startCallID).
+            Msg("BACKEND START COMMAND EXECUTING (no-op in new prompt flow)")
+        return nil
+    }
 
 	log.Debug().
 		Int64("start_call_id", startCallID).
@@ -903,11 +886,10 @@ func (m *model) startBackend() tea.Cmd {
 func (m *model) submit() tea.Cmd {
 	submitCallID := atomic.AddInt64(&updateCallCounter, 1)
 	slogger := log.With().Int64("submit_call_id", submitCallID).Logger()
-	slogger.Trace().
-		Bool("backend_finished", m.backend.IsFinished()).
-		Int("input_length", len(m.textArea.Value())).
-		Int("current_message_count", len(m.conversationManager.GetConversation())).
-		Msg("SUBMIT ENTRY")
+    slogger.Trace().
+        Bool("backend_finished", m.backend.IsFinished()).
+        Int("input_length", len(m.textArea.Value())).
+        Msg("SUBMIT ENTRY")
 
 	if !m.backend.IsFinished() {
 		slogger.Trace().Msg("Backend not finished - returning error")
@@ -947,7 +929,15 @@ func (m *model) submit() tea.Cmd {
 		}
 	}
 
-	return tea.Batch(refreshCmd, m.startBackend())
+    backendCmd := func() tea.Msg {
+        ctx := context2.Background()
+        cmd, err := m.backend.SubmitPrompt(ctx, userMessage)
+        if err != nil {
+            return ErrorMsg(err)
+        }
+        return cmd()
+    }
+    return tea.Batch(refreshCmd, backendCmd)
 }
 
 type refreshMessageMsg struct {

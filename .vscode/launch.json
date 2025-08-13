@@ -1,0 +1,29 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Launch Chat",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}/cmd/chat",
+            "args": ["chat"],
+            "cwd": "${workspaceFolder}",
+            "env": {},
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Launch Chat with Debug",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "program": "${workspaceFolder}/cmd/chat",
+            "args": ["chat"],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "DEBUG": "true"
+            },
+            "console": "integratedTerminal"
+        }
+    ]
+}

@@ -1,20 +1,16 @@
 package main
 
 import (
-	"fmt"
-	"net/http"
-	"os"
-	"time"
+    "fmt"
+    "os"
+    "time"
 
-	"github.com/go-go-golems/geppetto/pkg/conversation"
-
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/go-go-golems/bobatea/pkg/chat"
+    tea "github.com/charmbracelet/bubbletea"
+    "github.com/go-go-golems/bobatea/pkg/chat"
     "github.com/go-go-golems/bobatea/pkg/timeline"
-	"github.com/gorilla/mux"
-	"github.com/spf13/cobra"
-	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
+    "github.com/spf13/cobra"
+    "github.com/rs/zerolog"
+    "github.com/rs/zerolog/log"
 )
 
 var rootCmd = &cobra.Command{
@@ -29,11 +25,7 @@ var fakeCmd = &cobra.Command{
 	Run:   runFakeBackend,
 }
 
-var httpCmd = &cobra.Command{
-	Use:   "http",
-	Short: "Run the chat application with an HTTP backend",
-	Run:   runHTTPBackend,
-}
+// removed http command
 
 // chatCmd mirrors the fake backend for convenience
 var chatCmd = &cobra.Command{
@@ -42,14 +34,11 @@ var chatCmd = &cobra.Command{
     Run:   runFakeBackend,
 }
 
-var httpAddr string
+// var httpAddr string // removed
 
 func init() {
 	rootCmd.AddCommand(fakeCmd)
-	rootCmd.AddCommand(httpCmd)
     rootCmd.AddCommand(chatCmd)
-
-	httpCmd.Flags().StringVarP(&httpAddr, "addr", "a", ":8080", "HTTP server address")
 }
 
 func main() {
@@ -91,20 +80,10 @@ func runFakeBackend(cmd *cobra.Command, args []string) {
     })
 }
 
-func runHTTPBackend(cmd *cobra.Command, args []string) {
-    runChatWithOptions(func() chat.Backend { return NewHTTPBackend("/backend", WithLogFile("/tmp/http-backend.log")) }, func(reg *timeline.Registry) {
-        reg.Register(&ToolWeatherRenderer{})
-        reg.Register(&ToolWebSearchRenderer{})
-        reg.RegisterModelFactory(CheckboxFactory{})
-    })
-}
+// removed http backend runner
 
 func runChatWithOptions(backendFactory func() chat.Backend, tlHook func(*timeline.Registry)) {
 	status := &chat.Status{}
-
-	manager := conversation.NewManager(conversation.WithMessages(
-		conversation.NewChatMessage(conversation.RoleSystem, "Welcome to the chat application!"),
-	))
 
 	backend := backendFactory()
 
@@ -113,35 +92,10 @@ func runChatWithOptions(backendFactory func() chat.Backend, tlHook func(*timelin
 		tea.WithAltScreen(),
 	}
 
-    model := chat.InitialModel(manager, backend, chat.WithStatus(status), chat.WithTimelineRegister(tlHook))
+    model := chat.InitialModel(backend, chat.WithStatus(status), chat.WithTimelineRegister(tlHook))
     p := tea.NewProgram(model, options...)
 
-	// Set up the user backend
-	userBackend := chat.NewUserBackend(status, chat.WithLogFile("/tmp/http-backend.log"))
-	userBackend.SetProgram(p)
-
-	// Set up the HTTP backend
-	if httpBackend, ok := backend.(*HTTPBackend); ok {
-		// Set up the HTTP server
-		r := mux.NewRouter()
-		r.PathPrefix("/user").Handler(http.StripPrefix("/user", userBackend.Router()))
-		httpBackend.SetRouter(r.PathPrefix("/backend").Subrouter())
-
-		// Start the HTTP server with timeouts
-		go func() {
-			server := &http.Server{
-				Addr:         httpAddr,
-				Handler:      r,
-				ReadTimeout:  10 * time.Second,
-				WriteTimeout: 10 * time.Second,
-				IdleTimeout:  120 * time.Second,
-			}
-			if err := server.ListenAndServe(); err != nil {
-				fmt.Printf("Error running HTTP server: %v\n", err)
-				os.Exit(1)
-			}
-		}()
-	}
+    // removed user/http backend plumbing
 
 	// Set the program for the backend after initialization
 	if setterBackend, ok := backend.(interface{ SetProgram(*tea.Program) }); ok {
