@@ -218,13 +218,14 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	// When streaming, forbid entering/focusing input and submitting
+	if m.state == StateStreamCompletion {
+		if key.Matches(msg, m.keyMap.SubmitMessage) || key.Matches(msg, m.keyMap.FocusMessage) {
+			return m, nil
+		}
+	}
+
 	switch {
-	case key.Matches(msg, m.keyMap.TriggerWeatherTool):
-		log.Debug().Str("component", "chat").Str("key", msg.String()).Msg("TriggerWeatherTool pressed")
-		return m.handleUserAction(TriggerWeatherToolMsg{})
-	case key.Matches(msg, m.keyMap.TriggerWebSearchTool):
-		log.Debug().Str("component", "chat").Str("key", msg.String()).Msg("TriggerWebSearchTool pressed")
-		return m.handleUserAction(TriggerWebSearchToolMsg{})
 	case key.Matches(msg, m.keyMap.Help):
 		log.Debug().Str("component", "chat").Str("key", msg.String()).Msg("Help pressed")
 		cmd = func() tea.Msg { return ToggleHelpMsg{} }
@@ -365,13 +366,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, cmd
 				}
 			}
-		}
-		// Inject demo tool triggers on letters
-		if msg_.String() == "alt+w" {
-			return m.handleUserAction(TriggerWeatherToolMsg{})
-		}
-		if msg_.String() == "alt+s" {
-			return m.handleUserAction(TriggerWebSearchToolMsg{})
 		}
 		return m.handleKeyPress(msg_)
 
@@ -778,7 +772,9 @@ func (m model) textAreaView() string {
 		// Grey out input when in selection mode
 		v = m.style.UnselectedMessage.Foreground(lipgloss.Color("240")).Render(v)
 	case StateStreamCompletion:
-		v = m.style.UnselectedMessage.Render(v)
+        // Grey out and ensure blurred while streaming
+        m.textArea.Blur()
+        v = m.style.UnselectedMessage.Render(v)
 	case StateError, StateSavingToFile:
 	}
 
@@ -862,6 +858,7 @@ func (m *model) startBackend() tea.Cmd {
         Msg("START BACKEND ENTRY - MAJOR COMMAND GENERATOR")
 
 	m.state = StateStreamCompletion
+	m.textArea.Blur()
 	m.updateKeyBindings()
 
 	log.Debug().
@@ -940,7 +937,7 @@ func (m *model) submit() tea.Cmd {
 
     backendCmd := func() tea.Msg {
         ctx := context2.Background()
-        cmd, err := m.backend.SubmitPrompt(ctx, userMessage)
+        cmd, err := m.backend.Start(ctx, userMessage)
         if err != nil {
             return ErrorMsg(err)
         }
@@ -1006,47 +1003,7 @@ func (m *model) finishCompletion() tea.Cmd {
 func (m model) handleUserAction(msg UserActionMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
-	switch msg_ := msg.(type) {
-	case TriggerWeatherToolMsg:
-		id := geppetto_conversation.NewNodeID().String()
-		m.timelineCtrl.OnCreated(timeline.UIEntityCreated{
-			ID:       timeline.EntityID{LocalID: id, Kind: "tool_call"},
-			Renderer: timeline.RendererDescriptor{Key: "renderer.tool.get_weather.v1", Kind: "tool_call"},
-			Props: map[string]any{
-				"location": "Paris",
-				"units":    "celsius",
-			},
-			StartedAt: time.Now(),
-		})
-		// simulate result
-		m.timelineCtrl.OnUpdated(timeline.UIEntityUpdated{ID: timeline.EntityID{LocalID: id, Kind: "tool_call"}, Patch: map[string]any{"result": "22C, Sunny"}, Version: 1, UpdatedAt: time.Now()})
-		m.timelineCtrl.OnCompleted(timeline.UIEntityCompleted{ID: timeline.EntityID{LocalID: id, Kind: "tool_call"}})
-		v := m.timelineCtrl.View()
-		log.Debug().Str("component", "chat").Str("when", "refresh_message").Int("view_len", len(v)).Int("y_offset", m.viewport.YOffset).Msg("SetContent")
-		m.viewport.SetContent(v)
-		if m.scrollToBottom {
-			m.viewport.GotoBottom()
-		}
-		return m, nil
-	case TriggerWebSearchToolMsg:
-		id := geppetto_conversation.NewNodeID().String()
-		m.timelineCtrl.OnCreated(timeline.UIEntityCreated{
-			ID:       timeline.EntityID{LocalID: id, Kind: "tool_call"},
-			Renderer: timeline.RendererDescriptor{Key: "renderer.tool.web_search.v1", Kind: "tool_call"},
-			Props: map[string]any{
-				"query": "golang bubbletea timeline ui",
-			},
-			StartedAt: time.Now(),
-		})
-		m.timelineCtrl.OnUpdated(timeline.UIEntityUpdated{ID: timeline.EntityID{LocalID: id, Kind: "tool_call"}, Patch: map[string]any{"result": "Found 3 relevant links"}, Version: 1, UpdatedAt: time.Now()})
-		m.timelineCtrl.OnCompleted(timeline.UIEntityCompleted{ID: timeline.EntityID{LocalID: id, Kind: "tool_call"}})
-		v := m.timelineCtrl.View()
-		log.Debug().Str("component", "chat").Str("when", "handleUserAction_weather").Int("view_len", len(v)).Int("y_offset", m.viewport.YOffset).Msg("SetContent")
-		m.viewport.SetContent(v)
-		if m.scrollToBottom {
-			m.viewport.GotoBottom()
-		}
-		return m, nil
+    switch msg_ := msg.(type) {
 	case ToggleHelpMsg:
 		m.help.ShowAll = !m.help.ShowAll
 
@@ -1106,6 +1063,10 @@ func (m model) handleUserAction(msg UserActionMsg) (tea.Model, tea.Cmd) {
 		m.scrollToSelected()
 
 	case SubmitMessageMsg:
+		if m.state == StateStreamCompletion {
+			// Ignore submits while streaming
+			break
+		}
 		log.Debug().Str("component", "chat").Msg("SubmitMessageMsg received - calling submit()")
 		cmd = m.submit()
 

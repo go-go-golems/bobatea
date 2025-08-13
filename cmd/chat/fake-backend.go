@@ -34,7 +34,7 @@ func (f *FakeBackend) SetProgram(p *tea.Program) {
 	f.p = p
 }
 
-func (f *FakeBackend) Start(ctx context.Context, msgs []*conversation2.Message) (tea.Cmd, error) {
+func (f *FakeBackend) Start(ctx context.Context, prompt string) (tea.Cmd, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
@@ -51,21 +51,16 @@ func (f *FakeBackend) Start(ctx context.Context, msgs []*conversation2.Message) 
 	}
 
 	f.isRunning = true
-	log.Debug().Str("component", "fake_backend").Bool("is_running", f.isRunning).Int("msgs_len", len(msgs)).Msg("Start: initializing")
+    log.Debug().Str("component", "fake_backend").Bool("is_running", f.isRunning).Msg("Start: initializing")
 
 	return func() tea.Msg {
 		log.Debug().Str("component", "fake_backend").Msg("Backend command: executing")
 		ctx, f.cancel = context.WithCancel(ctx)
-		if len(msgs) == 0 {
-			log.Debug().Str("component", "fake_backend").Msg("No messages; returning nil")
-			return nil
-		}
-		lastMsg := msgs[len(msgs)-1]
-		content := lastMsg.Content.String()
+        content := prompt
 		words := strings.Fields(content)
 		reversedWords := reverseWords(words)
 		msg := strings.Join(reversedWords, " ")
-		localID := conversation2.NewNodeID().String()
+        localID := conversation2.NewNodeID().String()
 		metadata := conversationui.StreamMetadata{
 			ID: conversation2.NewNodeID(),
 		}
@@ -83,7 +78,7 @@ func (f *FakeBackend) Start(ctx context.Context, msgs []*conversation2.Message) 
 				log.Debug().Str("component", "fake_backend").Bool("is_running", f.isRunning).Msg("Goroutine: isRunning=false")
 			}()
 			// Recognize tool commands and emit timeline tool entities, as if produced by a real agent tool call
-			if strings.HasPrefix(content, "/weather ") {
+            if strings.HasPrefix(content, "/weather ") {
 				// Emit entity lifecycle messages directly (created -> updated -> completed)
 				f.p.Send(
 					timeline.UIEntityCreated{
@@ -97,7 +92,7 @@ func (f *FakeBackend) Start(ctx context.Context, msgs []*conversation2.Message) 
 				f.p.Send(timeline.UIEntityCompleted{ID: timeline.EntityID{LocalID: localID, Kind: "tool_call"}})
 				return
 			}
-			if strings.HasPrefix(content, "/checkbox") {
+            if strings.HasPrefix(content, "/checkbox") {
 				f.p.Send(timeline.UIEntityCreated{
 					ID:        timeline.EntityID{LocalID: localID, Kind: "tool_call"},
 					Renderer:  timeline.RendererDescriptor{Key: "renderer.test.checkbox.v1", Kind: "tool_call"},
@@ -107,7 +102,7 @@ func (f *FakeBackend) Start(ctx context.Context, msgs []*conversation2.Message) 
 				// keep it interactive; no completion yet
 				return
 			}
-			if strings.HasPrefix(content, "/search ") {
+            if strings.HasPrefix(content, "/search ") {
 				f.p.Send(timeline.UIEntityCreated{
 					ID:        timeline.EntityID{LocalID: localID, Kind: "tool_call"},
 					Renderer:  timeline.RendererDescriptor{Key: "renderer.tool.web_search.v1", Kind: "tool_call"},
@@ -135,7 +130,7 @@ func (f *FakeBackend) Start(ctx context.Context, msgs []*conversation2.Message) 
 					})
 				}
 				f.p.Send(timeline.UIEntityCompleted{ID: timeline.EntityID{LocalID: localID, Kind: "tool_call"}})
-				f.p.Send(conversationui.StreamDoneMsg{StreamMetadata: metadata, Completion: "Searching the web..."})
+                f.p.Send(conversationui.StreamDoneMsg{StreamMetadata: metadata, Completion: "Searching the web..."})
 				return
 			}
 			log.Debug().Str("component", "fake_backend").Msg("Goroutine: sending StreamStartMsg")
@@ -178,11 +173,7 @@ func (f *FakeBackend) Start(ctx context.Context, msgs []*conversation2.Message) 
 }
 
 // SubmitPrompt starts a streaming run from a single prompt string.
-func (f *FakeBackend) SubmitPrompt(ctx context.Context, prompt string) (tea.Cmd, error) {
-    // Reuse Start logic by adapting prompt into a single-message conversation
-    msg := conversation2.NewChatMessage(conversation2.RoleUser, prompt)
-    return f.Start(ctx, []*conversation2.Message{msg})
-}
+// SubmitPrompt removed: Start now accepts a plain prompt string
 
 func (f *FakeBackend) Interrupt() {
 	if f.cancel != nil {
