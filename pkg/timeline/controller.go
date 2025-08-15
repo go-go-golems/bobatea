@@ -10,7 +10,7 @@ import (
 
 type Controller struct {
 	store    *entityStore
-    reg      *Registry
+	reg      *Registry
 	width    int
 	height   int
 	theme    string
@@ -21,51 +21,59 @@ type Controller struct {
 }
 
 func NewController(reg *Registry) *Controller {
-    c := &Controller{store: newEntityStore(), reg: reg, selected: -1}
+	c := &Controller{store: newEntityStore(), reg: reg, selected: -1}
 	log.Debug().Str("component", "timeline_controller").Msg("initialized controller")
 	return c
 }
 
 func (c *Controller) SetSize(w, h int) {
 	c.width, c.height = w, h
-    // Broadcast size to models via message
-    for _, id := range c.store.order {
-        if rec, ok := c.store.get(id); ok {
-            if rec.model != nil {
-                rec.model.Update(EntitySetSizeMsg{Width: w, Height: h})
-            }
-        }
-    }
+	// Broadcast size to models via message
+	for _, id := range c.store.order {
+		if rec, ok := c.store.get(id); ok {
+			if rec.model != nil {
+				rec.model.Update(EntitySetSizeMsg{Width: w, Height: h})
+			}
+		}
+	}
 }
 func (c *Controller) SetTheme(theme string) {
 	c.theme = theme
-    // Propagate theme to interactive models via props update message
-    for _, id := range c.store.order {
-        if rec, ok := c.store.get(id); ok {
-            if rec.model != nil {
-                rec.model.Update(EntityPropsUpdatedMsg{ID: rec.ID, Patch: map[string]any{"theme": theme}})
-            }
-        }
-    }
+	// Propagate theme to interactive models via props update message
+	for _, id := range c.store.order {
+		if rec, ok := c.store.get(id); ok {
+			if rec.model != nil {
+				rec.model.Update(EntityPropsUpdatedMsg{ID: rec.ID, Patch: map[string]any{"theme": theme}})
+			}
+		}
+	}
 }
 
 func (c *Controller) OnCreated(e UIEntityCreated) {
-    log.Debug().Str("component", "timeline_controller").Str("event", "created").Str("kind", e.ID.Kind).Str("local_id", e.ID.LocalID).Time("started_at", e.StartedAt).Int("props_len", len(e.Props)).Msg("applying created")
+	log.Debug().Str("component", "timeline_controller").Str("event", "created").Str("kind", e.ID.Kind).Str("local_id", e.ID.LocalID).Time("started_at", e.StartedAt).Int("props_len", len(e.Props)).Msg("applying created")
 	rec := &entityRecord{ID: e.ID, Renderer: e.Renderer, Props: cloneMap(e.Props), StartedAt: e.StartedAt.UnixNano()}
 	// Instantiate interactive model if a factory is registered
 	if e.Renderer.Key != "" {
 		if f, ok := c.reg.GetModelFactoryByKey(e.Renderer.Key); ok {
-            rec.model = f.NewEntityModel(rec.Props)
-            if c.width > 0 || c.height > 0 { rec.model.Update(EntitySetSizeMsg{Width: c.width, Height: c.height}) }
-            if c.theme != "" { rec.model.Update(EntityPropsUpdatedMsg{ID: rec.ID, Patch: map[string]any{"theme": c.theme}}) }
+			rec.model = f.NewEntityModel(rec.Props)
+			if c.width > 0 || c.height > 0 {
+				rec.model.Update(EntitySetSizeMsg{Width: c.width, Height: c.height})
+			}
+			if c.theme != "" {
+				rec.model.Update(EntityPropsUpdatedMsg{ID: rec.ID, Patch: map[string]any{"theme": c.theme}})
+			}
 		}
 	}
 	// Fallback: try factory by kind when no key-specific factory is found
 	if rec.model == nil && e.Renderer.Kind != "" {
 		if f, ok := c.reg.GetModelFactoryByKind(e.Renderer.Kind); ok {
-            rec.model = f.NewEntityModel(rec.Props)
-            if c.width > 0 || c.height > 0 { rec.model.Update(EntitySetSizeMsg{Width: c.width, Height: c.height}) }
-            if c.theme != "" { rec.model.Update(EntityPropsUpdatedMsg{ID: rec.ID, Patch: map[string]any{"theme": c.theme}}) }
+			rec.model = f.NewEntityModel(rec.Props)
+			if c.width > 0 || c.height > 0 {
+				rec.model.Update(EntitySetSizeMsg{Width: c.width, Height: c.height})
+			}
+			if c.theme != "" {
+				rec.model.Update(EntityPropsUpdatedMsg{ID: rec.ID, Patch: map[string]any{"theme": c.theme}})
+			}
 		}
 	}
 	c.store.add(rec)
@@ -78,7 +86,9 @@ func (c *Controller) OnUpdated(e UIEntityUpdated) {
 	if rec, ok := c.store.get(e.ID); ok {
 		log.Debug().Str("component", "timeline_controller").Str("event", "updated").Str("kind", e.ID.Kind).Str("local_id", e.ID.LocalID).Int64("version", e.Version).Int("patch_len", len(e.Patch)).Msg("applying update")
 		applyPatch(rec.Props, e.Patch)
-        if rec.model != nil { rec.model.Update(EntityPropsUpdatedMsg{ID: rec.ID, Patch: e.Patch}) }
+		if rec.model != nil {
+			rec.model.Update(EntityPropsUpdatedMsg{ID: rec.ID, Patch: e.Patch})
+		}
 		rec.Version = max64(rec.Version, e.Version)
 		rec.UpdatedAt = e.UpdatedAt.UnixNano()
 	}
@@ -91,7 +101,9 @@ func (c *Controller) OnCompleted(e UIEntityCompleted) {
 			applyPatch(rec.Props, e.Result)
 		}
 		rec.Completed = true
-        if rec.model != nil { rec.model.Update(EntityPropsUpdatedMsg{ID: rec.ID, Patch: e.Result}) }
+		if rec.model != nil {
+			rec.model.Update(EntityPropsUpdatedMsg{ID: rec.ID, Patch: e.Result})
+		}
 	}
 }
 
@@ -145,25 +157,33 @@ func (c *Controller) View() string {
 	var b strings.Builder
 	hits := 0
 	misses := 0
-    for _, id := range c.store.order {
-        rec, _ := c.store.get(id)
-        // Interactive models are now the only rendering path
-        sel := c.selectionVisible && c.selected >= 0 && keyID(id) == keyID(c.store.order[c.selected])
-        if rec.model != nil {
-            rec.model.Update(EntityPropsUpdatedMsg{ID: rec.ID, Patch: map[string]any{"selected": sel}})
-            if sel { rec.model.Update(EntitySelectedMsg{ID: rec.ID}) } else { rec.model.Update(EntityUnselectedMsg{ID: rec.ID}) }
-            if sel && c.entering { rec.model.Update(EntityFocusMsg{ID: rec.ID}) } else { rec.model.Update(EntityBlurMsg{ID: rec.ID}) }
-            s := rec.model.View()
-            b.WriteString(s)
-            b.WriteByte('\n')
-            continue
-        }
-        // If no model, render a minimal plain line
-        s := "[entity] " + rec.ID.Kind
-        b.WriteString(s)
-        b.WriteByte('\n')
-        misses++
-    }
+	for _, id := range c.store.order {
+		rec, _ := c.store.get(id)
+		// Interactive models are now the only rendering path
+		sel := c.selectionVisible && c.selected >= 0 && keyID(id) == keyID(c.store.order[c.selected])
+		if rec.model != nil {
+			rec.model.Update(EntityPropsUpdatedMsg{ID: rec.ID, Patch: map[string]any{"selected": sel}})
+			if sel {
+				rec.model.Update(EntitySelectedMsg{ID: rec.ID})
+			} else {
+				rec.model.Update(EntityUnselectedMsg{ID: rec.ID})
+			}
+			if sel && c.entering {
+				rec.model.Update(EntityFocusMsg{ID: rec.ID})
+			} else {
+				rec.model.Update(EntityBlurMsg{ID: rec.ID})
+			}
+			s := rec.model.View()
+			b.WriteString(s)
+			b.WriteByte('\n')
+			continue
+		}
+		// If no model, render a minimal plain line
+		s := "[entity] " + rec.ID.Kind
+		b.WriteString(s)
+		b.WriteByte('\n')
+		misses++
+	}
 	out := b.String()
 	log.Trace().
 		Str("component", "timeline_controller").
@@ -178,26 +198,36 @@ func (c *Controller) View() string {
 // ViewAndSelectedPosition returns the full rendered view and the offset/height of the selected entity
 func (c *Controller) ViewAndSelectedPosition() (string, int, int) {
 	view := c.View()
-    if c.selected < 0 || c.selected >= len(c.store.order) { return view, 0, 0 }
-    // naive computation: split by lines and sum heights
-    offset := 0
-    for idx, id := range c.store.order {
-        rec, _ := c.store.get(id)
-        sel := idx == c.selected && c.selectionVisible
-        if rec.model != nil {
-            rec.model.Update(EntityPropsUpdatedMsg{ID: rec.ID, Patch: map[string]any{"selected": sel}})
-            if sel { rec.model.Update(EntitySelectedMsg{ID: rec.ID}) } else { rec.model.Update(EntityUnselectedMsg{ID: rec.ID}) }
-            s := rec.model.View()
-            h := lipLines(s)
-            if idx == c.selected { return view, offset, h }
-            offset += h
-            continue
-        }
-        s := "[entity] " + rec.ID.Kind
-        h := lipLines(s)
-        if idx == c.selected { return view, offset, h }
-        offset += h
-    }
+	if c.selected < 0 || c.selected >= len(c.store.order) {
+		return view, 0, 0
+	}
+	// naive computation: split by lines and sum heights
+	offset := 0
+	for idx, id := range c.store.order {
+		rec, _ := c.store.get(id)
+		sel := idx == c.selected && c.selectionVisible
+		if rec.model != nil {
+			rec.model.Update(EntityPropsUpdatedMsg{ID: rec.ID, Patch: map[string]any{"selected": sel}})
+			if sel {
+				rec.model.Update(EntitySelectedMsg{ID: rec.ID})
+			} else {
+				rec.model.Update(EntityUnselectedMsg{ID: rec.ID})
+			}
+			s := rec.model.View()
+			h := lipLines(s)
+			if idx == c.selected {
+				return view, offset, h
+			}
+			offset += h
+			continue
+		}
+		s := "[entity] " + rec.ID.Kind
+		h := lipLines(s)
+		if idx == c.selected {
+			return view, offset, h
+		}
+		offset += h
+	}
 	return view, 0, 0
 }
 
@@ -305,7 +335,9 @@ func (c *Controller) UpdateSelected(patch map[string]any) bool {
 		return false
 	}
 	applyPatch(rec.Props, patch)
-    if rec.model != nil { rec.model.Update(EntityPropsUpdatedMsg{ID: rec.ID, Patch: patch}) }
+	if rec.model != nil {
+		rec.model.Update(EntityPropsUpdatedMsg{ID: rec.ID, Patch: patch})
+	}
 	return true
 }
 

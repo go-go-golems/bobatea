@@ -32,11 +32,11 @@ type KeyMap struct {
 	CopyLastSourceBlocksToClipboard key.Binding `keymap-mode:"user-input"`
 	CopySourceBlocksToClipboard     key.Binding `keymap-mode:"moving-around"`
 
-    Help key.Binding `keymap-mode:"*"`
-    // demo triggers for tool calls
-    TriggerWeatherTool   key.Binding `keymap-mode:"user-input"`
-    TriggerWebSearchTool key.Binding `keymap-mode:"user-input"`
-	Quit key.Binding `keymap-mode:"*"`
+	Help key.Binding `keymap-mode:"*"`
+	// demo triggers for tool calls
+	TriggerWeatherTool   key.Binding `keymap-mode:"user-input"`
+	TriggerWebSearchTool key.Binding `keymap-mode:"user-input"`
+	Quit                 key.Binding `keymap-mode:"*"`
 }
 
 var DefaultKeyMap = KeyMap{
@@ -97,21 +97,21 @@ var DefaultKeyMap = KeyMap{
 		key.WithHelp("alt+k", "copy source"),
 	),
 
-    ScrollUp: key.NewBinding(
-        key.WithKeys("pgup"),
-        key.WithHelp("pgup", "page up"),
-    ),
-    ScrollDown: key.NewBinding(
-        key.WithKeys("pgdown"),
-        key.WithHelp("pgdown", "page down"),
-    ),
+	ScrollUp: key.NewBinding(
+		key.WithKeys("pgup"),
+		key.WithHelp("pgup", "page up"),
+	),
+	ScrollDown: key.NewBinding(
+		key.WithKeys("pgdown"),
+		key.WithHelp("pgdown", "page down"),
+	),
 
 	Quit: key.NewBinding(
 		key.WithKeys("alt+q"),
 		key.WithHelp("alt+q", "quit"),
 	),
 
-    Help: key.NewBinding(
+	Help: key.NewBinding(
 		key.WithKeys("ctrl-?"),
 		key.WithHelp("ctrl-?", "help")),
 
@@ -125,14 +125,14 @@ var DefaultKeyMap = KeyMap{
 		key.WithHelp("right", "next conversation thread"),
 	),
 
-    TriggerWeatherTool: key.NewBinding(
-        key.WithKeys("alt+w"),
-        key.WithHelp("alt+w", "demo weather tool"),
-    ),
-    TriggerWebSearchTool: key.NewBinding(
-        key.WithKeys("alt+s"),
-        key.WithHelp("alt+s", "demo web search tool"),
-    ),
+	TriggerWeatherTool: key.NewBinding(
+		key.WithKeys("alt+w"),
+		key.WithHelp("alt+w", "demo weather tool"),
+	),
+	TriggerWebSearchTool: key.NewBinding(
+		key.WithKeys("alt+s"),
+		key.WithHelp("alt+s", "demo web search tool"),
+	),
 }
 
 func (k KeyMap) ShortHelp() []key.Binding {

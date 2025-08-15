@@ -1,8 +1,8 @@
 package chat
 
 import (
-    "context"
-    "github.com/charmbracelet/bubbletea"
+	"context"
+	"github.com/charmbracelet/bubbletea"
 )
 
 // Backend abstracts initiating and stopping the backend process that is responsible
@@ -30,9 +30,9 @@ import (
 // new messages sent as completion events are correctly associated with the last message
 // in the conversation to maintain the chat's continuity.
 type Backend interface {
-    // Start begins the backend process with the provided context and prompt string.
-    // Implementations should stream results back to the program via tea messages.
-    Start(ctx context.Context, prompt string) (tea.Cmd, error)
+	// Start begins the backend process with the provided context and prompt string.
+	// Implementations should stream results back to the program via tea messages.
+	Start(ctx context.Context, prompt string) (tea.Cmd, error)
 
 	// Interrupt signals the backend process to gracefully stop its current operation.
 	Interrupt()

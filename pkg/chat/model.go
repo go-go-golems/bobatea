@@ -75,6 +75,7 @@ type model struct {
 	timelineReg     *timeline.Registry
 	timelineCtrl    *timeline.Controller
 	entityVers      map[string]int64
+	entityStart     map[string]time.Time
 	timelineRegHook func(*timeline.Registry)
 
 	help help.Model
@@ -166,6 +167,7 @@ func InitialModel(backend Backend, options ...ModelOption) model {
 	}
 	ret.timelineCtrl = timeline.NewController(ret.timelineReg)
 	ret.entityVers = map[string]int64{}
+	ret.entityStart = map[string]time.Time{}
 
 	return ret
 }
@@ -416,26 +418,33 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case StreamStartMsg:
 			id := v.ID.String()
 			m.entityVers[id] = 0
+			start := time.Now()
+			m.entityStart[id] = start
 			m.timelineCtrl.OnCreated(timeline.UIEntityCreated{
 				ID:        timeline.EntityID{LocalID: id, Kind: "llm_text"},
 				Renderer:  timeline.RendererDescriptor{Kind: "llm_text"},
-				Props:     map[string]any{"role": "assistant", "text": "", "metadata": toLLMMeta(v.EventMetadata)},
-				StartedAt: time.Now(),
+				Props:     map[string]any{"role": "assistant", "text": "", "metadata": toLLMInferenceData(v.EventMetadata, nil)},
+				StartedAt: start,
 			})
 		case StreamCompletionMsg:
 			id := v.ID.String()
 			m.entityVers[id] = m.entityVers[id] + 1
 			m.timelineCtrl.OnUpdated(timeline.UIEntityUpdated{
 				ID:        timeline.EntityID{LocalID: id, Kind: "llm_text"},
-				Patch:     map[string]any{"text": v.Completion, "metadata": toLLMMeta(v.EventMetadata)},
+				Patch:     map[string]any{"text": v.Completion, "metadata": toLLMInferenceData(v.EventMetadata, nil)},
 				Version:   m.entityVers[id],
 				UpdatedAt: time.Now(),
 			})
 		case StreamDoneMsg:
 			id := v.ID.String()
+			var durMs *int64
+			if st, ok := m.entityStart[id]; ok {
+				d := time.Since(st).Milliseconds()
+				durMs = &d
+			}
 			m.timelineCtrl.OnCompleted(timeline.UIEntityCompleted{
 				ID:     timeline.EntityID{LocalID: id, Kind: "llm_text"},
-				Result: map[string]any{"text": v.Completion, "metadata": toLLMMeta(v.EventMetadata)},
+				Result: map[string]any{"text": v.Completion, "metadata": toLLMInferenceData(v.EventMetadata, durMs)},
 			})
 			cmds = append(cmds, m.finishCompletion())
 		case StreamCompletionError:
@@ -1142,18 +1151,20 @@ func (m model) handleUserAction(msg UserActionMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-// toLLMMeta converts Geppetto event metadata into a typed timeline.LLMMeta for UI consumption
-func toLLMMeta(em *geppetto_events.EventMetadata) *timeline.LLMMeta {
+// toLLMInferenceData converts Geppetto EventMetadata into unified LLMInferenceData for UI/storage.
+func toLLMInferenceData(em *geppetto_events.EventMetadata, durationMs *int64) *geppetto_events.LLMInferenceData {
 	if em == nil {
 		return nil
 	}
-	out := &timeline.LLMMeta{
+	out := &geppetto_events.LLMInferenceData{
 		Engine:      em.Engine,
+		Model:       em.Model,
 		Temperature: em.Temperature,
-	}
-	if em.Usage != nil {
-		out.Usage.InputTokens = em.Usage.InputTokens
-		out.Usage.OutputTokens = em.Usage.OutputTokens
+		TopP:        em.TopP,
+		MaxTokens:   em.MaxTokens,
+		StopReason:  em.StopReason,
+		DurationMs:  durationMs,
+		Usage:       em.Usage,
 	}
 	return out
 }
