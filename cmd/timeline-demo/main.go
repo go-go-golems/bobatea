@@ -33,7 +33,6 @@ func (m demoModel) View() string {
 }
 
 // message types for scheduled steps
-type startText struct{ id timeline.EntityID }
 type updateText struct {
 	id      timeline.EntityID
 	text    string
@@ -43,8 +42,6 @@ type finishText struct {
 	id   timeline.EntityID
 	text string
 }
-
-type startTools struct{ id timeline.EntityID }
 type addTool struct {
 	id      timeline.EntityID
 	call    map[string]any

@@ -617,13 +617,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.timelineCtrl.SelectPrev()
 					m.scrollToSelected()
 				case key.Matches(km, m.keyMap.ScrollDown):
-					m.viewport.PageDown()
+					m.viewport.ScrollDown(1)
 				case key.Matches(km, m.keyMap.ScrollUp):
-					m.viewport.PageUp()
-				case km.String() == "down":
-					m.viewport.LineDown(1)
-				case km.String() == "up":
-					m.viewport.LineUp(1)
+					m.viewport.ScrollUp(1)
 				}
 			}
 		case StateSavingToFile:

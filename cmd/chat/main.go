@@ -48,7 +48,11 @@ func main() {
 		fmt.Printf("Error opening log file: %v\n", err)
 		os.Exit(1)
 	}
-	defer logFile.Close()
+	defer func() {
+		if err := logFile.Close(); err != nil {
+			fmt.Printf("Error closing log file: %v\n", err)
+		}
+	}()
 
 	zerolog.TimeFieldFormat = time.StampMilli
 	// Filter out trace-level logs for readability unless overridden

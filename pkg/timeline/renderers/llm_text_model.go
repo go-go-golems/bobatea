@@ -70,9 +70,8 @@ func (m *LLMTextModel) View() string {
 	if m.style == nil {
 		m.style = chatstyle.DefaultStyles()
 	}
-	role := m.role
-	if role == "" {
-		role = "assistant"
+	if m.role == "" {
+		m.role = "assistant"
 	}
 
 	// Choose base style (selected/focused/error)
@@ -185,12 +184,7 @@ func NewLLMTextFactory() *LLMTextFactory {
 	}
 }
 
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
+// max helper removed (not used in this file)
 
 var codeBlockRe = regexp.MustCompile("(?s)```[a-zA-Z0-9_-]*\n(.*?)\n```")
 
