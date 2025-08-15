@@ -50,7 +50,15 @@ func (c *Controller) SetTheme(theme string) {
 }
 
 func (c *Controller) OnCreated(e UIEntityCreated) {
-	log.Debug().Str("component", "timeline_controller").Str("event", "created").Str("kind", e.ID.Kind).Str("local_id", e.ID.LocalID).Time("started_at", e.StartedAt).Int("props_len", len(e.Props)).Msg("applying created")
+	log.Debug().
+		Str("component", "timeline_controller").
+		Str("event", "created").
+		Str("key", e.Renderer.Key).
+		Str("kind", e.ID.Kind).
+		Str("local_id", e.ID.LocalID).
+		Time("started_at", e.StartedAt).
+		Int("props_len", len(e.Props)).
+		Msg("applying created")
 	rec := &entityRecord{ID: e.ID, Renderer: e.Renderer, Props: cloneMap(e.Props), StartedAt: e.StartedAt.UnixNano()}
 	// Instantiate interactive model if a factory is registered
 	if e.Renderer.Key != "" {

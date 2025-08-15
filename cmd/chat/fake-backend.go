@@ -63,7 +63,7 @@ func (f *FakeBackend) Start(ctx context.Context, prompt string) (tea.Cmd, error)
 		msg := strings.Join(reversedWords, " ")
 		localID := uuid.New().String()
 		// Populate basic EventMetadata for demo coverage
-		md := geppetto_events.EventMetadata{LLMInferenceData: geppetto_events.LLMInferenceData{Engine: "fake-engine", Model: "fake-engine", Temperature: ptrFloat(0.2), Usage: &geppetto_events.Usage{InputTokens: 12, OutputTokens: 34}}}
+		md := geppetto_events.EventMetadata{LLMInferenceData: geppetto_events.LLMInferenceData{Model: "fake-engine", Temperature: ptrFloat(0.2), Usage: &geppetto_events.Usage{InputTokens: 12, OutputTokens: 34}}}
 		metadata := chat.StreamMetadata{ID: uuid.New(), EventMetadata: &md}
 
 		go func() {

@@ -1,11 +1,9 @@
 package renderers
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"regexp"
-	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -27,7 +25,7 @@ type LLMTextModel struct {
 	focused  bool
 	renderer *glamour.TermRenderer
 	style    *chatstyle.Style
-	metadata any // prefer *events.LLMInferenceData, fallback to map[string]any
+	metadata any // prefer *events.LLMInferenceData
 }
 
 func (m *LLMTextModel) Init() tea.Cmd { return nil }
@@ -216,62 +214,15 @@ func formatMetadata(md any) string {
 	// Preferred: typed events.LLMInferenceData
 	switch t := md.(type) {
 	case *geppetto_events.LLMInferenceData:
-		return formatFromLLMInferenceData(t)
+		out := formatFromLLMInferenceData(t)
+		return out
 	case geppetto_events.LLMInferenceData:
 		tt := t
-		return formatFromLLMInferenceData(&tt)
+		out := formatFromLLMInferenceData(&tt)
+		return out
 	}
-	// Fallback legacy maps
-	mm, ok := md.(map[string]any)
-	if !ok {
-		return ""
-	}
-	// Mirror conversation metadata and extend with model and flexible usage extraction
-	engine := firstString(mm, "engine")
-	model := firstString(mm, "model")
-	if engine == "" {
-		engine = nestedString(mm, []string{"LLMMessageMetadata", "Engine"}, []string{"event_metadata", "llm", "engine"})
-	}
-	if model == "" {
-		model = nestedString(mm, []string{"LLMMessageMetadata", "Model"}, []string{"event_metadata", "llm", "model"})
-	}
-
-	var tempStr string
-	if tv, ok := firstFloat(mm, "temperature"); ok {
-		tempStr = fmt.Sprintf("t: %.2f", tv)
-	}
-	if tempStr == "" {
-		if tv, ok := nestedFloat(mm, []string{"LLMMessageMetadata", "Temperature"}, []string{"event_metadata", "llm", "temperature"}); ok {
-			tempStr = fmt.Sprintf("t: %.2f", tv)
-		}
-	}
-
-	inToks, outToks := extractUsageTokens(mm)
-	if inToks == 0 && outToks == 0 {
-		if m2, ok := mm["LLMMessageMetadata"].(map[string]any); ok {
-			inToks, outToks = extractUsageTokens(m2)
-		}
-		if inToks == 0 && outToks == 0 {
-			if ev, ok := mm["event_metadata"].(map[string]any); ok {
-				inToks, outToks = extractUsageTokens(ev)
-			}
-		}
-	}
-
-	parts := []string{}
-	if engine != "" {
-		parts = append(parts, engine)
-	}
-	if model != "" {
-		parts = append(parts, model)
-	}
-	if tempStr != "" {
-		parts = append(parts, tempStr)
-	}
-	if inToks > 0 || outToks > 0 {
-		parts = append(parts, fmt.Sprintf("in: %d out: %d", inToks, outToks))
-	}
-	return strings.Join(parts, " ")
+	// Unknown type: ignore
+	return ""
 }
 
 func formatFromLLMInferenceData(m *geppetto_events.LLMInferenceData) string {
@@ -279,9 +230,7 @@ func formatFromLLMInferenceData(m *geppetto_events.LLMInferenceData) string {
 		return ""
 	}
 	parts := []string{}
-	if m.Engine != "" {
-		parts = append(parts, m.Engine)
-	}
+	// Engine omitted (duplicates model)
 	if m.Model != "" {
 		parts = append(parts, m.Model)
 	}
@@ -301,144 +250,15 @@ func formatFromLLMInferenceData(m *geppetto_events.LLMInferenceData) string {
 		parts = append(parts, fmt.Sprintf("in: %d out: %d", m.Usage.InputTokens, m.Usage.OutputTokens))
 	}
 	if m.DurationMs != nil && *m.DurationMs > 0 {
+		// tokens per second based on output tokens only
+		if m.Usage != nil && m.Usage.OutputTokens > 0 {
+			sec := float64(*m.DurationMs) / 1000.0
+			if sec > 0 {
+				tps := float64(m.Usage.OutputTokens) / sec
+				parts = append(parts, fmt.Sprintf("tps: %.2f", tps))
+			}
+		}
 		parts = append(parts, fmt.Sprintf("%dms", *m.DurationMs))
 	}
 	return strings.Join(parts, " ")
-}
-
-// Helpers to robustly extract metadata fields from loose maps
-func firstString(m map[string]any, key string) string {
-	if v, ok := m[key]; ok {
-		if s, ok := v.(string); ok {
-			return s
-		}
-	}
-	return ""
-}
-func nestedString(m map[string]any, paths ...[]string) string {
-	for _, p := range paths {
-		cur := any(m)
-		ok := true
-		for _, k := range p {
-			mm, isMap := cur.(map[string]any)
-			if !isMap {
-				ok = false
-				break
-			}
-			cur, ok = mm[k]
-			if !ok {
-				break
-			}
-		}
-		if ok {
-			if s, ok := cur.(string); ok {
-				return s
-			}
-		}
-	}
-	return ""
-}
-func firstFloat(m map[string]any, key string) (float64, bool) {
-	if v, ok := m[key]; ok {
-		switch t := v.(type) {
-		case float64:
-			return t, true
-		case float32:
-			return float64(t), true
-		case int:
-			return float64(t), true
-		case int64:
-			return float64(t), true
-		case json.Number:
-			if f, err := t.Float64(); err == nil {
-				return f, true
-			}
-		}
-	}
-	return 0, false
-}
-func nestedFloat(m map[string]any, paths ...[]string) (float64, bool) {
-	for _, p := range paths {
-		cur := any(m)
-		ok := true
-		for _, k := range p {
-			mm, isMap := cur.(map[string]any)
-			if !isMap {
-				ok = false
-				break
-			}
-			cur, ok = mm[k]
-			if !ok {
-				break
-			}
-		}
-		if ok {
-			switch t := cur.(type) {
-			case float64:
-				return t, true
-			case float32:
-				return float64(t), true
-			case int:
-				return float64(t), true
-			case int64:
-				return float64(t), true
-			case json.Number:
-				if f, err := t.Float64(); err == nil {
-					return f, true
-				}
-			}
-		}
-	}
-	return 0, false
-}
-func asInt(v any) (int, bool) {
-	switch t := v.(type) {
-	case int:
-		return t, true
-	case int64:
-		return int(t), true
-	case float64:
-		return int(t), true
-	case float32:
-		return int(t), true
-	case json.Number:
-		if i, err := strconv.Atoi(string(t)); err == nil {
-			return i, true
-		}
-	}
-	return 0, false
-}
-func extractUsageTokens(m map[string]any) (int, int) {
-	// Common shapes: usage{input,output} or usage{input_tokens,output_tokens}
-	if u, ok := m["usage"].(map[string]any); ok {
-		// flat variants
-		if in, ok1 := asInt(u["input"]); ok1 {
-			if out, ok2 := asInt(u["output"]); ok2 {
-				return in, out
-			}
-		}
-		if in, ok1 := asInt(u["input_tokens"]); ok1 {
-			out, _ := asInt(u["output_tokens"])
-			return in, out
-		}
-		if in, ok1 := asInt(u["InputTokens"]); ok1 {
-			out, _ := asInt(u["OutputTokens"])
-			return in, out
-		}
-	}
-	// Direct keys
-	if in, ok1 := asInt(m["input_tokens"]); ok1 {
-		out, _ := asInt(m["output_tokens"])
-		return in, out
-	}
-	// Nested under LLMMessageMetadata
-	if md, ok := m["LLMMessageMetadata"].(map[string]any); ok {
-		if u, ok := md["Usage"].(map[string]any); ok {
-			if in, ok1 := asInt(u["InputTokens"]); ok1 {
-				out, _ := asInt(u["OutputTokens"])
-				return in, out
-			}
-		}
-	}
-	return 0, 0
 }

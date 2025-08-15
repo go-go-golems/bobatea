@@ -72,10 +72,11 @@ type model struct {
 	// conversation conversationui.Model // removed in favor of timeline selection
 
 	// Timeline controller replaces conversation view rendering
-	timelineReg     *timeline.Registry
-	timelineCtrl    *timeline.Controller
-	entityVers      map[string]int64
-	entityStart     map[string]time.Time
+	timelineReg  *timeline.Registry
+	timelineCtrl *timeline.Controller
+	entityVers   map[string]int64
+	// entityStart removed; engines now provide DurationMs in metadata
+	// entityStart     map[string]time.Time
 	timelineRegHook func(*timeline.Registry)
 
 	help help.Model
@@ -167,7 +168,7 @@ func InitialModel(backend Backend, options ...ModelOption) model {
 	}
 	ret.timelineCtrl = timeline.NewController(ret.timelineReg)
 	ret.entityVers = map[string]int64{}
-	ret.entityStart = map[string]time.Time{}
+	// ret.entityStart = map[string]time.Time{}
 
 	return ret
 }
@@ -418,33 +419,76 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case StreamStartMsg:
 			id := v.ID.String()
 			m.entityVers[id] = 0
-			start := time.Now()
-			m.entityStart[id] = start
+			// start time tracking removed; rely on metadata.DurationMs from engines
+			md := toLLMInferenceData(v.EventMetadata)
+			log.Debug().
+				Str("local_id", id).
+				Str("model", func() string {
+					if md != nil {
+						return md.Model
+					}
+					return ""
+				}()).
+				Interface("usage", func() any {
+					if md != nil {
+						return md.Usage
+					}
+					return nil
+				}()).
+				Msg("StreamStartMsg: converted metadata")
 			m.timelineCtrl.OnCreated(timeline.UIEntityCreated{
 				ID:        timeline.EntityID{LocalID: id, Kind: "llm_text"},
 				Renderer:  timeline.RendererDescriptor{Kind: "llm_text"},
-				Props:     map[string]any{"role": "assistant", "text": "", "metadata": toLLMInferenceData(v.EventMetadata, nil)},
-				StartedAt: start,
+				Props:     map[string]any{"role": "assistant", "text": "", "metadata": md},
+				StartedAt: time.Now(),
 			})
 		case StreamCompletionMsg:
 			id := v.ID.String()
 			m.entityVers[id] = m.entityVers[id] + 1
+			md := toLLMInferenceData(v.EventMetadata)
+			log.Debug().
+				Str("local_id", id).
+				Int64("version", m.entityVers[id]).
+				Str("model", func() string {
+					if md != nil {
+						return md.Model
+					}
+					return ""
+				}()).
+				Msg("StreamCompletionMsg: converted metadata")
 			m.timelineCtrl.OnUpdated(timeline.UIEntityUpdated{
 				ID:        timeline.EntityID{LocalID: id, Kind: "llm_text"},
-				Patch:     map[string]any{"text": v.Completion, "metadata": toLLMInferenceData(v.EventMetadata, nil)},
+				Patch:     map[string]any{"text": v.Completion, "metadata": md},
 				Version:   m.entityVers[id],
 				UpdatedAt: time.Now(),
 			})
 		case StreamDoneMsg:
 			id := v.ID.String()
-			var durMs *int64
-			if st, ok := m.entityStart[id]; ok {
-				d := time.Since(st).Milliseconds()
-				durMs = &d
-			}
+			md := toLLMInferenceData(v.EventMetadata)
+			log.Debug().
+				Str("local_id", id).
+				Interface("duration_ms", func() any {
+					if md != nil {
+						return md.DurationMs
+					}
+					return nil
+				}()).
+				Interface("usage", func() any {
+					if md != nil {
+						return md.Usage
+					}
+					return nil
+				}()).
+				Str("stop_reason", func() string {
+					if md != nil && md.StopReason != nil {
+						return *md.StopReason
+					}
+					return ""
+				}()).
+				Msg("StreamDoneMsg: converted metadata")
 			m.timelineCtrl.OnCompleted(timeline.UIEntityCompleted{
 				ID:     timeline.EntityID{LocalID: id, Kind: "llm_text"},
-				Result: map[string]any{"text": v.Completion, "metadata": toLLMInferenceData(v.EventMetadata, durMs)},
+				Result: map[string]any{"text": v.Completion, "metadata": md},
 			})
 			cmds = append(cmds, m.finishCompletion())
 		case StreamCompletionError:
@@ -1152,18 +1196,17 @@ func (m model) handleUserAction(msg UserActionMsg) (tea.Model, tea.Cmd) {
 }
 
 // toLLMInferenceData converts Geppetto EventMetadata into unified LLMInferenceData for UI/storage.
-func toLLMInferenceData(em *geppetto_events.EventMetadata, durationMs *int64) *geppetto_events.LLMInferenceData {
+func toLLMInferenceData(em *geppetto_events.EventMetadata) *geppetto_events.LLMInferenceData {
 	if em == nil {
 		return nil
 	}
 	out := &geppetto_events.LLMInferenceData{
-		Engine:      em.Engine,
 		Model:       em.Model,
 		Temperature: em.Temperature,
 		TopP:        em.TopP,
 		MaxTokens:   em.MaxTokens,
 		StopReason:  em.StopReason,
-		DurationMs:  durationMs,
+		DurationMs:  em.DurationMs,
 		Usage:       em.Usage,
 	}
 	return out
