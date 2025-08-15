@@ -1,18 +1,19 @@
 package main
 
 import (
-    "context"
-    conversation2 "github.com/go-go-golems/geppetto/pkg/conversation"
-    "strings"
-    "sync"
-    "time"
+	"context"
+	"strings"
+	"sync"
+	"time"
 
-    tea "github.com/charmbracelet/bubbletea"
-    "github.com/go-go-golems/bobatea/pkg/chat"
-    conversationui "github.com/go-go-golems/bobatea/pkg/chat/conversation"
-    "github.com/go-go-golems/bobatea/pkg/timeline"
-    "github.com/pkg/errors"
-    "github.com/rs/zerolog/log"
+	geppetto_events "github.com/go-go-golems/geppetto/pkg/events"
+	"github.com/google/uuid"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/go-go-golems/bobatea/pkg/chat"
+	"github.com/go-go-golems/bobatea/pkg/timeline"
+	"github.com/pkg/errors"
+	"github.com/rs/zerolog/log"
 )
 
 type FakeBackend struct {
@@ -51,19 +52,19 @@ func (f *FakeBackend) Start(ctx context.Context, prompt string) (tea.Cmd, error)
 	}
 
 	f.isRunning = true
-    log.Debug().Str("component", "fake_backend").Bool("is_running", f.isRunning).Msg("Start: initializing")
+	log.Debug().Str("component", "fake_backend").Bool("is_running", f.isRunning).Msg("Start: initializing")
 
 	return func() tea.Msg {
 		log.Debug().Str("component", "fake_backend").Msg("Backend command: executing")
 		ctx, f.cancel = context.WithCancel(ctx)
-        content := prompt
+		content := prompt
 		words := strings.Fields(content)
 		reversedWords := reverseWords(words)
 		msg := strings.Join(reversedWords, " ")
-        localID := conversation2.NewNodeID().String()
-		metadata := conversationui.StreamMetadata{
-			ID: conversation2.NewNodeID(),
-		}
+		localID := uuid.New().String()
+		// Populate basic EventMetadata for demo coverage
+		md := geppetto_events.EventMetadata{LLMMessageMetadata: geppetto_events.LLMMessageMetadata{Engine: "fake-engine", Temperature: ptrFloat(0.2), Usage: &geppetto_events.Usage{InputTokens: 12, OutputTokens: 34}}}
+		metadata := chat.StreamMetadata{ID: uuid.New(), EventMetadata: &md}
 
 		go func() {
 			log.Debug().Str("component", "fake_backend").Msg("Goroutine: started streaming loop")
@@ -78,7 +79,7 @@ func (f *FakeBackend) Start(ctx context.Context, prompt string) (tea.Cmd, error)
 				log.Debug().Str("component", "fake_backend").Bool("is_running", f.isRunning).Msg("Goroutine: isRunning=false")
 			}()
 			// Recognize tool commands and emit timeline tool entities, as if produced by a real agent tool call
-            if strings.HasPrefix(content, "/weather ") {
+			if strings.HasPrefix(content, "/weather ") {
 				// Emit entity lifecycle messages directly (created -> updated -> completed)
 				f.p.Send(
 					timeline.UIEntityCreated{
@@ -92,7 +93,7 @@ func (f *FakeBackend) Start(ctx context.Context, prompt string) (tea.Cmd, error)
 				f.p.Send(timeline.UIEntityCompleted{ID: timeline.EntityID{LocalID: localID, Kind: "tool_call"}})
 				return
 			}
-            if strings.HasPrefix(content, "/checkbox") {
+			if strings.HasPrefix(content, "/checkbox") {
 				f.p.Send(timeline.UIEntityCreated{
 					ID:        timeline.EntityID{LocalID: localID, Kind: "tool_call"},
 					Renderer:  timeline.RendererDescriptor{Key: "renderer.test.checkbox.v1", Kind: "tool_call"},
@@ -102,7 +103,7 @@ func (f *FakeBackend) Start(ctx context.Context, prompt string) (tea.Cmd, error)
 				// keep it interactive; no completion yet
 				return
 			}
-            if strings.HasPrefix(content, "/search ") {
+			if strings.HasPrefix(content, "/search ") {
 				f.p.Send(timeline.UIEntityCreated{
 					ID:        timeline.EntityID{LocalID: localID, Kind: "tool_call"},
 					Renderer:  timeline.RendererDescriptor{Key: "renderer.tool.web_search.v1", Kind: "tool_call"},
@@ -130,11 +131,11 @@ func (f *FakeBackend) Start(ctx context.Context, prompt string) (tea.Cmd, error)
 					})
 				}
 				f.p.Send(timeline.UIEntityCompleted{ID: timeline.EntityID{LocalID: localID, Kind: "tool_call"}})
-                f.p.Send(conversationui.StreamDoneMsg{StreamMetadata: metadata, Completion: "Searching the web..."})
+				f.p.Send(chat.StreamDoneMsg{StreamMetadata: metadata, Completion: "Searching the web..."})
 				return
 			}
 			log.Debug().Str("component", "fake_backend").Msg("Goroutine: sending StreamStartMsg")
-			f.p.Send(conversationui.StreamStartMsg{
+			f.p.Send(chat.StreamStartMsg{
 				StreamMetadata: metadata,
 			})
 			for {
@@ -148,7 +149,7 @@ func (f *FakeBackend) Start(ctx context.Context, prompt string) (tea.Cmd, error)
 						completion := strings.Join(reversedWords[:idx+1], " ")
 						log.Debug().Int("idx", idx).Str("delta", reversedWords[idx]+" ").Str("completion", completion).Str("component", "fake_backend").Msg("Goroutine: sending StreamCompletionMsg")
 						f.p.Send(
-							conversationui.StreamCompletionMsg{
+							chat.StreamCompletionMsg{
 								StreamMetadata: metadata,
 								Delta:          reversedWords[idx] + " ",
 								Completion:     completion,
@@ -157,7 +158,7 @@ func (f *FakeBackend) Start(ctx context.Context, prompt string) (tea.Cmd, error)
 						idx++
 					} else {
 						log.Debug().Str("component", "fake_backend").Msg("Goroutine: sending StreamDoneMsg")
-						f.p.Send(conversationui.StreamDoneMsg{
+						f.p.Send(chat.StreamDoneMsg{
 							StreamMetadata: metadata,
 							Completion:     msg,
 						})
@@ -171,6 +172,8 @@ func (f *FakeBackend) Start(ctx context.Context, prompt string) (tea.Cmd, error)
 		return nil
 	}, nil
 }
+
+func ptrFloat(v float64) *float64 { return &v }
 
 // SubmitPrompt starts a streaming run from a single prompt string.
 // SubmitPrompt removed: Start now accepts a plain prompt string

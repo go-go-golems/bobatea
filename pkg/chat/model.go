@@ -1,29 +1,29 @@
 package chat
 
 import (
-    context2 "context"
-    "fmt"
-    "os"
-    "strings"
-    "sync/atomic"
-    "time"
+	context2 "context"
+	"fmt"
+	"os"
+	"strings"
+	"sync/atomic"
+	"time"
 
-    geppetto_conversation "github.com/go-go-golems/geppetto/pkg/conversation"
+	geppetto_events "github.com/go-go-golems/geppetto/pkg/events"
+	"github.com/google/uuid"
 
-    "github.com/atotto/clipboard"
-    "github.com/charmbracelet/bubbles/help"
-    "github.com/charmbracelet/bubbles/key"
-    "github.com/charmbracelet/bubbles/viewport"
-    tea "github.com/charmbracelet/bubbletea"
-    "github.com/charmbracelet/lipgloss"
-    conversationui "github.com/go-go-golems/bobatea/pkg/chat/conversation"
-    "github.com/go-go-golems/bobatea/pkg/filepicker"
-    mode_keymap "github.com/go-go-golems/bobatea/pkg/mode-keymap"
-    "github.com/go-go-golems/bobatea/pkg/textarea"
-    "github.com/go-go-golems/bobatea/pkg/timeline"
-    renderers "github.com/go-go-golems/bobatea/pkg/timeline/renderers"
-    "github.com/pkg/errors"
-    "github.com/rs/zerolog/log"
+	"github.com/atotto/clipboard"
+	"github.com/charmbracelet/bubbles/help"
+	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/viewport"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/go-go-golems/bobatea/pkg/filepicker"
+	mode_keymap "github.com/go-go-golems/bobatea/pkg/mode-keymap"
+	"github.com/go-go-golems/bobatea/pkg/textarea"
+	"github.com/go-go-golems/bobatea/pkg/timeline"
+	renderers "github.com/go-go-golems/bobatea/pkg/timeline/renderers"
+	"github.com/pkg/errors"
+	"github.com/rs/zerolog/log"
 )
 
 // Tracing counters for debugging recursive calls
@@ -58,7 +58,7 @@ type Status struct {
 }
 
 type model struct {
-	autoStartBackend    bool
+	autoStartBackend bool
 
 	viewport       viewport.Model
 	scrollToBottom bool
@@ -82,7 +82,7 @@ type model struct {
 	err    error
 	keyMap KeyMap
 
-	style  *conversationui.Style
+	style  *Style
 	width  int
 	height int
 
@@ -134,15 +134,15 @@ func InitialModel(backend Backend, options ...ModelOption) model {
 	fp.Filepicker.CurrentDirectory = dir
 	fp.Filepicker.Height = 10
 
-    ret := model{
-        filepicker:          fp,
-        style:               conversationui.DefaultStyles(),
-        keyMap:              DefaultKeyMap,
-        backend:             backend,
-        viewport:            viewport.New(0, 0),
-        help:                help.New(),
-        scrollToBottom:      true,
-    }
+	ret := model{
+		filepicker:     fp,
+		style:          DefaultStyles(),
+		keyMap:         DefaultKeyMap,
+		backend:        backend,
+		viewport:       viewport.New(0, 0),
+		help:           help.New(),
+		scrollToBottom: true,
+	}
 
 	for _, option := range options {
 		option(&ret)
@@ -281,12 +281,12 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) saveToFile(path string) (tea.Model, tea.Cmd) {
-    // No conversation manager; writing viewport content as a simple fallback
-    // In a real backend, this should request an export from the backend.
-    content := m.timelineCtrl.View()
-    if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-        return m, func() tea.Msg { return ErrorMsg(err) }
-    }
+	// No conversation manager; writing viewport content as a simple fallback
+	// In a real backend, this should request an export from the backend.
+	content := m.timelineCtrl.View()
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		return m, func() tea.Msg { return ErrorMsg(err) }
+	}
 
 	m.state = StateUserInput
 	m.updateKeyBindings()
@@ -303,13 +303,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Consolidated logger for this update call
 	logger := log.With().Int64("update_call_id", updateCallID).Logger()
-    logger.Trace().
-        Str("msg_type", msgType).
-        Str("current_state", string(m.state)).
-        Bool("scroll_to_bottom", m.scrollToBottom).
-        Bool("backend_finished", m.backend.IsFinished()).
-        Time("start_time", updateStartTime).
-        Msg("UPDATE ENTRY")
+	logger.Trace().
+		Str("msg_type", msgType).
+		Str("current_state", string(m.state)).
+		Bool("scroll_to_bottom", m.scrollToBottom).
+		Bool("backend_finished", m.backend.IsFinished()).
+		Time("start_time", updateStartTime).
+		Msg("UPDATE ENTRY")
 
 	var cmds []tea.Cmd
 	var cmd tea.Cmd
@@ -382,30 +382,30 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.updateKeyBindings()
 		return m, nil
 
-	case conversationui.StreamCompletionMsg,
-		conversationui.StreamStartMsg,
-		conversationui.StreamStatusMsg,
-		conversationui.StreamDoneMsg,
-		conversationui.StreamCompletionError:
+	case StreamCompletionMsg,
+		StreamStartMsg,
+		StreamStatusMsg,
+		StreamDoneMsg,
+		StreamCompletionError:
 
 		logger.Trace().Str("stream_msg_type", msgType).Msg("Stream message received - ENTERING STREAM PROCESSING")
 
 		startTime := time.Now()
 
 		switch streamMsg := msg.(type) {
-		case conversationui.StreamStartMsg:
-        logger.Debug().Str("operation", "stream_start_reception").
-                Str("messageID", streamMsg.ID.String()).
-                Time("timestamp", startTime).
-                Bool("scroll_to_bottom", m.scrollToBottom).
-                Msg("StreamStartMsg details")
-		case conversationui.StreamCompletionMsg:
+		case StreamStartMsg:
+			logger.Debug().Str("operation", "stream_start_reception").
+				Str("messageID", streamMsg.ID.String()).
+				Time("timestamp", startTime).
+				Bool("scroll_to_bottom", m.scrollToBottom).
+				Msg("StreamStartMsg details")
+		case StreamCompletionMsg:
 			logger.Debug().Str("operation", "stream_completion_reception").
 				Str("messageID", streamMsg.ID.String()).
 				Int("delta_length", len(streamMsg.Delta)).
 				Int("completion_length", len(streamMsg.Completion)).
 				Msg("StreamCompletionMsg details")
-		case conversationui.StreamDoneMsg:
+		case StreamDoneMsg:
 			logger.Debug().Str("operation", "stream_done_reception").
 				Str("messageID", streamMsg.ID.String()).
 				Msg("StreamDoneMsg details")
@@ -413,32 +413,32 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Translate stream messages to timeline entity lifecycle
 		switch v := msg.(type) {
-		case conversationui.StreamStartMsg:
+		case StreamStartMsg:
 			id := v.ID.String()
 			m.entityVers[id] = 0
 			m.timelineCtrl.OnCreated(timeline.UIEntityCreated{
 				ID:        timeline.EntityID{LocalID: id, Kind: "llm_text"},
 				Renderer:  timeline.RendererDescriptor{Kind: "llm_text"},
-				Props:     map[string]any{"role": "assistant", "text": ""},
+				Props:     map[string]any{"role": "assistant", "text": "", "metadata": toLLMMeta(v.EventMetadata)},
 				StartedAt: time.Now(),
 			})
-		case conversationui.StreamCompletionMsg:
+		case StreamCompletionMsg:
 			id := v.ID.String()
 			m.entityVers[id] = m.entityVers[id] + 1
 			m.timelineCtrl.OnUpdated(timeline.UIEntityUpdated{
 				ID:        timeline.EntityID{LocalID: id, Kind: "llm_text"},
-				Patch:     map[string]any{"text": v.Completion},
+				Patch:     map[string]any{"text": v.Completion, "metadata": toLLMMeta(v.EventMetadata)},
 				Version:   m.entityVers[id],
 				UpdatedAt: time.Now(),
 			})
-		case conversationui.StreamDoneMsg:
+		case StreamDoneMsg:
 			id := v.ID.String()
 			m.timelineCtrl.OnCompleted(timeline.UIEntityCompleted{
 				ID:     timeline.EntityID{LocalID: id, Kind: "llm_text"},
-				Result: map[string]any{"text": v.Completion},
+				Result: map[string]any{"text": v.Completion, "metadata": toLLMMeta(v.EventMetadata)},
 			})
 			cmds = append(cmds, m.finishCompletion())
-		case conversationui.StreamCompletionError:
+		case StreamCompletionError:
 			id := v.ID.String()
 			m.timelineCtrl.OnCompleted(timeline.UIEntityCompleted{
 				ID:     timeline.EntityID{LocalID: id, Kind: "llm_text"},
@@ -740,7 +740,7 @@ func (m *model) recomputeSize() {
 		Int("textarea_width", m.width-h).
 		Msg("Component dimensions updated")
 
-		// CRITICAL: Regenerate timeline view and set content
+	// CRITICAL: Regenerate timeline view and set content
 	v := m.timelineCtrl.View()
 	log.Debug().Str("component", "chat").Str("when", "recompute_size").Int("view_len", len(v)).Int("y_offset", m.viewport.YOffset).Msg("SetContent")
 	m.viewport.SetContent(v)
@@ -771,9 +771,9 @@ func (m model) textAreaView() string {
 		// Grey out input when in selection mode
 		v = m.style.UnselectedMessage.Foreground(lipgloss.Color("240")).Render(v)
 	case StateStreamCompletion:
-        // Grey out and ensure blurred while streaming
-        m.textArea.Blur()
-        v = m.style.UnselectedMessage.Render(v)
+		// Grey out and ensure blurred while streaming
+		m.textArea.Blur()
+		v = m.style.UnselectedMessage.Render(v)
 	case StateError, StateSavingToFile:
 	}
 
@@ -785,8 +785,8 @@ func (m model) View() string {
 	viewCallID := atomic.AddInt64(&viewCallCounter, 1)
 	viewStartTime := time.Now()
 
-    vlogger := log.With().Int64("view_call_id", viewCallID).Logger()
-    vlogger.Trace().Str("state", string(m.state)).Bool("scroll_to_bottom", m.scrollToBottom).Time("start_time", viewStartTime).Msg("VIEW ENTRY - POTENTIAL EXCESSIVE CALL POINT")
+	vlogger := log.With().Int64("view_call_id", viewCallID).Logger()
+	vlogger.Trace().Str("state", string(m.state)).Bool("scroll_to_bottom", m.scrollToBottom).Time("start_time", viewStartTime).Msg("VIEW ENTRY - POTENTIAL EXCESSIVE CALL POINT")
 
 	headerStart := time.Now()
 	headerView := m.headerView()
@@ -849,11 +849,11 @@ func (m model) View() string {
 
 func (m *model) startBackend() tea.Cmd {
 	startCallID := atomic.AddInt64(&updateCallCounter, 1)
-    log.Debug().
-        Int64("start_call_id", startCallID).
-        Str("previous_state", string(m.state)).
-        Bool("backend_finished", m.backend.IsFinished()).
-        Msg("START BACKEND ENTRY - MAJOR COMMAND GENERATOR")
+	log.Debug().
+		Int64("start_call_id", startCallID).
+		Str("previous_state", string(m.state)).
+		Bool("backend_finished", m.backend.IsFinished()).
+		Msg("START BACKEND ENTRY - MAJOR COMMAND GENERATOR")
 
 	m.state = StateStreamCompletion
 	m.textArea.Blur()
@@ -873,12 +873,12 @@ func (m *model) startBackend() tea.Cmd {
 		}
 	}
 
-    backendCmd := func() tea.Msg {
-        log.Debug().
-            Int64("start_call_id", startCallID).
-            Msg("BACKEND START COMMAND EXECUTING (no-op in new prompt flow)")
-        return nil
-    }
+	backendCmd := func() tea.Msg {
+		log.Debug().
+			Int64("start_call_id", startCallID).
+			Msg("BACKEND START COMMAND EXECUTING (no-op in new prompt flow)")
+		return nil
+	}
 
 	log.Debug().
 		Int64("start_call_id", startCallID).
@@ -890,10 +890,10 @@ func (m *model) startBackend() tea.Cmd {
 func (m *model) submit() tea.Cmd {
 	submitCallID := atomic.AddInt64(&updateCallCounter, 1)
 	slogger := log.With().Int64("submit_call_id", submitCallID).Logger()
-    slogger.Trace().
-        Bool("backend_finished", m.backend.IsFinished()).
-        Int("input_length", len(m.textArea.Value())).
-        Msg("SUBMIT ENTRY")
+	slogger.Trace().
+		Bool("backend_finished", m.backend.IsFinished()).
+		Int("input_length", len(m.textArea.Value())).
+		Msg("SUBMIT ENTRY")
 
 	if !m.backend.IsFinished() {
 		slogger.Trace().Msg("Backend not finished - returning error")
@@ -911,7 +911,7 @@ func (m *model) submit() tea.Cmd {
 	}
 
 	// Add entity to timeline
-	id := geppetto_conversation.NewNodeID().String()
+	id := uuid.New().String()
 	log.Debug().Str("component", "chat").Str("when", "submit").Str("id", id).Msg("Adding user message to timeline")
 	m.timelineCtrl.OnCreated(timeline.UIEntityCreated{
 		ID:       timeline.EntityID{LocalID: id, Kind: "llm_text"},
@@ -933,15 +933,15 @@ func (m *model) submit() tea.Cmd {
 		}
 	}
 
-    backendCmd := func() tea.Msg {
-        ctx := context2.Background()
-        cmd, err := m.backend.Start(ctx, userMessage)
-        if err != nil {
-            return ErrorMsg(err)
-        }
-        return cmd()
-    }
-    return tea.Batch(refreshCmd, backendCmd)
+	backendCmd := func() tea.Msg {
+		ctx := context2.Background()
+		cmd, err := m.backend.Start(ctx, userMessage)
+		if err != nil {
+			return ErrorMsg(err)
+		}
+		return cmd()
+	}
+	return tea.Batch(refreshCmd, backendCmd)
 }
 
 type refreshMessageMsg struct {
@@ -1001,7 +1001,7 @@ func (m *model) finishCompletion() tea.Cmd {
 func (m model) handleUserAction(msg UserActionMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
-    switch msg_ := msg.(type) {
+	switch msg_ := msg.(type) {
 	case ToggleHelpMsg:
 		m.help.ShowAll = !m.help.ShowAll
 
@@ -1140,6 +1140,22 @@ func (m model) handleUserAction(msg UserActionMsg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, cmd
+}
+
+// toLLMMeta converts Geppetto event metadata into a typed timeline.LLMMeta for UI consumption
+func toLLMMeta(em *geppetto_events.EventMetadata) *timeline.LLMMeta {
+	if em == nil {
+		return nil
+	}
+	out := &timeline.LLMMeta{
+		Engine:      em.Engine,
+		Temperature: em.Temperature,
+	}
+	if em.Usage != nil {
+		out.Usage.InputTokens = em.Usage.InputTokens
+		out.Usage.OutputTokens = em.Usage.OutputTokens
+	}
+	return out
 }
 
 // Add these new methods to the model struct

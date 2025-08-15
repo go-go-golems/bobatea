@@ -77,4 +77,15 @@ type EntityCompletedMsg struct {
     Result map[string]any
 }
 
+// LLMMeta is a typed metadata container for UI models, avoiding brittle map parsing.
+type LLMMeta struct {
+    Engine      string    `json:"engine,omitempty"`
+    Model       string    `json:"model,omitempty"`
+    Temperature *float64  `json:"temperature,omitempty"`
+    Usage       struct {
+        InputTokens  int `json:"input_tokens"`
+        OutputTokens int `json:"output_tokens"`
+    } `json:"usage"`
+}
+
 

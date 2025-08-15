@@ -26,7 +26,7 @@ type LLMTextModel struct {
     focused  bool
     renderer *glamour.TermRenderer
     style     *chatstyle.Style
-    metadata  map[string]any
+    metadata  any // prefer *timeline.LLMMeta, fallback to map[string]any
 }
 
 func (m *LLMTextModel) Init() tea.Cmd { return nil }
@@ -95,7 +95,7 @@ func (m *LLMTextModel) View() string {
     if body == "" { body = m.text }
 
     // Append metadata line if available
-    if len(m.metadata) > 0 {
+    if m.metadata != nil {
         meta := formatMetadata(m.metadata)
         if meta != "" {
             metaRendered := m.style.MetadataStyle.Width(contentWidth).Render(meta)
@@ -113,7 +113,7 @@ func (m *LLMTextModel) OnProps(patch map[string]any) {
     if v, ok := patch["role"].(string); ok { m.role = v }
     if v, ok := patch["text"].(string); ok { m.text = v }
     if v, ok := patch["selected"].(bool); ok { m.selected = v }
-    if v, ok := patch["metadata"].(map[string]any); ok { m.metadata = v }
+    if v, ok := patch["metadata"]; ok { m.metadata = v }
 }
 
 // Removed OnCompleted/SetSize/Focus/Blur; handled via messages
@@ -174,29 +174,39 @@ func looksLikeError(s string) bool {
     return strings.HasPrefix(t, "**error**") || strings.HasPrefix(t, "error:")
 }
 
-func formatMetadata(md map[string]any) string {
+func formatMetadata(md any) string {
     if md == nil { return "" }
+    // Preferred: typed LLMMeta
+    switch t := md.(type) {
+    case *timeline.LLMMeta:
+        return formatFromLLMMeta(t)
+    case timeline.LLMMeta:
+        tt := t; return formatFromLLMMeta(&tt)
+    }
+    // Fallback legacy maps
+    mm, ok := md.(map[string]any)
+    if !ok { return "" }
     // Mirror conversation metadata and extend with model and flexible usage extraction
-    engine := firstString(md, "engine")
-    model := firstString(md, "model")
-    if engine == "" { engine = nestedString(md, []string{"LLMMessageMetadata", "Engine"}, []string{"event_metadata", "llm", "engine"}) }
-    if model == "" { model = nestedString(md, []string{"LLMMessageMetadata", "Model"}, []string{"event_metadata", "llm", "model"}) }
+    engine := firstString(mm, "engine")
+    model := firstString(mm, "model")
+    if engine == "" { engine = nestedString(mm, []string{"LLMMessageMetadata", "Engine"}, []string{"event_metadata", "llm", "engine"}) }
+    if model == "" { model = nestedString(mm, []string{"LLMMessageMetadata", "Model"}, []string{"event_metadata", "llm", "model"}) }
 
     var tempStr string
-    if tv, ok := firstFloat(md, "temperature"); ok { tempStr = fmt.Sprintf("t: %.2f", tv) }
+    if tv, ok := firstFloat(mm, "temperature"); ok { tempStr = fmt.Sprintf("t: %.2f", tv) }
     if tempStr == "" {
-        if tv, ok := nestedFloat(md, []string{"LLMMessageMetadata", "Temperature"}, []string{"event_metadata", "llm", "temperature"}); ok {
+        if tv, ok := nestedFloat(mm, []string{"LLMMessageMetadata", "Temperature"}, []string{"event_metadata", "llm", "temperature"}); ok {
             tempStr = fmt.Sprintf("t: %.2f", tv)
         }
     }
 
-    inToks, outToks := extractUsageTokens(md)
+    inToks, outToks := extractUsageTokens(mm)
     if inToks == 0 && outToks == 0 {
-        if m2, ok := md["LLMMessageMetadata"].(map[string]any); ok {
+        if m2, ok := mm["LLMMessageMetadata"].(map[string]any); ok {
             inToks, outToks = extractUsageTokens(m2)
         }
         if inToks == 0 && outToks == 0 {
-            if ev, ok := md["event_metadata"].(map[string]any); ok {
+            if ev, ok := mm["event_metadata"].(map[string]any); ok {
                 inToks, outToks = extractUsageTokens(ev)
             }
         }
@@ -207,6 +217,18 @@ func formatMetadata(md map[string]any) string {
     if model != "" { parts = append(parts, model) }
     if tempStr != "" { parts = append(parts, tempStr) }
     if inToks > 0 || outToks > 0 { parts = append(parts, fmt.Sprintf("in: %d out: %d", inToks, outToks)) }
+    return strings.Join(parts, " ")
+}
+
+func formatFromLLMMeta(m *timeline.LLMMeta) string {
+    if m == nil { return "" }
+    parts := []string{}
+    if m.Engine != "" { parts = append(parts, m.Engine) }
+    if m.Model != "" { parts = append(parts, m.Model) }
+    if m.Temperature != nil { parts = append(parts, fmt.Sprintf("t: %.2f", *m.Temperature)) }
+    if m.Usage.InputTokens > 0 || m.Usage.OutputTokens > 0 {
+        parts = append(parts, fmt.Sprintf("in: %d out: %d", m.Usage.InputTokens, m.Usage.OutputTokens))
+    }
     return strings.Join(parts, " ")
 }
 
