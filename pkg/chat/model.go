@@ -72,7 +72,7 @@ type model struct {
 
 	// Timeline controller replaces conversation view rendering
 	timelineReg  *timeline.Registry
-	timelineCtrl *timeline.Controller
+	timelineSh   *timeline.Shell
 	// entityStart removed; engines now provide DurationMs in metadata
 	// entityStart     map[string]time.Time
 	timelineRegHook func(*timeline.Registry)
@@ -99,6 +99,11 @@ type model struct {
 	// by BlurInputMsg / UnblurInputMsg actions. This flag can be used by UI tooling
 	// to gate or reflect input state if needed.
 	inputBlurred bool
+
+	// externalInput, when true, hides the internal input widget and expects the host
+	// to drive input via control messages (Replace/Append/Prepend/Submit). This allows
+	// embedding the chat timeline in apps with their own input UX.
+	externalInput bool
 }
 
 type ModelOption func(*model)
@@ -125,6 +130,14 @@ func WithAutoStartBackend(autoStartBackend bool) ModelOption {
 func WithTimelineRegister(hook func(*timeline.Registry)) ModelOption {
 	return func(m *model) {
 		m.timelineRegHook = hook
+	}
+}
+
+// WithExternalInput turns the chat model into a reusable timeline shell by hiding the
+// built-in input widget. The host should control input text and submission via messages.
+func WithExternalInput(enabled bool) ModelOption {
+	return func(m *model) {
+		m.externalInput = enabled
 	}
 }
 
@@ -169,7 +182,7 @@ func InitialModel(backend Backend, options ...ModelOption) model {
 	if ret.timelineRegHook != nil {
 		ret.timelineRegHook(ret.timelineReg)
 	}
-	ret.timelineCtrl = timeline.NewController(ret.timelineReg)
+	ret.timelineSh = timeline.NewShell(ret.timelineReg)
 	// ret.entityStart = map[string]time.Time{}
 
 	return ret
@@ -186,14 +199,14 @@ func (m model) Init() tea.Cmd {
 	//	})
 	//}
 
-	cmds = append(cmds, m.filepicker.Init(), m.viewport.Init())
+	cmds = append(cmds, m.filepicker.Init(), m.viewport.Init(), m.timelineSh.Init())
 
 	// Seed existing chat messages as timeline entities
 	// Seeding from conversation is disabled; timeline should be sourced from entity events
 
 	// Set initial timeline view content
 	{
-		v := m.timelineCtrl.View()
+		v := m.timelineSh.View()
 		log.Debug().Str("component", "chat").Str("when", "Init").Int("view_len", len(v)).Msg("SetContent")
 		m.viewport.SetContent(v)
 	}
@@ -202,7 +215,7 @@ func (m model) Init() tea.Cmd {
 
 	m.updateKeyBindings()
 	// Select last entity if any
-	m.timelineCtrl.SelectLast()
+	m.timelineSh.SelectLast()
 
 	if m.autoStartBackend {
 		cmds = append(cmds, func() tea.Msg {
@@ -268,15 +281,17 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	default:
 		switch m.state {
 		case StateUserInput:
-			m.textArea, cmd = m.textArea.Update(msg)
+			if !m.externalInput {
+				m.textArea, cmd = m.textArea.Update(msg)
+			}
 		case StateSavingToFile:
 			var updatedModel tea.Model
 			updatedModel, cmd = m.filepicker.Update(msg)
 			m.filepicker = updatedModel.(filepicker.Model)
 		case StateMovingAround, StateStreamCompletion, StateError:
-			prevAtBottom := m.viewport.AtBottom()
-			m.viewport, cmd = m.viewport.Update(msg)
-			if m.viewport.AtBottom() && !prevAtBottom {
+			prevAtBottom := m.timelineSh.AtBottom()
+			cmd = m.timelineSh.UpdateViewport(msg)
+			if m.timelineSh.AtBottom() && !prevAtBottom {
 				m.scrollToBottom = false
 			}
 		}
@@ -288,7 +303,7 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m model) saveToFile(path string) (tea.Model, tea.Cmd) {
 	// No conversation manager; writing viewport content as a simple fallback
 	// In a real backend, this should request an export from the backend.
-	content := m.timelineCtrl.View()
+	content := m.timelineSh.View()
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		return m, func() tea.Msg { return ErrorMsg(err) }
 	}
@@ -329,15 +344,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.state == StateMovingAround {
 			switch msg_.String() {
 			case "enter":
-				m.timelineCtrl.EnterSelection()
-				v := m.timelineCtrl.View()
+				m.timelineSh.EnterSelection()
+				v := m.timelineSh.View()
 				log.Debug().Str("component", "chat").Str("when", "enter_selection").Int("view_len", len(v)).Int("y_offset", m.viewport.YOffset).Msg("SetContent")
 				m.viewport.SetContent(v)
 				return m, nil
 			case "esc":
-				if m.timelineCtrl.IsEntering() {
-					m.timelineCtrl.ExitSelection()
-					v := m.timelineCtrl.View()
+				if m.timelineSh.IsEntering() {
+					m.timelineSh.ExitSelection()
+					v := m.timelineSh.View()
 					log.Debug().Str("component", "chat").Str("when", "exit_entering").Int("view_len", len(v)).Int("y_offset", m.viewport.YOffset).Msg("SetContent")
 					m.viewport.SetContent(v)
 					return m, nil
@@ -348,26 +363,26 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.textArea.Focus()
 				m.updateKeyBindings()
 				// hide selection highlight and unselect entity
-				m.timelineCtrl.SetSelectionVisible(false)
-				m.timelineCtrl.Unselect()
-				v := m.timelineCtrl.View()
+				m.timelineSh.SetSelectionVisible(false)
+				m.timelineSh.Unselect()
+				v := m.timelineSh.View()
 				log.Debug().Str("component", "chat").Str("when", "esc_to_input").Int("view_len", len(v)).Int("y_offset", m.viewport.YOffset).Msg("SetContent")
 				m.viewport.SetContent(v)
 				return m, nil
 			}
 			// Route all keys while entering to the selected model and log
-			if m.timelineCtrl.IsEntering() {
+			if m.timelineSh.IsEntering() {
 				logger.Debug().Str("route", "entering").Str("key", msg_.String()).Msg("Routing key to selected entity model")
-				cmd := m.timelineCtrl.HandleMsg(msg_)
-				v := m.timelineCtrl.View()
+				cmd := m.timelineSh.HandleMsg(msg_)
+				v := m.timelineSh.View()
 				log.Debug().Str("component", "chat").Str("when", "entering_route_key").Int("view_len", len(v)).Int("y_offset", m.viewport.YOffset).Msg("SetContent")
 				m.viewport.SetContent(v)
 				return m, cmd
 			}
 			// Allow entities to react to copy requests even when not entering
 			if msg_.String() == "alt+c" {
-				cmd := m.timelineCtrl.SendToSelected(timeline.EntityCopyTextMsg{})
-				v := m.timelineCtrl.View()
+				cmd := m.timelineSh.SendToSelected(timeline.EntityCopyTextMsg{})
+				v := m.timelineSh.View()
 				log.Debug().Str("component", "chat").Str("when", "copy_selected").Int("view_len", len(v)).Int("y_offset", m.viewport.YOffset).Msg("SetContent")
 				m.viewport.SetContent(v)
 				if cmd != nil {
@@ -381,7 +396,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		logger.Debug().Int("width", msg_.Width).Int("height", msg_.Height).Msg("Window size changed")
 		m.width = msg_.Width
 		m.height = msg_.Height
-		m.timelineCtrl.SetSize(m.width, m.height)
+		m.timelineSh.SetSize(m.width, m.height)
 		m.recomputeSize()
 
 	case ErrorMsg:
@@ -399,42 +414,30 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Accept external timeline lifecycle messages (e.g., from backend simulating agent tool calls)
 	case timeline.UIEntityCreated:
 		logger.Debug().Str("lifecycle", "created").Str("kind", msg_.ID.Kind).Str("local_id", msg_.ID.LocalID).Msg("Applying external entity event")
-		m.timelineCtrl.OnCreated(msg_)
+		m.timelineSh.OnCreated(msg_)
 		if m.scrollToBottom {
-			v := m.timelineCtrl.View()
-			log.Debug().Str("component", "chat").Str("when", "external_updated").Int("view_len", len(v)).Int("y_offset", m.viewport.YOffset).Msg("SetContent")
-			m.viewport.SetContent(v)
-			m.viewport.GotoBottom()
+			m.timelineSh.GotoBottom()
 		}
 		return m, nil
 	case timeline.UIEntityUpdated:
 		logger.Debug().Str("lifecycle", "updated").Str("kind", msg_.ID.Kind).Str("local_id", msg_.ID.LocalID).Int64("version", msg_.Version).Msg("Applying external entity event")
-		m.timelineCtrl.OnUpdated(msg_)
+		m.timelineSh.OnUpdated(msg_)
 		if m.scrollToBottom {
-			v := m.timelineCtrl.View()
-			log.Debug().Str("component", "chat").Str("when", "external_completed").Int("view_len", len(v)).Int("y_offset", m.viewport.YOffset).Msg("SetContent")
-			m.viewport.SetContent(v)
-			m.viewport.GotoBottom()
+			m.timelineSh.GotoBottom()
 		}
 		return m, nil
 	case timeline.UIEntityCompleted:
 		logger.Debug().Str("lifecycle", "completed").Str("kind", msg_.ID.Kind).Str("local_id", msg_.ID.LocalID).Msg("Applying external entity event")
-		m.timelineCtrl.OnCompleted(msg_)
+		m.timelineSh.OnCompleted(msg_)
 		if m.scrollToBottom {
-			v := m.timelineCtrl.View()
-			log.Debug().Str("component", "chat").Str("when", "external_deleted").Int("view_len", len(v)).Int("y_offset", m.viewport.YOffset).Msg("SetContent")
-			m.viewport.SetContent(v)
-			m.viewport.GotoBottom()
+			m.timelineSh.GotoBottom()
 		}
 		return m, nil
 	case timeline.UIEntityDeleted:
 		logger.Debug().Str("lifecycle", "deleted").Str("kind", msg_.ID.Kind).Str("local_id", msg_.ID.LocalID).Msg("Applying external entity event")
-		m.timelineCtrl.OnDeleted(msg_)
+		m.timelineSh.OnDeleted(msg_)
 		if m.scrollToBottom {
-			v := m.timelineCtrl.View()
-			log.Debug().Str("component", "chat").Str("when", "scrollToSelected").Int("view_len", len(v)).Int("y_offset", m.viewport.YOffset).Msg("SetContent")
-			m.viewport.SetContent(v)
-			m.viewport.GotoBottom()
+			m.timelineSh.GotoBottom()
 		}
 		return m, nil
 
@@ -449,11 +452,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case refreshMessageMsg:
 		logger.Trace().Bool("go_to_bottom", msg_.GoToBottom).Bool("scroll_to_bottom", m.scrollToBottom).Msg("REFRESH MESSAGE - POTENTIAL TRIGGER FOR LOOPS")
 
-		v := m.timelineCtrl.View()
-		m.viewport.SetContent(v)
 		m.recomputeSize()
 		if msg_.GoToBottom || m.scrollToBottom {
-			m.viewport.GotoBottom()
+			m.timelineSh.GotoBottom()
 		}
 
 	case filepicker.SelectFileMsg:
@@ -478,9 +479,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		switch m.state {
 		case StateUserInput, StateError, StateStreamCompletion:
-			m.viewport, cmd = m.viewport.Update(msg_)
+			cmd = m.timelineSh.UpdateViewport(msg_)
 			if cmd != nil {
-				logger.Trace().Str("viewport_cmd_type", fmt.Sprintf("%T", cmd)).Msg("Viewport returned command")
+				logger.Trace().Str("viewport_cmd_type", fmt.Sprintf("%T", cmd)).Msg("Shell viewport returned command")
 			}
 			cmds = append(cmds, cmd)
 		case StateMovingAround:
@@ -488,10 +489,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if km, ok := msg_.(tea.KeyMsg); ok {
 				switch {
 				case key.Matches(km, m.keyMap.SelectNextMessage):
-					m.timelineCtrl.SelectNext()
+					m.timelineSh.SelectNext()
 					m.scrollToSelected()
 				case key.Matches(km, m.keyMap.SelectPrevMessage):
-					m.timelineCtrl.SelectPrev()
+					m.timelineSh.SelectPrev()
 					m.scrollToSelected()
 				case key.Matches(km, m.keyMap.ScrollDown):
 					m.viewport.ScrollDown(1)
@@ -515,9 +516,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		oldMessageCount := m.status.MessageCount
 		m.status.State = m.state
 		m.status.InputText = m.textArea.Value()
-		m.status.SelectedIdx = m.timelineCtrl.SelectedIndex()
+		m.status.SelectedIdx = m.timelineSh.SelectedIndex()
 		// Fallback approximation using rendered height if entity count is not available
-		m.status.MessageCount = lipgloss.Height(m.timelineCtrl.View())
+		m.status.MessageCount = lipgloss.Height(m.timelineSh.View())
 		m.status.Error = m.err
 
 		if oldMessageCount != m.status.MessageCount {
@@ -545,54 +546,7 @@ func (m *model) updateKeyBindings() {
 }
 
 // scrollToSelected scrolls the viewport to keep the selected entity in view
-func (m *model) scrollToSelected() {
-	scrollCallID := atomic.AddInt64(&updateCallCounter, 1)
-	log.Trace().
-		Int64("scroll_call_id", scrollCallID).
-		Int("viewport_y_offset", m.viewport.YOffset).
-		Int("viewport_height", m.viewport.Height).
-		Msg("SCROLL TO SELECTED ENTRY - TIMELINE")
-
-	viewStart := time.Now()
-	v, off, h := m.timelineCtrl.ViewAndSelectedPosition()
-	viewDuration := time.Since(viewStart)
-
-	log.Trace().
-		Int64("scroll_call_id", scrollCallID).
-		Dur("view_generation", viewDuration).
-		Int("view_length", len(v)).
-		Int("pos_offset", off).
-		Int("pos_height", h).
-		Msg("View generated for scroll calculation")
-
-	setContentStart := time.Now()
-	m.viewport.SetContent(v)
-	setContentDuration := time.Since(setContentStart)
-
-	midScreenOffset := m.viewport.YOffset + m.viewport.Height/2
-	msgEndOffset := off + h
-	bottomOffset := m.viewport.YOffset + m.viewport.Height
-
-	if off > midScreenOffset && msgEndOffset > bottomOffset {
-		newOffset := off - max(m.viewport.Height-h-1, m.viewport.Height/2)
-		m.viewport.SetYOffset(newOffset)
-		log.Trace().
-			Int64("scroll_call_id", scrollCallID).
-			Int("new_y_offset", newOffset).
-			Msg("Scrolled down to show entity")
-	} else if off < m.viewport.YOffset {
-		m.viewport.SetYOffset(off)
-		log.Trace().
-			Int64("scroll_call_id", scrollCallID).
-			Int("new_y_offset", off).
-			Msg("Scrolled up to show entity")
-	}
-
-	log.Trace().
-		Int64("scroll_call_id", scrollCallID).
-		Dur("set_content_duration", setContentDuration).
-		Msg("SCROLL TO SELECTED EXIT")
-}
+func (m *model) scrollToSelected() { m.timelineSh.ScrollToSelected() }
 
 func (m *model) recomputeSize() {
 	recomputeCallID := atomic.AddInt64(&updateCallCounter, 1)
@@ -638,7 +592,10 @@ func (m *model) recomputeSize() {
 	textAreaHeight := lipgloss.Height(textAreaView)
 	textAreaDuration := time.Since(textAreaStart)
 
-	newHeight := m.height - textAreaHeight - headerHeight - helpViewHeight
+	newHeight := m.height - headerHeight - helpViewHeight
+	if !m.externalInput {
+		newHeight = m.height - textAreaHeight - headerHeight - helpViewHeight
+	}
 	if newHeight < 0 {
 		newHeight = 0
 	}
@@ -650,10 +607,8 @@ func (m *model) recomputeSize() {
 		Int("calculated_viewport_height", newHeight).
 		Msg("Text area computed, viewport height calculated")
 
-	// Update viewport dimensions
-	m.viewport.Width = m.width
-	m.viewport.Height = newHeight
-	m.viewport.YPosition = headerHeight + 1
+	// Update shell (timeline) dimensions and position
+	m.timelineSh.SetSize(m.width, newHeight)
 
 	h, _ := m.style.SelectedMessage.GetFrameSize()
 	m.textArea.SetWidth(m.width - h)
@@ -667,10 +622,10 @@ func (m *model) recomputeSize() {
 		Msg("Component dimensions updated")
 
 	// CRITICAL: Regenerate timeline view and set content
-	v := m.timelineCtrl.View()
+	v := m.timelineSh.View()
 	log.Debug().Str("component", "chat").Str("when", "recompute_size").Int("view_len", len(v)).Int("y_offset", m.viewport.YOffset).Msg("SetContent")
 	m.viewport.SetContent(v)
-	m.viewport.GotoBottom()
+	m.timelineSh.GotoBottom()
 	log.Trace().
 		Int64("recompute_call_id", recomputeCallID).
 		Int("view_length", len(v)).
@@ -687,6 +642,10 @@ func (m model) textAreaView() string {
 		w, _ := m.style.SelectedMessage.GetFrameSize()
 		v := wrapWords(m.err.Error(), m.width-w)
 		return m.style.SelectedMessage.Render(v)
+	}
+
+	if m.externalInput {
+		return "" // host renders its own input; we render nothing here
 	}
 
 	v := m.textArea.View()
@@ -720,14 +679,9 @@ func (m model) View() string {
 
 	vlogger.Trace().Dur("header_duration", headerDuration).Bool("header_empty", headerView == "").Msg("Header view generated")
 
-	// Generate timeline view instead of conversation view
-	view := m.timelineCtrl.View()
-	m.viewport.SetContent(view)
-
-	vlogger.Trace().Int("viewport_width", m.viewport.Width).Int("viewport_height", m.viewport.Height).Int("viewport_y_position", m.viewport.YPosition).Msg("VIEWPORT CONTENT SET - POTENTIAL TRIGGER FOR UPDATES")
-
+	// Generate timeline view via shell (no outer viewport wrapping)
 	viewportViewStart := time.Now()
-	viewportView := m.viewport.View()
+	viewportView := m.timelineSh.View()
 	viewportViewDuration := time.Since(viewportViewStart)
 
 	textAreaStart := time.Now()
@@ -755,11 +709,11 @@ func (m model) View() string {
 
 	switch m.state {
 	case StateUserInput, StateError, StateStreamCompletion:
-		ret += viewportView + "\n" + textAreaView + "\n" + helpView
+		if m.externalInput { ret += viewportView + "\n" + helpView } else { ret += viewportView + "\n" + textAreaView + "\n" + helpView }
 		vlogger.Trace().Str("combined_state", "viewport+textarea+help").Int("final_length", len(ret)).Msg("Combined view for main states")
 	case StateMovingAround:
-		// Keep input visible (greyed) while selecting entities
-		ret += viewportView + "\n" + textAreaView + "\n" + helpView
+		// Keep input visible (greyed) while selecting entities; if external, omit
+		if m.externalInput { ret += viewportView + "\n" + helpView } else { ret += viewportView + "\n" + textAreaView + "\n" + helpView }
 		vlogger.Trace().Str("combined_state", "viewport+textarea+help (selection mode)").Int("final_length", len(ret)).Msg("Combined view for moving-around state")
 
 	case StateSavingToFile:
@@ -839,16 +793,18 @@ func (m *model) submit() tea.Cmd {
 	// Add entity to timeline
 	id := uuid.New().String()
 	log.Debug().Str("component", "chat").Str("when", "submit").Str("id", id).Msg("Adding user message to timeline")
-	m.timelineCtrl.OnCreated(timeline.UIEntityCreated{
+	m.timelineSh.OnCreated(timeline.UIEntityCreated{
 		ID:       timeline.EntityID{LocalID: id, Kind: "llm_text"},
 		Renderer: timeline.RendererDescriptor{Kind: "llm_text"},
 		Props:    map[string]any{"role": "user", "text": userMessage},
 	})
 	log.Debug().Str("component", "chat").Str("when", "submit").Str("id", id).Msg("Adding user message to timeline")
-	m.timelineCtrl.OnCompleted(timeline.UIEntityCompleted{ID: timeline.EntityID{LocalID: id, Kind: "llm_text"}})
+	m.timelineSh.OnCompleted(timeline.UIEntityCompleted{ID: timeline.EntityID{LocalID: id, Kind: "llm_text"}})
 	log.Debug().Str("component", "chat").Str("when", "submit").Str("id", id).Msg("User message added to timeline")
 
-	m.textArea.SetValue("")
+	if !m.externalInput {
+		m.textArea.SetValue("")
+	}
 
 	refreshCmd := func() tea.Msg {
 		log.Debug().
@@ -936,13 +892,13 @@ func (m model) handleUserAction(msg UserActionMsg) (tea.Model, tea.Cmd) {
 			m.textArea.Blur()
 			m.state = StateMovingAround
 			// Enter moving around; select last entity and show selection highlight
-			m.timelineCtrl.SelectLast()
-			m.timelineCtrl.SetSelectionVisible(true)
-			v := m.timelineCtrl.View()
+			m.timelineSh.SelectLast()
+			m.timelineSh.SetSelectionVisible(true)
+			v := m.timelineSh.View()
 			log.Debug().Str("component", "chat").Str("when", "handleUserAction_search").Int("view_len", len(v)).Int("y_offset", m.viewport.YOffset).Msg("SetContent")
 			m.viewport.SetContent(v)
 			m.updateKeyBindings()
-			log.Debug().Str("component", "chat").Str("transition", "user-input->moving-around").Int("selected_index", m.timelineCtrl.SelectedIndex()).Msg("State transition")
+			log.Debug().Str("component", "chat").Str("transition", "user-input->moving-around").Int("selected_index", m.timelineSh.SelectedIndex()).Msg("State transition")
 		}
 	case BlurInputMsg:
 		// Blur the input and prevent further typing until UnblurInputMsg is received
@@ -983,16 +939,16 @@ func (m model) handleUserAction(msg UserActionMsg) (tea.Model, tea.Cmd) {
 
 		m.state = StateUserInput
 		// Hide highlight in input mode
-		m.timelineCtrl.SetSelectionVisible(false)
+		m.timelineSh.SetSelectionVisible(false)
 		m.updateKeyBindings()
 		log.Debug().Str("component", "chat").Str("transition", "moving-around->user-input").Msg("State transition")
 
 	case SelectNextMessageMsg:
-		m.timelineCtrl.SelectNext()
+		m.timelineSh.SelectNext()
 		m.scrollToSelected()
 
 	case SelectPrevMessageMsg:
-		m.timelineCtrl.SelectPrev()
+		m.timelineSh.SelectPrev()
 		m.scrollToBottom = false
 		m.scrollToSelected()
 
@@ -1009,7 +965,7 @@ func (m model) handleUserAction(msg UserActionMsg) (tea.Model, tea.Cmd) {
 		if m.state == StateMovingAround {
 			cmd = func() tea.Msg { return timeline.EntityCopyTextMsg{} }
 		} else {
-			if _, props, ok := m.timelineCtrl.GetLastLLMByRole("assistant"); ok {
+			if _, props, ok := m.timelineSh.GetLastLLMByRole("assistant"); ok {
 				if txt, _ := props["text"].(string); txt != "" {
 					return m, func() tea.Msg { return timeline.CopyTextRequestedMsg{Text: txt} }
 				}
@@ -1017,7 +973,7 @@ func (m model) handleUserAction(msg UserActionMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case CopyLastResponseToClipboardMsg:
-		if _, props, ok := m.timelineCtrl.GetLastLLMByRole("assistant"); ok {
+		if _, props, ok := m.timelineSh.GetLastLLMByRole("assistant"); ok {
 			if txt, _ := props["text"].(string); txt != "" {
 				return m, func() tea.Msg { return timeline.CopyTextRequestedMsg{Text: txt} }
 			}
