@@ -6,7 +6,6 @@ import (
 	"sync"
 	"time"
 
-	geppetto_events "github.com/go-go-golems/geppetto/pkg/events"
 	"github.com/google/uuid"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -60,11 +59,8 @@ func (f *FakeBackend) Start(ctx context.Context, prompt string) (tea.Cmd, error)
 		content := prompt
 		words := strings.Fields(content)
 		reversedWords := reverseWords(words)
-		msg := strings.Join(reversedWords, " ")
 		localID := uuid.New().String()
-		// Populate basic EventMetadata for demo coverage
-		md := geppetto_events.EventMetadata{LLMInferenceData: geppetto_events.LLMInferenceData{Model: "fake-engine", Temperature: ptrFloat(0.2), Usage: &geppetto_events.Usage{InputTokens: 12, OutputTokens: 34}}}
-		metadata := chat.StreamMetadata{ID: uuid.New(), EventMetadata: &md}
+		// Stream using timeline lifecycle; no legacy Stream* metadata
 
 		go func() {
 			log.Debug().Str("component", "fake_backend").Msg("Goroutine: started streaming loop")
@@ -131,12 +127,16 @@ func (f *FakeBackend) Start(ctx context.Context, prompt string) (tea.Cmd, error)
 					})
 				}
 				f.p.Send(timeline.UIEntityCompleted{ID: timeline.EntityID{LocalID: localID, Kind: "tool_call"}})
-				f.p.Send(chat.StreamDoneMsg{StreamMetadata: metadata, Completion: "Searching the web..."})
 				return
 			}
-			log.Debug().Str("component", "fake_backend").Msg("Goroutine: sending StreamStartMsg")
-			f.p.Send(chat.StreamStartMsg{
-				StreamMetadata: metadata,
+			// Default: stream an assistant llm_text entity using timeline lifecycle
+			log.Debug().Str("component", "fake_backend").Msg("Goroutine: creating assistant llm_text entity")
+			assistantID := uuid.New().String()
+			f.p.Send(timeline.UIEntityCreated{
+				ID:        timeline.EntityID{LocalID: assistantID, Kind: "llm_text"},
+				Renderer:  timeline.RendererDescriptor{Kind: "llm_text"},
+				Props:     map[string]any{"role": "assistant", "text": ""},
+				StartedAt: time.Now(),
 			})
 			for {
 				select {
@@ -147,28 +147,24 @@ func (f *FakeBackend) Start(ctx context.Context, prompt string) (tea.Cmd, error)
 				case <-tick:
 					if idx < len(reversedWords) {
 						completion := strings.Join(reversedWords[:idx+1], " ")
-						log.Debug().Int("idx", idx).Str("delta", reversedWords[idx]+" ").Str("completion", completion).Str("component", "fake_backend").Msg("Goroutine: sending StreamCompletionMsg")
-						f.p.Send(
-							chat.StreamCompletionMsg{
-								StreamMetadata: metadata,
-								Delta:          reversedWords[idx] + " ",
-								Completion:     completion,
-							},
-						)
+						log.Debug().Int("idx", idx).Str("component", "fake_backend").Msg("Goroutine: sending UIEntityUpdated for assistant text")
+						f.p.Send(timeline.UIEntityUpdated{
+							ID:        timeline.EntityID{LocalID: assistantID, Kind: "llm_text"},
+							Patch:     map[string]any{"text": completion},
+							Version:   int64(idx + 1),
+							UpdatedAt: time.Now(),
+						})
 						idx++
 					} else {
-						log.Debug().Str("component", "fake_backend").Msg("Goroutine: sending StreamDoneMsg")
-						f.p.Send(chat.StreamDoneMsg{
-							StreamMetadata: metadata,
-							Completion:     msg,
-						})
+						log.Debug().Str("component", "fake_backend").Msg("Goroutine: completing assistant llm_text entity")
+						f.p.Send(timeline.UIEntityCompleted{ID: timeline.EntityID{LocalID: assistantID, Kind: "llm_text"}})
 						return
 					}
 				}
 			}
 		}()
 
-		log.Debug().Str("component", "fake_backend").Msg("Backend command: returning StreamStartMsg")
+		log.Debug().Str("component", "fake_backend").Msg("Backend command: returning (no immediate UI msg)")
 		return nil
 	}, nil
 }

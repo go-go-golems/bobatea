@@ -8,7 +8,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	geppetto_events "github.com/go-go-golems/geppetto/pkg/events"
 	"github.com/google/uuid"
 
 	"github.com/atotto/clipboard"
@@ -74,7 +73,6 @@ type model struct {
 	// Timeline controller replaces conversation view rendering
 	timelineReg  *timeline.Registry
 	timelineCtrl *timeline.Controller
-	entityVers   map[string]int64
 	// entityStart removed; engines now provide DurationMs in metadata
 	// entityStart     map[string]time.Time
 	timelineRegHook func(*timeline.Registry)
@@ -172,7 +170,6 @@ func InitialModel(backend Backend, options ...ModelOption) model {
 		ret.timelineRegHook(ret.timelineReg)
 	}
 	ret.timelineCtrl = timeline.NewController(ret.timelineReg)
-	ret.entityVers = map[string]int64{}
 	// ret.entityStart = map[string]time.Time{}
 
 	return ret
@@ -393,135 +390,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.state = StateError
 		m.updateKeyBindings()
 		return m, nil
-
-	case StreamCompletionMsg,
-		StreamStartMsg,
-		StreamStatusMsg,
-		StreamDoneMsg,
-		StreamCompletionError:
-
-		logger.Trace().Str("stream_msg_type", msgType).Msg("Stream message received - ENTERING STREAM PROCESSING")
-
-		startTime := time.Now()
-
-		switch streamMsg := msg.(type) {
-		case StreamStartMsg:
-			logger.Debug().Str("operation", "stream_start_reception").
-				Str("messageID", streamMsg.ID.String()).
-				Time("timestamp", startTime).
-				Bool("scroll_to_bottom", m.scrollToBottom).
-				Msg("StreamStartMsg details")
-		case StreamCompletionMsg:
-			logger.Debug().Str("operation", "stream_completion_reception").
-				Str("messageID", streamMsg.ID.String()).
-				Int("delta_length", len(streamMsg.Delta)).
-				Int("completion_length", len(streamMsg.Completion)).
-				Msg("StreamCompletionMsg details")
-		case StreamDoneMsg:
-			logger.Debug().Str("operation", "stream_done_reception").
-				Str("messageID", streamMsg.ID.String()).
-				Msg("StreamDoneMsg details")
-		}
-
-		// Translate stream messages to timeline entity lifecycle
-		switch v := msg.(type) {
-		case StreamStartMsg:
-			id := v.ID.String()
-			m.entityVers[id] = 0
-			// start time tracking removed; rely on metadata.DurationMs from engines
-			md := toLLMInferenceData(v.EventMetadata)
-			log.Debug().
-				Str("local_id", id).
-				Str("model", func() string {
-					if md != nil {
-						return md.Model
-					}
-					return ""
-				}()).
-				Interface("usage", func() any {
-					if md != nil {
-						return md.Usage
-					}
-					return nil
-				}()).
-				Msg("StreamStartMsg: converted metadata")
-			m.timelineCtrl.OnCreated(timeline.UIEntityCreated{
-				ID:        timeline.EntityID{LocalID: id, Kind: "llm_text"},
-				Renderer:  timeline.RendererDescriptor{Kind: "llm_text"},
-				Props:     map[string]any{"role": "assistant", "text": "", "metadata": md},
-				StartedAt: time.Now(),
-			})
-		case StreamCompletionMsg:
-			id := v.ID.String()
-			m.entityVers[id] = m.entityVers[id] + 1
-			md := toLLMInferenceData(v.EventMetadata)
-			log.Debug().
-				Str("local_id", id).
-				Int64("version", m.entityVers[id]).
-				Str("model", func() string {
-					if md != nil {
-						return md.Model
-					}
-					return ""
-				}()).
-				Msg("StreamCompletionMsg: converted metadata")
-			m.timelineCtrl.OnUpdated(timeline.UIEntityUpdated{
-				ID:        timeline.EntityID{LocalID: id, Kind: "llm_text"},
-				Patch:     map[string]any{"text": v.Completion, "metadata": md},
-				Version:   m.entityVers[id],
-				UpdatedAt: time.Now(),
-			})
-		case StreamDoneMsg:
-			id := v.ID.String()
-			md := toLLMInferenceData(v.EventMetadata)
-			log.Debug().
-				Str("local_id", id).
-				Interface("duration_ms", func() any {
-					if md != nil {
-						return md.DurationMs
-					}
-					return nil
-				}()).
-				Interface("usage", func() any {
-					if md != nil {
-						return md.Usage
-					}
-					return nil
-				}()).
-				Str("stop_reason", func() string {
-					if md != nil && md.StopReason != nil {
-						return *md.StopReason
-					}
-					return ""
-				}()).
-				Msg("StreamDoneMsg: converted metadata")
-			m.timelineCtrl.OnCompleted(timeline.UIEntityCompleted{
-				ID:     timeline.EntityID{LocalID: id, Kind: "llm_text"},
-				Result: map[string]any{"text": v.Completion, "metadata": md},
-			})
-			cmds = append(cmds, m.finishCompletion())
-		case StreamCompletionError:
-			id := v.ID.String()
-			m.timelineCtrl.OnCompleted(timeline.UIEntityCompleted{
-				ID:     timeline.EntityID{LocalID: id, Kind: "llm_text"},
-				Result: map[string]any{"text": fmt.Sprintf("**Error**\n\n%s", v.Err)},
-			})
-			cmds = append(cmds, m.finishCompletion())
-		}
-
-		if m.scrollToBottom {
-			v := m.timelineCtrl.View()
-			log.Debug().Str("component", "chat").Str("when", "external_created").Int("view_len", len(v)).Int("y_offset", m.viewport.YOffset).Msg("SetContent")
-			m.viewport.SetContent(v)
-			m.viewport.GotoBottom()
-		}
-
-		totalDuration := time.Since(startTime)
-		logger.Trace().Str("operation", "stream_message_total").
-			Dur("total_duration", totalDuration).
-			Msg("Stream message processing completed")
-
-		cmds = append(cmds, cmd)
 
 	case BackendFinishedMsg:
 		logger.Trace().Msg("Backend finished - calling finishCompletion()")
@@ -1208,23 +1076,6 @@ func (m model) handleUserAction(msg UserActionMsg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, cmd
-}
-
-// toLLMInferenceData converts Geppetto EventMetadata into unified LLMInferenceData for UI/storage.
-func toLLMInferenceData(em *geppetto_events.EventMetadata) *geppetto_events.LLMInferenceData {
-	if em == nil {
-		return nil
-	}
-	out := &geppetto_events.LLMInferenceData{
-		Model:       em.Model,
-		Temperature: em.Temperature,
-		TopP:        em.TopP,
-		MaxTokens:   em.MaxTokens,
-		StopReason:  em.StopReason,
-		DurationMs:  em.DurationMs,
-		Usage:       em.Usage,
-	}
-	return out
 }
 
 // Add these new methods to the model struct
