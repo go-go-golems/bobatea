@@ -96,6 +96,11 @@ type model struct {
 	title string
 
 	status *Status
+
+	// inputBlurred tracks whether the input field has been programmatically blurred
+	// by BlurInputMsg / UnblurInputMsg actions. This flag can be used by UI tooling
+	// to gate or reflect input state if needed.
+	inputBlurred bool
 }
 
 type ModelOption func(*model)
@@ -319,6 +324,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg_ := msg.(type) {
 	case tea.KeyMsg:
+		// When input is blurred, ignore key events on the input field
+		if m.inputBlurred {
+			return m, nil
+		}
 		// Entering mode and selection routing
 		if m.state == StateMovingAround {
 			switch msg_.String() {
@@ -1067,6 +1076,16 @@ func (m model) handleUserAction(msg UserActionMsg) (tea.Model, tea.Cmd) {
 			m.updateKeyBindings()
 			log.Debug().Str("component", "chat").Str("transition", "user-input->moving-around").Int("selected_index", m.timelineCtrl.SelectedIndex()).Msg("State transition")
 		}
+	case BlurInputMsg:
+		// Blur the input and prevent further typing until UnblurInputMsg is received
+		m.textArea.Blur()
+		m.inputBlurred = true
+		return m, nil
+	case UnblurInputMsg:
+		// Restore focus to the input
+		m.inputBlurred = false
+		m.textArea.Focus()
+		return m, nil
 
 	case QuitMsg:
 		if !m.quitReceived {

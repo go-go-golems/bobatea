@@ -78,3 +78,10 @@ func (PrependInputTextMsg) isUserAction()     {}
 func (GetInputTextMsg) isUserAction()         {}
 func (TriggerWeatherToolMsg) isUserAction()   {}
 func (TriggerWebSearchToolMsg) isUserAction() {}
+
+// Blur and Unblur input control messages
+type BlurInputMsg struct{}
+type UnblurInputMsg struct{}
+
+func (BlurInputMsg) isUserAction()   {}
+func (UnblurInputMsg) isUserAction() {}
