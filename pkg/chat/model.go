@@ -13,7 +13,6 @@ import (
 	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/go-go-golems/bobatea/pkg/filepicker"
@@ -59,7 +58,6 @@ type Status struct {
 type model struct {
 	autoStartBackend bool
 
-	viewport       viewport.Model
 	scrollToBottom bool
 
 	// not really what we want, but use this for now, we'll have to either find a normal text box,
@@ -157,7 +155,6 @@ func InitialModel(backend Backend, options ...ModelOption) model {
 		style:          DefaultStyles(),
 		keyMap:         DefaultKeyMap,
 		backend:        backend,
-		viewport:       viewport.New(0, 0),
 		help:           help.New(),
 		scrollToBottom: true,
 	}
@@ -199,19 +196,13 @@ func (m model) Init() tea.Cmd {
 	//	})
 	//}
 
-	cmds = append(cmds, m.filepicker.Init(), m.viewport.Init(), m.timelineSh.Init())
+	cmds = append(cmds, m.filepicker.Init(), m.timelineSh.Init())
 
 	// Seed existing chat messages as timeline entities
 	// Seeding from conversation is disabled; timeline should be sourced from entity events
 
 	// Set initial timeline view content
-	{
-		v := m.timelineSh.View()
-		log.Debug().Str("component", "chat").Str("when", "Init").Int("view_len", len(v)).Msg("SetContent")
-		m.viewport.SetContent(v)
-	}
-	m.viewport.YPosition = 0
-	m.viewport.GotoBottom()
+	m.timelineSh.GotoBottom()
 
 	m.updateKeyBindings()
 	// Select last entity if any
@@ -346,15 +337,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "enter":
 				m.timelineSh.EnterSelection()
 				v := m.timelineSh.View()
-				log.Debug().Str("component", "chat").Str("when", "enter_selection").Int("view_len", len(v)).Int("y_offset", m.viewport.YOffset).Msg("SetContent")
-				m.viewport.SetContent(v)
+				log.Debug().Str("component", "chat").Str("when", "enter_selection").Int("view_len", len(v)).Msg("SetContent")
 				return m, nil
 			case "esc":
 				if m.timelineSh.IsEntering() {
 					m.timelineSh.ExitSelection()
 					v := m.timelineSh.View()
-					log.Debug().Str("component", "chat").Str("when", "exit_entering").Int("view_len", len(v)).Int("y_offset", m.viewport.YOffset).Msg("SetContent")
-					m.viewport.SetContent(v)
+					log.Debug().Str("component", "chat").Str("when", "exit_entering").Int("view_len", len(v)).Msg("SetContent")
 					return m, nil
 				}
 				// leave moving-around back to text mode
@@ -366,25 +355,34 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.timelineSh.SetSelectionVisible(false)
 				m.timelineSh.Unselect()
 				v := m.timelineSh.View()
-				log.Debug().Str("component", "chat").Str("when", "esc_to_input").Int("view_len", len(v)).Int("y_offset", m.viewport.YOffset).Msg("SetContent")
-				m.viewport.SetContent(v)
+				log.Debug().Str("component", "chat").Str("when", "esc_to_input").Int("view_len", len(v)).Msg("SetContent")
 				return m, nil
 			}
-			// Route all keys while entering to the selected model and log
+			// While entering, allow scrolling keys to control the timeline viewport
 			if m.timelineSh.IsEntering() {
+				if key.Matches(msg_, m.keyMap.ScrollDown) {
+					m.timelineSh.ScrollDown(1)
+					m.scrollToBottom = false
+					_ = m.timelineSh.View()
+					return m, nil
+				}
+				if key.Matches(msg_, m.keyMap.ScrollUp) {
+					m.timelineSh.ScrollUp(1)
+					m.scrollToBottom = false
+					_ = m.timelineSh.View()
+					return m, nil
+				}
 				logger.Debug().Str("route", "entering").Str("key", msg_.String()).Msg("Routing key to selected entity model")
 				cmd := m.timelineSh.HandleMsg(msg_)
 				v := m.timelineSh.View()
-				log.Debug().Str("component", "chat").Str("when", "entering_route_key").Int("view_len", len(v)).Int("y_offset", m.viewport.YOffset).Msg("SetContent")
-				m.viewport.SetContent(v)
+				log.Debug().Str("component", "chat").Str("when", "entering_route_key").Int("view_len", len(v)).Msg("SetContent")
 				return m, cmd
 			}
 			// Allow entities to react to copy requests even when not entering
 			if msg_.String() == "alt+c" {
 				cmd := m.timelineSh.SendToSelected(timeline.EntityCopyTextMsg{})
 				v := m.timelineSh.View()
-				log.Debug().Str("component", "chat").Str("when", "copy_selected").Int("view_len", len(v)).Int("y_offset", m.viewport.YOffset).Msg("SetContent")
-				m.viewport.SetContent(v)
+				log.Debug().Str("component", "chat").Str("when", "copy_selected").Int("view_len", len(v)).Msg("SetContent")
 				if cmd != nil {
 					return m, cmd
 				}
@@ -615,16 +613,12 @@ func (m *model) recomputeSize() {
 
 	log.Trace().
 		Int64("recompute_call_id", recomputeCallID).
-		Int("viewport_width", m.viewport.Width).
-		Int("viewport_height", m.viewport.Height).
-		Int("viewport_y_position", m.viewport.YPosition).
 		Int("textarea_width", m.width-h).
 		Msg("Component dimensions updated")
 
 	// CRITICAL: Regenerate timeline view and set content
 	v := m.timelineSh.View()
-	log.Debug().Str("component", "chat").Str("when", "recompute_size").Int("view_len", len(v)).Int("y_offset", m.viewport.YOffset).Msg("SetContent")
-	m.viewport.SetContent(v)
+	log.Debug().Str("component", "chat").Str("when", "recompute_size").Int("view_len", len(v)).Msg("SetContent")
 	m.timelineSh.GotoBottom()
 	log.Trace().
 		Int64("recompute_call_id", recomputeCallID).
@@ -742,7 +736,7 @@ func (m *model) startBackend() tea.Cmd {
 	log.Debug().
 		Int64("start_call_id", startCallID).
 		Msg("Calling viewport.GotoBottom()")
-	m.viewport.GotoBottom()
+	m.timelineSh.GotoBottom()
 
 	refreshCmd := func() tea.Msg {
 		log.Debug().
@@ -900,8 +894,7 @@ func (m model) handleUserAction(msg UserActionMsg) (tea.Model, tea.Cmd) {
 			m.timelineSh.SelectLast()
 			m.timelineSh.SetSelectionVisible(true)
 			v := m.timelineSh.View()
-			log.Debug().Str("component", "chat").Str("when", "handleUserAction_search").Int("view_len", len(v)).Int("y_offset", m.viewport.YOffset).Msg("SetContent")
-			m.viewport.SetContent(v)
+			log.Debug().Str("component", "chat").Str("when", "handleUserAction_search").Int("view_len", len(v)).Msg("SetContent")
 			m.updateKeyBindings()
 			log.Debug().Str("component", "chat").Str("transition", "user-input->moving-around").Int("selected_index", m.timelineSh.SelectedIndex()).Msg("State transition")
 		}
@@ -940,7 +933,7 @@ func (m model) handleUserAction(msg UserActionMsg) (tea.Model, tea.Cmd) {
 		cmd = m.textArea.Focus()
 
 		m.scrollToBottom = true
-		m.viewport.GotoBottom()
+		m.timelineSh.GotoBottom()
 
 		m.state = StateUserInput
 		// Hide highlight in input mode
