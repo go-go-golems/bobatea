@@ -5,9 +5,11 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/go-go-golems/bobatea/pkg/timeline"
 	chatstyle "github.com/go-go-golems/bobatea/pkg/timeline/chatstyle"
 	geppetto_events "github.com/go-go-golems/geppetto/pkg/events"
@@ -26,6 +28,7 @@ type LLMTextModel struct {
 	renderer *glamour.TermRenderer
 	style    *chatstyle.Style
 	metadata any // prefer *events.LLMInferenceData
+	streaming bool
 }
 
 func (m *LLMTextModel) Init() tea.Cmd { return nil }
@@ -108,16 +111,37 @@ func (m *LLMTextModel) View() string {
 		body = m.text
 	}
 
-	// Append metadata line if available
-	if m.metadata != nil {
-		meta := formatMetadata(m.metadata)
-		if meta != "" {
-			metaRendered := m.style.MetadataStyle.Width(contentWidth).Render(meta)
-			if body != "" {
-				body += "\n\n"
-			}
-			body += metaRendered
+	// Build status/metadata line with left spinner and right metadata
+	var statusLine string
+	{
+		left := ""
+		if m.streaming {
+			// Animate simple dot spinner: Generating., Generating.., Generating...
+			phase := int((time.Now().UnixNano() / int64(time.Millisecond*300)) % 3)
+			dots := strings.Repeat(".", phase+1)
+			left = "Generating" + dots
 		}
+		rightRaw := formatMetadata(m.metadata)
+		right := m.style.MetadataStyle.Render(rightRaw)
+
+		if left != "" || rightRaw != "" {
+			l := lipgloss.Width(left)
+			r := lipgloss.Width(right)
+			pad := contentWidth - l - r
+			if pad < 1 {
+				pad = 1
+			}
+			statusLine = left + strings.Repeat(" ", pad) + right
+			statusLine = m.style.MetadataStyle.Width(contentWidth).Render(statusLine)
+		}
+	}
+
+	// Combine body and status line
+	if statusLine != "" {
+		if body != "" {
+			body += "\n\n"
+		}
+		body += statusLine
 	}
 
 	// Box the content
@@ -137,6 +161,9 @@ func (m *LLMTextModel) OnProps(patch map[string]any) {
 	}
 	if v, ok := patch["metadata"]; ok {
 		m.metadata = v
+	}
+	if v, ok := patch["streaming"].(bool); ok {
+		m.streaming = v
 	}
 }
 

@@ -495,9 +495,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.timelineSh.SelectPrev()
 					m.scrollToSelected()
 				case key.Matches(km, m.keyMap.ScrollDown):
-					m.viewport.ScrollDown(1)
+					m.timelineSh.ScrollDown(1)
 				case key.Matches(km, m.keyMap.ScrollUp):
-					m.viewport.ScrollUp(1)
+					m.timelineSh.ScrollUp(1)
 				}
 			}
 		case StateSavingToFile:
@@ -790,6 +790,15 @@ func (m *model) submit() tea.Cmd {
 		return nil
 	}
 
+	// Transition to streaming: blur input immediately
+	m.state = StateStreamCompletion
+	if m.externalInput {
+		m.inputBlurred = true
+	} else {
+		m.textArea.Blur()
+	}
+	m.updateKeyBindings()
+
 	// Add entity to timeline
 	id := uuid.New().String()
 	log.Debug().Str("component", "chat").Str("when", "submit").Str("id", id).Msg("Adding user message to timeline")
@@ -798,7 +807,6 @@ func (m *model) submit() tea.Cmd {
 		Renderer: timeline.RendererDescriptor{Kind: "llm_text"},
 		Props:    map[string]any{"role": "user", "text": userMessage},
 	})
-	log.Debug().Str("component", "chat").Str("when", "submit").Str("id", id).Msg("Adding user message to timeline")
 	m.timelineSh.OnCompleted(timeline.UIEntityCompleted{ID: timeline.EntityID{LocalID: id, Kind: "llm_text"}})
 	log.Debug().Str("component", "chat").Str("when", "submit").Str("id", id).Msg("User message added to timeline")
 
@@ -810,17 +818,13 @@ func (m *model) submit() tea.Cmd {
 		log.Debug().
 			Int64("submit_call_id", submitCallID).
 			Msg("REFRESH COMMAND EXECUTED - POTENTIAL LOOP TRIGGER")
-		return refreshMessageMsg{
-			GoToBottom: true,
-		}
+		return refreshMessageMsg{GoToBottom: true}
 	}
 
 	backendCmd := func() tea.Msg {
 		ctx := context2.Background()
 		cmd, err := m.backend.Start(ctx, userMessage)
-		if err != nil {
-			return ErrorMsg(err)
-		}
+		if err != nil { return ErrorMsg(err) }
 		return cmd()
 	}
 	return tea.Batch(refreshCmd, backendCmd)
@@ -857,6 +861,7 @@ func (m *model) finishCompletion() tea.Cmd {
 		m.backend.Kill()
 
 		m.state = StateUserInput
+		m.inputBlurred = false
 		m.textArea.Focus()
 		m.textArea.SetValue("")
 
