@@ -360,13 +360,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			// While entering, allow scrolling keys to control the timeline viewport
 			if m.timelineSh.IsEntering() {
-				if key.Matches(msg_, m.keyMap.ScrollDown) {
+				if key.Matches(msg_, m.keyMap.ScrollDown) || msg_.String() == "down" {
+					log.Debug().Str("component", "chat_model").Str("op", "scroll_down_entering").Str("key", msg_.String()).Msg("pass-through to timeline shell")
 					m.timelineSh.ScrollDown(1)
 					m.scrollToBottom = false
 					_ = m.timelineSh.View()
 					return m, nil
 				}
-				if key.Matches(msg_, m.keyMap.ScrollUp) {
+				if key.Matches(msg_, m.keyMap.ScrollUp) || msg_.String() == "up" {
+					log.Debug().Str("component", "chat_model").Str("op", "scroll_up_entering").Str("key", msg_.String()).Msg("pass-through to timeline shell")
 					m.timelineSh.ScrollUp(1)
 					m.scrollToBottom = false
 					_ = m.timelineSh.View()
@@ -492,12 +494,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				case key.Matches(km, m.keyMap.SelectPrevMessage):
 					m.timelineSh.SelectPrev()
 					m.scrollToSelected()
-				case key.Matches(km, m.keyMap.ScrollDown):
+				case key.Matches(km, m.keyMap.ScrollDown) || km.String() == "down":
 					m.timelineSh.ScrollDown(1)
-				case key.Matches(km, m.keyMap.ScrollUp):
+				case key.Matches(km, m.keyMap.ScrollUp) || km.String() == "up":
 					m.timelineSh.ScrollUp(1)
 				}
 			}
+			// Allow non-key messages (e.g., mouse wheel) to reach the shell viewport
+			m.timelineSh.UpdateViewport(msg_)
 		case StateSavingToFile:
 			log.Trace().
 				Int64("update_call_id", updateCallID).

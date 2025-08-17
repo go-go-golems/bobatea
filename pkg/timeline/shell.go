@@ -56,8 +56,13 @@ func (s *Shell) View() string {
 
 // UpdateViewport forwards messages to the viewport (e.g., scrolling) and returns any command.
 func (s *Shell) UpdateViewport(msg tea.Msg) tea.Cmd {
+    before := s.viewport.YOffset
     var cmd tea.Cmd
     s.viewport, cmd = s.viewport.Update(msg)
+    after := s.viewport.YOffset
+    if before != after {
+        log.Debug().Str("component", "timeline_shell").Str("op", "UpdateViewport").Int("y_before", before).Int("y_after", after).Msg("viewport scrolled via UpdateViewport")
+    }
     return cmd
 }
 
@@ -74,10 +79,20 @@ func (s *Shell) RefreshView(goToBottom bool) {
 func (s *Shell) GotoBottom() { s.viewport.GotoBottom() }
 
 // ScrollDown scrolls the viewport by n lines.
-func (s *Shell) ScrollDown(n int) { s.viewport.ScrollDown(n) }
+func (s *Shell) ScrollDown(n int) {
+    before := s.viewport.YOffset
+    s.viewport.ScrollDown(n)
+    after := s.viewport.YOffset
+    log.Debug().Str("component", "timeline_shell").Str("op", "ScrollDown").Int("n", n).Int("y_before", before).Int("y_after", after).Msg("viewport scrolled down")
+}
 
 // ScrollUp scrolls the viewport by n lines.
-func (s *Shell) ScrollUp(n int) { s.viewport.ScrollUp(n) }
+func (s *Shell) ScrollUp(n int) {
+    before := s.viewport.YOffset
+    s.viewport.ScrollUp(n)
+    after := s.viewport.YOffset
+    log.Debug().Str("component", "timeline_shell").Str("op", "ScrollUp").Int("n", n).Int("y_before", before).Int("y_after", after).Msg("viewport scrolled up")
+}
 
 // Lifecycle wrappers
 func (s *Shell) OnCreated(e UIEntityCreated)  { s.ctrl.OnCreated(e); s.RefreshView(false) }
@@ -139,7 +154,7 @@ func (s *Shell) GetLastLLMByRole(role string) (EntityID, map[string]any, bool) {
     return s.ctrl.GetLastLLMByRole(role)
 }
 
-// Version helpers if callers need monotonic updates; callers can pass time.Now().UnixNano()
+// Version helpers if callers need monotonically increasing versions; callers can pass time.Now().UnixNano()
 func VersionNow() int64 { return time.Now().UnixNano() }
 
 
