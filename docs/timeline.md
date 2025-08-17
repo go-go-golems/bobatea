@@ -219,6 +219,26 @@ This section summarizes the latest changes to input routing and the role of the 
     - Lightweight wrappers to apply lifecycle events and refresh the view.
   - See `bobatea/pkg/timeline/shell.go`.
 
+- Deletion API (backend-driven):
+  - Programmatic deletion via lifecycle: send `UIEntityDeleted{ID}` to remove an entity (e.g., from a backend forwarder).
+  - The controller adjusts selection after deletion.
+  - Example location to emit from: `pinocchio/cmd/agents/simple-chat-agent/pkg/backend/tool_loop_backend.go` (inside your UI forwarder switch).
+
+## Backends and entity lifecycle
+
+Backends are responsible for translating provider/tool events into UI entity lifecycle messages. They do not render; they only send messages to the Bubble Tea program, which forwards them to `timeline.Controller`.
+
+- Backend responsibilities:
+  - Emit `UIEntityCreated` when an item begins (text start, tool call, agent mode entry, log, etc.)
+  - Emit `UIEntityUpdated` for incremental changes (partial text, streaming flags, progress)
+  - Emit `UIEntityCompleted` when an item finishes (final text, result snapshot)
+  - Emit `UIEntityDeleted` to remove an entity (on cancellation, retries, or pruning)
+
+- Example backend: `pinocchio/.../tool_loop_backend.go`
+  - Function: `MakeUIForwarder(p *tea.Program)`
+  - For each Geppetto event, it constructs and sends timeline messages via `p.Send(...)`.
+  - Deletion hook: add a branch that sends `timeline.UIEntityDeleted{ID: ...}` when your backend logic decides an entity should be removed.
+
 - Interactive log event renderer example:
   - File: `bobatea/pkg/timeline/renderers/log_event_model.go`
   - Behavior: when selected, pressing TAB toggles YAML metadata visibility; when unselected, metadata auto-collapses. This is implemented by handling `tea.KeyMsg` in the model’s `Update` method and by the controller forwarding TAB even when not entering.

@@ -381,6 +381,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				log.Debug().Str("component", "chat").Str("when", "entering_route_key").Int("view_len", len(v)).Msg("SetContent")
 				return m, cmd
 			}
+			// Route TAB / shift+TAB to the selected entity even when not entering
+			if msg_.String() == "tab" || msg_.String() == "shift+tab" {
+				logger.Debug().Str("route", "non-entering").Str("key", msg_.String()).Msg("Routing TAB to selected entity model")
+				cmd := m.timelineSh.HandleMsg(msg_)
+				v := m.timelineSh.View()
+				log.Debug().Str("component", "chat").Str("when", "non_entering_route_tab").Int("view_len", len(v)).Msg("SetContent")
+				return m, cmd
+			}
 			// Allow entities to react to copy requests even when not entering
 			if msg_.String() == "alt+c" {
 				cmd := m.timelineSh.SendToSelected(timeline.EntityCopyTextMsg{})
