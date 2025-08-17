@@ -169,11 +169,6 @@ func (f *FakeBackend) Start(ctx context.Context, prompt string) (tea.Cmd, error)
 	}, nil
 }
 
-func ptrFloat(v float64) *float64 { return &v }
-
-// SubmitPrompt starts a streaming run from a single prompt string.
-// SubmitPrompt removed: Start now accepts a plain prompt string
-
 func (f *FakeBackend) Interrupt() {
 	if f.cancel != nil {
 		f.cancel()

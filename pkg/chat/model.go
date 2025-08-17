@@ -69,8 +69,8 @@ type model struct {
 	// conversation conversationui.Model // removed in favor of timeline selection
 
 	// Timeline controller replaces conversation view rendering
-	timelineReg  *timeline.Registry
-	timelineSh   *timeline.Shell
+	timelineReg *timeline.Registry
+	timelineSh  *timeline.Shell
 	// entityStart removed; engines now provide DurationMs in metadata
 	// entityStart     map[string]time.Time
 	timelineRegHook func(*timeline.Registry)
@@ -707,11 +707,19 @@ func (m model) View() string {
 
 	switch m.state {
 	case StateUserInput, StateError, StateStreamCompletion:
-		if m.externalInput { ret += viewportView + "\n" + helpView } else { ret += viewportView + "\n" + textAreaView + "\n" + helpView }
+		if m.externalInput {
+			ret += viewportView + "\n" + helpView
+		} else {
+			ret += viewportView + "\n" + textAreaView + "\n" + helpView
+		}
 		vlogger.Trace().Str("combined_state", "viewport+textarea+help").Int("final_length", len(ret)).Msg("Combined view for main states")
 	case StateMovingAround:
 		// Keep input visible (greyed) while selecting entities; if external, omit
-		if m.externalInput { ret += viewportView + "\n" + helpView } else { ret += viewportView + "\n" + textAreaView + "\n" + helpView }
+		if m.externalInput {
+			ret += viewportView + "\n" + helpView
+		} else {
+			ret += viewportView + "\n" + textAreaView + "\n" + helpView
+		}
 		vlogger.Trace().Str("combined_state", "viewport+textarea+help (selection mode)").Int("final_length", len(ret)).Msg("Combined view for moving-around state")
 
 	case StateSavingToFile:
@@ -822,7 +830,9 @@ func (m *model) submit() tea.Cmd {
 	backendCmd := func() tea.Msg {
 		ctx := context2.Background()
 		cmd, err := m.backend.Start(ctx, userMessage)
-		if err != nil { return ErrorMsg(err) }
+		if err != nil {
+			return ErrorMsg(err)
+		}
 		return cmd()
 	}
 	return tea.Batch(refreshCmd, backendCmd)

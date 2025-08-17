@@ -15,6 +15,7 @@ import (
 //   - timeline.UIEntityUpdated to stream text or update properties
 //   - timeline.UIEntityCompleted to finish an entity
 //   - timeline.UIEntityDeleted when removing an entity
+//
 // The chat model consumes these events and renders the timeline accordingly.
 //
 // Typical flow:

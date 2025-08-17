@@ -20,14 +20,14 @@ import (
 
 // LLMTextModel is an interactive model for rendering LLM text messages.
 type LLMTextModel struct {
-	role     string
-	text     string
-	width    int
-	selected bool
-	focused  bool
-	renderer *glamour.TermRenderer
-	style    *chatstyle.Style
-	metadata any // prefer *events.LLMInferenceData
+	role      string
+	text      string
+	width     int
+	selected  bool
+	focused   bool
+	renderer  *glamour.TermRenderer
+	style     *chatstyle.Style
+	metadata  any // prefer *events.LLMInferenceData
 	streaming bool
 }
 
