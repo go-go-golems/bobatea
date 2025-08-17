@@ -175,6 +175,7 @@ func InitialModel(backend Backend, options ...ModelOption) model {
 	// Register interactive entity model factories
 	ret.timelineReg.RegisterModelFactory(renderers.NewLLMTextFactory())
 	ret.timelineReg.RegisterModelFactory(renderers.ToolCallsPanelFactory{})
+	// NOTE: backend-specific renderers can be registered externally via WithTimelineRegister
 	ret.timelineReg.RegisterModelFactory(renderers.PlainFactory{})
 	if ret.timelineRegHook != nil {
 		ret.timelineRegHook(ret.timelineReg)
