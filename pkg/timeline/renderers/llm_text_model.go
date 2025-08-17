@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	// "unicode"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
@@ -109,6 +110,16 @@ func (m *LLMTextModel) View() string {
 	}
 	if body == "" {
 		body = m.text
+	}
+
+	// Prepend role label outside of markdown so it never interferes with rendering
+	if m.role != "" {
+		label := "(" + m.role + "):"
+		if body != "" {
+			body = label + "\n" + body
+		} else {
+			body = label
+		}
 	}
 
 	// Build status/metadata line with left spinner and right metadata

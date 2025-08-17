@@ -54,11 +54,11 @@ func (b *ToolLoopBackend) MakeUIForwarder(p *tea.Program) func(msg *message.Mess
 
         switch e_ := e.(type) {
         case *events.EventPartialCompletionStart:
-            p.Send(timeline.UIEntityCreated{ ID: timeline.EntityID{LocalID: entityID, Kind: "llm_text"}, Renderer: timeline.RendererDescriptor{Kind: "llm_text"}, Props: map[string]any{"role": "assistant", "text": "[assistant]: ", "streaming": true}, StartedAt: time.Now() })
+            p.Send(timeline.UIEntityCreated{ ID: timeline.EntityID{LocalID: entityID, Kind: "llm_text"}, Renderer: timeline.RendererDescriptor{Kind: "llm_text"}, Props: map[string]any{"role": "assistant", "text": "", "streaming": true}, StartedAt: time.Now() })
         case *events.EventPartialCompletion:
-            p.Send(timeline.UIEntityUpdated{ ID: timeline.EntityID{LocalID: entityID, Kind: "llm_text"}, Patch: map[string]any{"text": "[assistant]: "+e_.Completion, "streaming": true}, Version: time.Now().UnixNano(), UpdatedAt: time.Now() })
+            p.Send(timeline.UIEntityUpdated{ ID: timeline.EntityID{LocalID: entityID, Kind: "llm_text"}, Patch: map[string]any{"text": e_.Completion, "streaming": true}, Version: time.Now().UnixNano(), UpdatedAt: time.Now() })
         case *events.EventFinal:
-            p.Send(timeline.UIEntityCompleted{ ID: timeline.EntityID{LocalID: entityID, Kind: "llm_text"}, Result: map[string]any{"text": "[assistant]: "+e_.Text} })
+            p.Send(timeline.UIEntityCompleted{ ID: timeline.EntityID{LocalID: entityID, Kind: "llm_text"}, Result: map[string]any{"text": e_.Text} })
             p.Send(timeline.UIEntityUpdated{ ID: timeline.EntityID{LocalID: entityID, Kind: "llm_text"}, Patch: map[string]any{"streaming": false}, Version: time.Now().UnixNano(), UpdatedAt: time.Now() })
         case *events.EventLog:
             localID := fmt.Sprintf("log-%s-%d", md.TurnID, time.Now().UnixNano())
