@@ -198,3 +198,33 @@ Then create/update entities with `RendererDescriptor{Kind: "my_widget"}` (or Key
 - Provide an adapter from provider/middleware events to UIEntity messages (TurnStore translation)
 
 
+
+## API updates (2025-08-17)
+
+This section summarizes the latest changes to input routing and the role of the shell vs controller.
+
+- Controller key routing:
+  - `timeline.Controller.HandleMsg(tea.Msg)` now routes messages to the selected entity model when either:
+    - entering mode is active (as before), or
+    - the message is `tea.KeyMsg` for TAB or shift+TAB.
+  - This allows compact toggles on selected entities without fully entering focus.
+  - See `bobatea/pkg/timeline/controller.go` (method `HandleMsg`).
+
+- Shell simplification:
+  - `timeline.Shell` is a thin wrapper around `viewport.Model` plus selection helpers.
+  - TAB/shift+TAB logic was removed from the shell so that routing policy is centralized in the controller.
+  - The shell focuses on:
+    - Viewport management (`SetSize`, `View`, `GotoBottom`, `ScrollUp/Down`)
+    - Selection ergonomics (`SelectNext/Prev/Last`, `EnterSelection/ExitSelection`, `ScrollToSelected`)
+    - Lightweight wrappers to apply lifecycle events and refresh the view.
+  - See `bobatea/pkg/timeline/shell.go`.
+
+- Interactive log event renderer example:
+  - File: `bobatea/pkg/timeline/renderers/log_event_model.go`
+  - Behavior: when selected, pressing TAB toggles YAML metadata visibility; when unselected, metadata auto-collapses. This is implemented by handling `tea.KeyMsg` in the model’s `Update` method and by the controller forwarding TAB even when not entering.
+
+- Recommended renderer message handling (recap):
+  - Selection and props: `EntitySelectedMsg`, `EntityUnselectedMsg`, `EntityPropsUpdatedMsg`
+  - Sizing and focus hints: `EntitySetSizeMsg`, `EntityFocusMsg`, `EntityBlurMsg`
+  - Copy actions: `EntityCopyTextMsg` / emit `CopyTextRequestedMsg`, `EntityCopyCodeMsg` / emit `CopyCodeRequestedMsg`
+
