@@ -20,6 +20,7 @@ type AgentModeModel struct {
     selected bool
     focused  bool
     style    *chatstyle.Style
+    showDetails bool
 }
 
 func (m *AgentModeModel) Init() tea.Cmd { return nil }
@@ -31,6 +32,7 @@ func (m *AgentModeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
     case timeline.EntityUnselectedMsg:
         m.selected = false
         m.focused = false
+        m.showDetails = false
     case timeline.EntityPropsUpdatedMsg:
         if v.Patch != nil {
             m.OnProps(v.Patch)
@@ -42,6 +44,16 @@ func (m *AgentModeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
         m.focused = true
     case timeline.EntityBlurMsg:
         m.focused = false
+    case tea.KeyMsg:
+        if m.selected && (v.String() == "tab" || v.String() == "shift+tab") {
+            m.showDetails = !m.showDetails
+            log.Debug().
+                Str("component", "renderer").
+                Str("kind", "agent_mode").
+                Bool("show_details", m.showDetails).
+                Msg("toggle analysis visibility")
+            return m, nil
+        }
     }
     return m, nil
 }
@@ -59,7 +71,7 @@ func (m *AgentModeModel) View() string {
         header += " — " + strings.TrimSpace(m.from+" → "+m.to)
     }
     body := header
-    if strings.TrimSpace(m.analysis) != "" {
+    if m.showDetails && strings.TrimSpace(m.analysis) != "" {
         body += "\n\n" + m.analysis
     }
 

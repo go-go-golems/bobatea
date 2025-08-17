@@ -114,7 +114,10 @@ func (s *Shell) Unselect()                  { s.ctrl.Unselect(); s.RefreshView(f
 
 func (s *Shell) HandleMsg(msg tea.Msg) tea.Cmd {
 	cmd := s.ctrl.HandleMsg(msg)
-	s.RefreshView(false)
+	// Avoid auto scroll after interactive key handling. Update content only.
+	v := s.ctrl.View()
+	s.viewport.SetContent(v)
+	log.Trace().Str("component", "timeline_shell").Str("op", "HandleMsg").Int("content_len", len(v)).Msg("viewport content updated without GotoBottom")
 	return cmd
 }
 
