@@ -812,7 +812,7 @@ func (m *model) submit() tea.Cmd {
 	m.timelineSh.OnCreated(timeline.UIEntityCreated{
 		ID:       timeline.EntityID{LocalID: id, Kind: "llm_text"},
 		Renderer: timeline.RendererDescriptor{Kind: "llm_text"},
-		Props:    map[string]any{"role": "user", "text": userMessage},
+		Props:    map[string]any{"role": "user", "text": "[user]: " + userMessage},
 	})
 	m.timelineSh.OnCompleted(timeline.UIEntityCompleted{ID: timeline.EntityID{LocalID: id, Kind: "llm_text"}})
 	log.Debug().Str("component", "chat").Str("when", "submit").Str("id", id).Msg("User message added to timeline")

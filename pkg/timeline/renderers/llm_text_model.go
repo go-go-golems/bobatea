@@ -267,8 +267,18 @@ func formatFromLLMInferenceData(m *geppetto_events.LLMInferenceData) string {
 	if m.StopReason != nil && *m.StopReason != "" {
 		parts = append(parts, "stop:"+*m.StopReason)
 	}
-	if m.Usage != nil && (m.Usage.InputTokens > 0 || m.Usage.OutputTokens > 0) {
-		parts = append(parts, fmt.Sprintf("in: %d out: %d", m.Usage.InputTokens, m.Usage.OutputTokens))
+	if m.Usage != nil && (m.Usage.InputTokens > 0 || m.Usage.OutputTokens > 0 || m.Usage.CachedTokens > 0 || m.Usage.CacheCreationInputTokens > 0 || m.Usage.CacheReadInputTokens > 0) {
+		usageParts := []string{}
+		if m.Usage.InputTokens > 0 || m.Usage.OutputTokens > 0 {
+			usageParts = append(usageParts, fmt.Sprintf("in: %d out: %d", m.Usage.InputTokens, m.Usage.OutputTokens))
+		}
+		if m.Usage.CachedTokens > 0 {
+			usageParts = append(usageParts, fmt.Sprintf("cached: %d", m.Usage.CachedTokens))
+		}
+		if m.Usage.CacheCreationInputTokens > 0 || m.Usage.CacheReadInputTokens > 0 {
+			usageParts = append(usageParts, fmt.Sprintf("cache create: %d read: %d", m.Usage.CacheCreationInputTokens, m.Usage.CacheReadInputTokens))
+		}
+		parts = append(parts, strings.Join(usageParts, " "))
 	}
 	if m.DurationMs != nil && *m.DurationMs > 0 {
 		// tokens per second based on output tokens only

@@ -13,7 +13,6 @@ require (
 	github.com/dop251/goja v0.0.0-20250630131328-58d95d85e994
 	github.com/dustin/go-humanize v1.0.1
 	github.com/go-go-golems/geppetto v0.4.52
-	github.com/go-go-golems/glazed v0.6.6
 	github.com/go-go-golems/go-go-goja v0.0.4
 	github.com/google/uuid v1.6.0
 	github.com/lucasb-eyer/go-colorful v1.2.0
@@ -26,6 +25,7 @@ require (
 	github.com/stretchr/testify v1.10.0
 	golang.org/x/sys v0.34.0
 	golang.org/x/term v0.33.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -43,6 +43,7 @@ require (
 	github.com/dlclark/regexp2 v1.11.5 // indirect
 	github.com/dop251/goja_nodejs v0.0.0-20240728170619-29b559befffc // indirect
 	github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f // indirect
+	github.com/go-go-golems/glazed v0.6.6 // indirect
 	github.com/go-sourcemap/sourcemap v2.1.4+incompatible // indirect
 	github.com/google/pprof v0.0.0-20240727154555-813a5fbdbec8 // indirect
 	github.com/gorilla/css v1.0.1 // indirect
@@ -53,7 +54,7 @@ require (
 	github.com/lithammer/shortuuid/v3 v3.0.7 // indirect
 	github.com/mailru/easyjson v0.9.0 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
-	github.com/mattn/go-sqlite3 v1.14.28 // indirect
+	github.com/mattn/go-sqlite3 v1.14.30 // indirect
 	github.com/microcosm-cc/bluemonday v1.0.27 // indirect
 	github.com/oklog/ulid v1.3.1 // indirect
 	github.com/spf13/pflag v1.0.6 // indirect
@@ -62,7 +63,6 @@ require (
 	github.com/yuin/goldmark v1.7.8 // indirect
 	github.com/yuin/goldmark-emoji v1.0.5 // indirect
 	golang.org/x/net v0.42.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
 require (
@@ -72,7 +72,6 @@ require (
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/bmatcuk/doublestar/v4 v4.9.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
-	github.com/gorilla/mux v1.8.1
 	github.com/huandu/xstrings v1.5.0 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-localereader v0.0.1 // indirect
