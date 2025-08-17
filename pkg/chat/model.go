@@ -398,6 +398,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, cmd
 				}
 			}
+			if msg_.String() == "alt+d" {
+				cmd := m.timelineSh.SendToSelected(timeline.EntityCopyCodeMsg{})
+				v := m.timelineSh.View()
+				log.Debug().Str("component", "chat").Str("when", "copy_selected_code").Int("view_len", len(v)).Msg("SetContent")
+				if cmd != nil {
+					return m, cmd
+				}
+			}
 		}
 		return m.handleKeyPress(msg_)
 
@@ -1004,7 +1012,11 @@ func (m model) handleUserAction(msg UserActionMsg) (tea.Model, tea.Cmd) {
 		// Future: extract from last assistant text
 
 	case CopySourceBlocksToClipboardMsg:
-		// Future: entity models can implement code extraction
+		// Ask the selected timeline entity to provide code blocks
+		cmd := m.timelineSh.SendToSelected(timeline.EntityCopyCodeMsg{})
+		if cmd != nil {
+			return m, cmd
+		}
 
 	case SaveToFileMsg:
 		m.state = StateSavingToFile

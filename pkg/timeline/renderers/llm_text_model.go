@@ -60,9 +60,11 @@ func (m *LLMTextModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case timeline.EntityCopyTextMsg:
 		return m, func() tea.Msg { return timeline.CopyTextRequestedMsg{Text: m.text} }
 	case timeline.EntityCopyCodeMsg:
-		code := extractFirstCodeBlock(m.text)
-		if code != "" {
-			return m, func() tea.Msg { return timeline.CopyCodeRequestedMsg{Code: code} }
+		// Extract all fenced code blocks; if multiple, join with blank lines
+		blocks := extractAllCodeBlocks(m.text)
+		if len(blocks) > 0 {
+			joined := strings.Join(blocks, "\n\n")
+			return m, func() tea.Msg { return timeline.CopyCodeRequestedMsg{Code: joined} }
 		}
 		// Fallback to copying text when no code block present
 		return m, func() tea.Msg { return timeline.CopyTextRequestedMsg{Text: m.text} }
@@ -232,6 +234,17 @@ func extractFirstCodeBlock(s string) string {
 		return m[1]
 	}
 	return ""
+}
+
+func extractAllCodeBlocks(s string) []string {
+	matches := codeBlockRe.FindAllStringSubmatch(s, -1)
+	var blocks []string
+	for _, m := range matches {
+		if len(m) >= 2 && m[1] != "" {
+			blocks = append(blocks, m[1])
+		}
+	}
+	return blocks
 }
 
 func looksLikeError(s string) bool {
