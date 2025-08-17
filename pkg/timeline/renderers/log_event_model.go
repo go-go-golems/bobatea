@@ -18,6 +18,7 @@ type LogEventModel struct {
     yamlStr string
     width   int
     selected bool
+    showMeta bool
 }
 
 func (m *LogEventModel) Init() tea.Cmd { return nil }
@@ -28,6 +29,8 @@ func (m *LogEventModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
         m.selected = true
     case timeline.EntityUnselectedMsg:
         m.selected = false
+        // Hide metadata when unselected to keep timeline compact
+        m.showMeta = false
     case timeline.EntityPropsUpdatedMsg:
         if v.Patch != nil {
             m.OnProps(v.Patch)
@@ -35,6 +38,17 @@ func (m *LogEventModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
     case timeline.EntitySetSizeMsg:
         m.width = v.Width
         return m, nil
+    case tea.KeyMsg:
+        // Toggle metadata visibility with TAB when in selected/interactive mode
+        if m.selected && v.String() == "tab" {
+            m.showMeta = !m.showMeta
+            log.Debug().
+                Str("component", "renderer").
+                Str("kind", "log_event").
+                Bool("show_meta", m.showMeta).
+                Msg("toggle metadata visibility")
+            return m, nil
+        }
     }
     return m, nil
 }
@@ -51,7 +65,7 @@ func (m *LogEventModel) View() string {
 
     header := strings.TrimSpace(fmt.Sprintf("[%s] %s", strings.ToUpper(strings.TrimSpace(m.level)), strings.TrimSpace(m.message)))
     body := header
-    if strings.TrimSpace(m.yamlStr) != "" {
+    if m.showMeta && strings.TrimSpace(m.yamlStr) != "" {
         body += "\n\n" + m.yamlStr
     }
     return base.Width(m.width - base.GetHorizontalPadding()).Render(body)

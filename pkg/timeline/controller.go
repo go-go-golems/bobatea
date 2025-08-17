@@ -252,9 +252,18 @@ func lipLines(s string) int {
 	return n
 }
 
-// HandleMsg routes a Bubble Tea message to the selected entity model when entering is true.
+// HandleMsg routes a Bubble Tea message to the selected entity model.
+// Normally, routing only occurs when entering is true. However, TAB and shift+TAB
+// are allowed to pass through even when not entering so selected entities can
+// implement compact toggles without full focus transfer.
 func (c *Controller) HandleMsg(msg tea.Msg) tea.Cmd {
-	if !c.entering {
+	allowRoute := c.entering
+	if km, ok := msg.(tea.KeyMsg); ok {
+		if km.String() == "tab" || km.String() == "shift+tab" {
+			allowRoute = true
+		}
+	}
+	if !allowRoute {
 		return nil
 	}
 	if c.selected < 0 || c.selected >= len(c.store.order) {
