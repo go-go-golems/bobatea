@@ -3,36 +3,30 @@ package chat
 import (
 	"context"
 	"github.com/charmbracelet/bubbletea"
-	"github.com/go-go-golems/geppetto/pkg/conversation"
 )
 
 // Backend abstracts initiating and stopping the backend process that is responsible
-// for streaming and processing chat messages.
+// for producing chat completions and other UI updates.
 //
-// Communication between the backend and the chat UI is facilitated through a series
-// of Stream*Msg messages that the backend sends to the UI.
+// Communication between the backend and the chat UI is now timeline-centric:
+// implementions should inject timeline lifecycle events directly into the Bubble Tea
+// program using tea.Program.Send:
+//   - timeline.UIEntityCreated to create entities (e.g., assistant llm_text, tool_call)
+//   - timeline.UIEntityUpdated to stream text or update properties
+//   - timeline.UIEntityCompleted to finish an entity
+//   - timeline.UIEntityDeleted when removing an entity
 //
-// The typical flow of communication is as follows:
-//  1. The UI invokes the Start method, providing a context and the current conversation
-//     messages, to begin the backend streaming process.
-//  2. As the backend processes the stream, it sends Stream*Msg messages to the UI:
-//     - StreamStartMsg: Indicates the streaming process has started.
-//     - StreamStatusMsg: Provides updates on the status of the streaming process.
-//     - StreamCompletionMsg: Contains new data from the backend, such as a new message.
-//     - StreamDoneMsg: Signals the successful completion of the streaming process.
-//     - StreamErrorMsg: Communicates errors that occurred during streaming.
-//  3. The UI's Update method receives these messages and updates the chat model and view.
-//  4. The Backend interface provides Interrupt and Kill methods to allow the UI to request
-//     the backend to gracefully stop or forcefully terminate the streaming process.
-//  5. Upon completion of its tasks, the backend sends a BackendFinishedMsg to indicate
-//     that it has finished processing and will not send any further messages.
+// The chat model consumes these events and renders the timeline accordingly.
 //
-// The backend is expected to maintain the context of the conversation, ensuring that
-// new messages sent as completion events are correctly associated with the last message
-// in the conversation to maintain the chat's continuity.
+// Typical flow:
+//  1. The UI invokes Start(ctx, prompt).
+//  2. Backend sends UIEntityCreated for an assistant message, then multiple UIEntityUpdated
+//     with an increasing Version to stream text, followed by UIEntityCompleted.
+//  3. When the backend finishes, it sends BackendFinishedMsg so the UI can unblur input.
 type Backend interface {
-	// Start begins the backend process with the provided context and conversation messages.
-	Start(ctx context.Context, msgs []*conversation.Message) (tea.Cmd, error)
+	// Start begins the backend process with the provided context and prompt string.
+	// Implementations should stream results back to the program via tea messages.
+	Start(ctx context.Context, prompt string) (tea.Cmd, error)
 
 	// Interrupt signals the backend process to gracefully stop its current operation.
 	Interrupt()

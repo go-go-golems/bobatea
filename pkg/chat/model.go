@@ -8,19 +8,18 @@ import (
 	"sync/atomic"
 	"time"
 
-	geppetto_conversation "github.com/go-go-golems/geppetto/pkg/conversation"
+	"github.com/google/uuid"
 
 	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	conversationui "github.com/go-go-golems/bobatea/pkg/chat/conversation"
 	"github.com/go-go-golems/bobatea/pkg/filepicker"
 	mode_keymap "github.com/go-go-golems/bobatea/pkg/mode-keymap"
 	"github.com/go-go-golems/bobatea/pkg/textarea"
-	"github.com/go-go-golems/glazed/pkg/helpers/markdown"
+	"github.com/go-go-golems/bobatea/pkg/timeline"
+	renderers "github.com/go-go-golems/bobatea/pkg/timeline/renderers"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
 )
@@ -57,10 +56,8 @@ type Status struct {
 }
 
 type model struct {
-	conversationManager geppetto_conversation.Manager
-	autoStartBackend    bool
+	autoStartBackend bool
 
-	viewport       viewport.Model
 	scrollToBottom bool
 
 	// not really what we want, but use this for now, we'll have to either find a normal text box,
@@ -69,14 +66,21 @@ type model struct {
 
 	filepicker filepicker.Model
 
-	conversation conversationui.Model
+	// conversation conversationui.Model // removed in favor of timeline selection
+
+	// Timeline controller replaces conversation view rendering
+	timelineReg *timeline.Registry
+	timelineSh  *timeline.Shell
+	// entityStart removed; engines now provide DurationMs in metadata
+	// entityStart     map[string]time.Time
+	timelineRegHook func(*timeline.Registry)
 
 	help help.Model
 
 	err    error
 	keyMap KeyMap
 
-	style  *conversationui.Style
+	style  *Style
 	width  int
 	height int
 
@@ -88,6 +92,16 @@ type model struct {
 	title string
 
 	status *Status
+
+	// inputBlurred tracks whether the input field has been programmatically blurred
+	// by BlurInputMsg / UnblurInputMsg actions. This flag can be used by UI tooling
+	// to gate or reflect input state if needed.
+	inputBlurred bool
+
+	// externalInput, when true, hides the internal input widget and expects the host
+	// to drive input via control messages (Replace/Append/Prepend/Submit). This allows
+	// embedding the chat timeline in apps with their own input UX.
+	externalInput bool
 }
 
 type ModelOption func(*model)
@@ -110,9 +124,24 @@ func WithAutoStartBackend(autoStartBackend bool) ModelOption {
 	}
 }
 
+// WithTimelineRegister allows callers to register custom renderers on the timeline registry
+func WithTimelineRegister(hook func(*timeline.Registry)) ModelOption {
+	return func(m *model) {
+		m.timelineRegHook = hook
+	}
+}
+
+// WithExternalInput turns the chat model into a reusable timeline shell by hiding the
+// built-in input widget. The host should control input text and submission via messages.
+func WithExternalInput(enabled bool) ModelOption {
+	return func(m *model) {
+		m.externalInput = enabled
+	}
+}
+
 // TODO(manuel, 2024-04-07) Add options to configure filepicker
 
-func InitialModel(manager geppetto_conversation.Manager, backend Backend, options ...ModelOption) model {
+func InitialModel(backend Backend, options ...ModelOption) model {
 	fp := filepicker.NewModel()
 
 	fp.Filepicker.DirAllowed = false
@@ -122,15 +151,12 @@ func InitialModel(manager geppetto_conversation.Manager, backend Backend, option
 	fp.Filepicker.Height = 10
 
 	ret := model{
-		conversationManager: manager,
-		conversation:        conversationui.NewModel(manager),
-		filepicker:          fp,
-		style:               conversationui.DefaultStyles(),
-		keyMap:              DefaultKeyMap,
-		backend:             backend,
-		viewport:            viewport.New(0, 0),
-		help:                help.New(),
-		scrollToBottom:      true,
+		filepicker:     fp,
+		style:          DefaultStyles(),
+		keyMap:         DefaultKeyMap,
+		backend:        backend,
+		help:           help.New(),
+		scrollToBottom: true,
 	}
 
 	for _, option := range options {
@@ -143,6 +169,19 @@ func InitialModel(manager geppetto_conversation.Manager, backend Backend, option
 	ret.textArea.CharLimit = 20000
 	ret.textArea.MaxHeight = 500
 	ret.state = StateUserInput
+
+	// Initialize timeline components
+	ret.timelineReg = timeline.NewRegistry()
+	// Register interactive entity model factories
+	ret.timelineReg.RegisterModelFactory(renderers.NewLLMTextFactory())
+	ret.timelineReg.RegisterModelFactory(renderers.ToolCallsPanelFactory{})
+	// NOTE: backend-specific renderers can be registered externally via WithTimelineRegister
+	ret.timelineReg.RegisterModelFactory(renderers.PlainFactory{})
+	if ret.timelineRegHook != nil {
+		ret.timelineRegHook(ret.timelineReg)
+	}
+	ret.timelineSh = timeline.NewShell(ret.timelineReg)
+	// ret.entityStart = map[string]time.Time{}
 
 	return ret
 }
@@ -158,15 +197,17 @@ func (m model) Init() tea.Cmd {
 	//	})
 	//}
 
-	cmds = append(cmds, m.filepicker.Init(), m.viewport.Init(), m.conversation.Init())
+	cmds = append(cmds, m.filepicker.Init(), m.timelineSh.Init())
 
-	// TODO(manuel, 2024-04-07) this probably belongs into init, and maybe a separate init message?
-	messages := m.conversation.View()
-	m.viewport.SetContent(messages)
-	m.viewport.YPosition = 0
-	m.viewport.GotoBottom()
+	// Seed existing chat messages as timeline entities
+	// Seeding from conversation is disabled; timeline should be sourced from entity events
+
+	// Set initial timeline view content
+	m.timelineSh.GotoBottom()
 
 	m.updateKeyBindings()
+	// Select last entity if any
+	m.timelineSh.SelectLast()
 
 	if m.autoStartBackend {
 		cmds = append(cmds, func() tea.Msg {
@@ -180,18 +221,38 @@ func (m model) Init() tea.Cmd {
 func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
+	// If an error is visible, allow quick dismissal with Esc or Enter
+	if m.state == StateError {
+		if msg.String() == "esc" || msg.String() == "enter" {
+			return m.handleUserAction(DismissErrorMsg{})
+		}
+	}
+
+	// When streaming, forbid entering/focusing input and submitting
+	if m.state == StateStreamCompletion {
+		if key.Matches(msg, m.keyMap.SubmitMessage) || key.Matches(msg, m.keyMap.FocusMessage) {
+			return m, nil
+		}
+	}
+
 	switch {
 	case key.Matches(msg, m.keyMap.Help):
+		log.Debug().Str("component", "chat").Str("key", msg.String()).Msg("Help pressed")
 		cmd = func() tea.Msg { return ToggleHelpMsg{} }
 	case key.Matches(msg, m.keyMap.UnfocusMessage):
+		log.Debug().Str("component", "chat").Str("key", msg.String()).Msg("Unfocus (ESC) pressed")
 		cmd = func() tea.Msg { return UnfocusMessageMsg{} }
 	case key.Matches(msg, m.keyMap.Quit):
+		log.Debug().Str("component", "chat").Str("key", msg.String()).Msg("Quit pressed")
 		cmd = func() tea.Msg { return QuitMsg{} }
 	case key.Matches(msg, m.keyMap.FocusMessage):
+		log.Debug().Str("component", "chat").Str("key", msg.String()).Msg("Focus pressed")
 		cmd = func() tea.Msg { return FocusMessageMsg{} }
 	case key.Matches(msg, m.keyMap.SelectNextMessage):
+		log.Debug().Str("component", "chat").Str("key", msg.String()).Msg("SelectNext pressed")
 		cmd = func() tea.Msg { return SelectNextMessageMsg{} }
 	case key.Matches(msg, m.keyMap.SelectPrevMessage):
+		log.Debug().Str("component", "chat").Str("key", msg.String()).Msg("SelectPrev pressed")
 		cmd = func() tea.Msg { return SelectPrevMessageMsg{} }
 	case key.Matches(msg, m.keyMap.SubmitMessage):
 		cmd = func() tea.Msg { return SubmitMessageMsg{} }
@@ -212,15 +273,17 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	default:
 		switch m.state {
 		case StateUserInput:
-			m.textArea, cmd = m.textArea.Update(msg)
+			if !m.externalInput {
+				m.textArea, cmd = m.textArea.Update(msg)
+			}
 		case StateSavingToFile:
 			var updatedModel tea.Model
 			updatedModel, cmd = m.filepicker.Update(msg)
 			m.filepicker = updatedModel.(filepicker.Model)
 		case StateMovingAround, StateStreamCompletion, StateError:
-			prevAtBottom := m.viewport.AtBottom()
-			m.viewport, cmd = m.viewport.Update(msg)
-			if m.viewport.AtBottom() && !prevAtBottom {
+			prevAtBottom := m.timelineSh.AtBottom()
+			cmd = m.timelineSh.UpdateViewport(msg)
+			if m.timelineSh.AtBottom() && !prevAtBottom {
 				m.scrollToBottom = false
 			}
 		}
@@ -230,11 +293,11 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) saveToFile(path string) (tea.Model, tea.Cmd) {
-	err := m.conversationManager.SaveToFile(path)
-	if err != nil {
-		return m, func() tea.Msg {
-			return ErrorMsg(err)
-		}
+	// No conversation manager; writing viewport content as a simple fallback
+	// In a real backend, this should request an export from the backend.
+	content := m.timelineSh.View()
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		return m, func() tea.Msg { return ErrorMsg(err) }
 	}
 
 	m.state = StateUserInput
@@ -250,11 +313,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	updateStartTime := time.Now()
 	msgType := fmt.Sprintf("%T", msg)
 
-	log.Trace().
-		Int64("update_call_id", updateCallID).
+	// Consolidated logger for this update call
+	logger := log.With().Int64("update_call_id", updateCallID).Logger()
+	logger.Trace().
 		Str("msg_type", msgType).
 		Str("current_state", string(m.state)).
-		Int("message_count", len(m.conversationManager.GetConversation())).
 		Bool("scroll_to_bottom", m.scrollToBottom).
 		Bool("backend_finished", m.backend.IsFinished()).
 		Time("start_time", updateStartTime).
@@ -265,202 +328,197 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg_ := msg.(type) {
 	case tea.KeyMsg:
-		log.Trace().
-			Int64("update_call_id", updateCallID).
-			Str("key", msg_.String()).
-			Msg("Handling key press")
+		// When input is blurred, ignore key events on the input field
+		if m.inputBlurred {
+			return m, nil
+		}
+		// Entering mode and selection routing
+		if m.state == StateMovingAround {
+			switch msg_.String() {
+			case "enter":
+				m.timelineSh.EnterSelection()
+				v := m.timelineSh.View()
+				log.Debug().Str("component", "chat").Str("when", "enter_selection").Int("view_len", len(v)).Msg("SetContent")
+				return m, nil
+			case "esc":
+				if m.timelineSh.IsEntering() {
+					m.timelineSh.ExitSelection()
+					v := m.timelineSh.View()
+					log.Debug().Str("component", "chat").Str("when", "exit_entering").Int("view_len", len(v)).Msg("SetContent")
+					return m, nil
+				}
+				// leave moving-around back to text mode
+				log.Debug().Str("component", "chat").Str("transition", "moving-around->user-input").Msg("State transition")
+				m.state = StateUserInput
+				m.textArea.Focus()
+				m.updateKeyBindings()
+				// hide selection highlight and unselect entity
+				m.timelineSh.SetSelectionVisible(false)
+				m.timelineSh.Unselect()
+				v := m.timelineSh.View()
+				log.Debug().Str("component", "chat").Str("when", "esc_to_input").Int("view_len", len(v)).Msg("SetContent")
+				return m, nil
+			}
+			// While entering, allow scrolling keys to control the timeline viewport
+			if m.timelineSh.IsEntering() {
+				if key.Matches(msg_, m.keyMap.ScrollDown) || msg_.String() == "down" {
+					log.Debug().Str("component", "chat_model").Str("op", "scroll_down_entering").Str("key", msg_.String()).Msg("pass-through to timeline shell")
+					m.timelineSh.ScrollDown(1)
+					m.scrollToBottom = false
+					_ = m.timelineSh.View()
+					return m, nil
+				}
+				if key.Matches(msg_, m.keyMap.ScrollUp) || msg_.String() == "up" {
+					log.Debug().Str("component", "chat_model").Str("op", "scroll_up_entering").Str("key", msg_.String()).Msg("pass-through to timeline shell")
+					m.timelineSh.ScrollUp(1)
+					m.scrollToBottom = false
+					_ = m.timelineSh.View()
+					return m, nil
+				}
+				logger.Debug().Str("route", "entering").Str("key", msg_.String()).Msg("Routing key to selected entity model")
+				cmd := m.timelineSh.HandleMsg(msg_)
+				v := m.timelineSh.View()
+				log.Debug().Str("component", "chat").Str("when", "entering_route_key").Int("view_len", len(v)).Msg("SetContent")
+				return m, cmd
+			}
+			// Route TAB / shift+TAB to the selected entity even when not entering
+			if msg_.String() == "tab" || msg_.String() == "shift+tab" {
+				logger.Debug().Str("route", "non-entering").Str("key", msg_.String()).Msg("Routing TAB to selected entity model")
+				cmd := m.timelineSh.HandleMsg(msg_)
+				v := m.timelineSh.View()
+				log.Debug().Str("component", "chat").Str("when", "non_entering_route_tab").Int("view_len", len(v)).Msg("SetContent")
+				return m, cmd
+			}
+			// Allow entities to react to copy requests even when not entering
+			if msg_.String() == "alt+c" {
+				cmd := m.timelineSh.SendToSelected(timeline.EntityCopyTextMsg{})
+				v := m.timelineSh.View()
+				log.Debug().Str("component", "chat").Str("when", "copy_selected").Int("view_len", len(v)).Msg("SetContent")
+				if cmd != nil {
+					return m, cmd
+				}
+			}
+			if msg_.String() == "alt+d" {
+				cmd := m.timelineSh.SendToSelected(timeline.EntityCopyCodeMsg{})
+				v := m.timelineSh.View()
+				log.Debug().Str("component", "chat").Str("when", "copy_selected_code").Int("view_len", len(v)).Msg("SetContent")
+				if cmd != nil {
+					return m, cmd
+				}
+			}
+		}
 		return m.handleKeyPress(msg_)
 
 	case tea.WindowSizeMsg:
-		log.Trace().
-			Int64("update_call_id", updateCallID).
-			Int("width", msg_.Width).
-			Int("height", msg_.Height).
-			Msg("Window size changed")
+		logger.Debug().Int("width", msg_.Width).Int("height", msg_.Height).Msg("Window size changed")
 		m.width = msg_.Width
 		m.height = msg_.Height
+		m.timelineSh.SetSize(m.width, m.height)
 		m.recomputeSize()
 
 	case ErrorMsg:
-		log.Trace().
-			Int64("update_call_id", updateCallID).
-			Str("error", msg_.Error()).
-			Msg("Error message received")
+		logger.Trace().Str("error", msg_.Error()).Msg("Error message received")
 		m.err = msg_
+		m.state = StateError
+		m.updateKeyBindings()
 		return m, nil
 
-	case conversationui.StreamCompletionMsg,
-		conversationui.StreamStartMsg,
-		conversationui.StreamStatusMsg,
-		conversationui.StreamDoneMsg,
-		conversationui.StreamCompletionError:
-
-		log.Trace().
-			Int64("update_call_id", updateCallID).
-			Str("stream_msg_type", msgType).
-			Msg("Stream message received - ENTERING STREAM PROCESSING")
-
-		startTime := time.Now()
-
-		switch streamMsg := msg.(type) {
-		case conversationui.StreamStartMsg:
-			log.Trace().
-				Int64("update_call_id", updateCallID).
-				Str("operation", "stream_start_reception").
-				Str("messageID", streamMsg.ID.String()).
-				Str("parentID", streamMsg.ParentID.String()).
-				Time("timestamp", startTime).
-				Int("current_message_count", len(m.conversationManager.GetConversation())).
-				Bool("scroll_to_bottom", m.scrollToBottom).
-				Msg("StreamStartMsg details")
-		case conversationui.StreamCompletionMsg:
-			log.Trace().
-				Int64("update_call_id", updateCallID).
-				Str("operation", "stream_completion_reception").
-				Str("messageID", streamMsg.ID.String()).
-				Int("delta_length", len(streamMsg.Delta)).
-				Int("completion_length", len(streamMsg.Completion)).
-				Msg("StreamCompletionMsg details")
-		case conversationui.StreamDoneMsg:
-			log.Trace().
-				Int64("update_call_id", updateCallID).
-				Str("operation", "stream_done_reception").
-				Str("messageID", streamMsg.ID.String()).
-				Msg("StreamDoneMsg details")
-		}
-
-		// Update conversation with timing and detailed logging
-		log.Trace().
-			Int64("update_call_id", updateCallID).
-			Msg("CALLING conversation.Update() - POTENTIAL RECURSION POINT")
-
-		convUpdateStart := time.Now()
-		oldConversationState := m.conversation.SelectedIdx()
-		m.conversation, cmd = m.conversation.Update(msg)
-		convUpdateDuration := time.Since(convUpdateStart)
-		newConversationState := m.conversation.SelectedIdx()
-
-		log.Trace().
-			Int64("update_call_id", updateCallID).
-			Str("operation", "conversation_update_complete").
-			Dur("duration", convUpdateDuration).
-			Int("old_selected_idx", oldConversationState).
-			Int("new_selected_idx", newConversationState).
-			Bool("cmd_returned", cmd != nil).
-			Msg("Conversation update completed")
-
-		if cmd != nil {
-			log.Trace().
-				Int64("update_call_id", updateCallID).
-				Str("cmd_type", fmt.Sprintf("%T", cmd)).
-				Msg("Command returned from conversation.Update() - POTENTIAL LOOP SOURCE")
-		}
-
-		if m.scrollToBottom {
-			log.Trace().
-				Int64("update_call_id", updateCallID).
-				Msg("SCROLL TO BOTTOM - Starting UI update sequence")
-
-			// Log UI update operations with timing
-			viewStart := time.Now()
-			v, _ := m.conversation.ViewAndSelectedPosition()
-			viewDuration := time.Since(viewStart)
-
-			setContentStart := time.Now()
-			m.viewport.SetContent(v)
-			setContentDuration := time.Since(setContentStart)
-
-			gotoBottomStart := time.Now()
-			m.viewport.GotoBottom()
-			gotoBottomDuration := time.Since(gotoBottomStart)
-
-			log.Trace().
-				Int64("update_call_id", updateCallID).
-				Str("operation", "ui_update_timing").
-				Dur("view_generation", viewDuration).
-				Dur("set_content", setContentDuration).
-				Dur("goto_bottom", gotoBottomDuration).
-				Int("content_length", len(v)).
-				Msg("UI update operations completed")
-		}
-
-		totalDuration := time.Since(startTime)
-		log.Trace().
-			Int64("update_call_id", updateCallID).
-			Str("operation", "stream_message_total").
-			Dur("total_duration", totalDuration).
-			Msg("Stream message processing completed")
-
-		cmds = append(cmds, cmd)
-
 	case BackendFinishedMsg:
-		log.Trace().
-			Int64("update_call_id", updateCallID).
-			Msg("Backend finished - calling finishCompletion()")
+		logger.Trace().Msg("Backend finished - calling finishCompletion()")
 		cmd = m.finishCompletion()
 		cmds = append(cmds, cmd)
 
-	case refreshMessageMsg:
-		log.Trace().
-			Int64("update_call_id", updateCallID).
-			Bool("go_to_bottom", msg_.GoToBottom).
-			Bool("scroll_to_bottom", m.scrollToBottom).
-			Msg("REFRESH MESSAGE - POTENTIAL TRIGGER FOR LOOPS")
+		// Accept external timeline lifecycle messages (e.g., from backend simulating agent tool calls)
+	case timeline.UIEntityCreated:
+		logger.Debug().Str("lifecycle", "created").Str("kind", msg_.ID.Kind).Str("local_id", msg_.ID.LocalID).Msg("Applying external entity event")
+		m.timelineSh.OnCreated(msg_)
+		if m.scrollToBottom {
+			m.timelineSh.GotoBottom()
+		}
+		return m, nil
+	case timeline.UIEntityUpdated:
+		logger.Debug().Str("lifecycle", "updated").Str("kind", msg_.ID.Kind).Str("local_id", msg_.ID.LocalID).Int64("version", msg_.Version).Msg("Applying external entity event")
+		m.timelineSh.OnUpdated(msg_)
+		if m.scrollToBottom {
+			m.timelineSh.GotoBottom()
+		}
+		return m, nil
+	case timeline.UIEntityCompleted:
+		logger.Debug().Str("lifecycle", "completed").Str("kind", msg_.ID.Kind).Str("local_id", msg_.ID.LocalID).Msg("Applying external entity event")
+		m.timelineSh.OnCompleted(msg_)
+		if m.scrollToBottom {
+			m.timelineSh.GotoBottom()
+		}
+		return m, nil
+	case timeline.UIEntityDeleted:
+		logger.Debug().Str("lifecycle", "deleted").Str("kind", msg_.ID.Kind).Str("local_id", msg_.ID.LocalID).Msg("Applying external entity event")
+		m.timelineSh.OnDeleted(msg_)
+		if m.scrollToBottom {
+			m.timelineSh.GotoBottom()
+		}
+		return m, nil
 
-		v, _ := m.conversation.ViewAndSelectedPosition()
-		m.viewport.SetContent(v)
+	// Side-effects requested by entity models
+	case timeline.CopyTextRequestedMsg:
+		_ = clipboard.WriteAll(msg_.Text)
+		return m, nil
+	case timeline.CopyCodeRequestedMsg:
+		_ = clipboard.WriteAll(msg_.Code)
+		return m, nil
+
+	case refreshMessageMsg:
+		logger.Trace().Bool("go_to_bottom", msg_.GoToBottom).Bool("scroll_to_bottom", m.scrollToBottom).Msg("REFRESH MESSAGE - POTENTIAL TRIGGER FOR LOOPS")
+
 		m.recomputeSize()
 		if msg_.GoToBottom || m.scrollToBottom {
-			m.viewport.GotoBottom()
+			m.timelineSh.GotoBottom()
 		}
 
 	case filepicker.SelectFileMsg:
-		log.Trace().
-			Int64("update_call_id", updateCallID).
-			Str("path", msg_.Path).
-			Msg("File selected for saving")
+		logger.Trace().Str("path", msg_.Path).Msg("File selected for saving")
 		return m.saveToFile(msg_.Path)
 
 	case filepicker.CancelFilePickerMsg:
-		log.Trace().
-			Int64("update_call_id", updateCallID).
-			Msg("File picker cancelled")
+		logger.Trace().Msg("File picker cancelled")
 		m.state = StateUserInput
 		m.updateKeyBindings()
 
 	case StartBackendMsg:
-		log.Trace().
-			Int64("update_call_id", updateCallID).
-			Msg("Starting backend - POTENTIAL COMMAND GENERATOR")
+		logger.Trace().Msg("Starting backend - POTENTIAL COMMAND GENERATOR")
 		return m, m.startBackend()
 
 	case UserActionMsg:
-		log.Trace().
-			Int64("update_call_id", updateCallID).
-			Str("user_action_type", fmt.Sprintf("%T", msg_)).
-			Msg("User action message - calling handleUserAction()")
+		logger.Trace().Str("user_action_type", fmt.Sprintf("%T", msg_)).Msg("User action message - calling handleUserAction()")
 		return m.handleUserAction(msg_)
 
 	default:
-		log.Trace().
-			Int64("update_call_id", updateCallID).
-			Str("msg_type", msgType).
-			Str("state", string(m.state)).
-			Msg("DEFAULT CASE - updating viewport or filepicker")
+		logger.Trace().Str("msg_type", msgType).Str("state", string(m.state)).Msg("DEFAULT CASE - updating viewport or filepicker")
 
 		switch m.state {
-		case StateUserInput, StateError, StateMovingAround, StateStreamCompletion:
-			log.Trace().
-				Int64("update_call_id", updateCallID).
-				Msg("Updating viewport - POTENTIAL RECURSION POINT")
-			m.viewport, cmd = m.viewport.Update(msg_)
+		case StateUserInput, StateError, StateStreamCompletion:
+			cmd = m.timelineSh.UpdateViewport(msg_)
 			if cmd != nil {
-				log.Trace().
-					Int64("update_call_id", updateCallID).
-					Str("viewport_cmd_type", fmt.Sprintf("%T", cmd)).
-					Msg("Viewport returned command")
+				logger.Trace().Str("viewport_cmd_type", fmt.Sprintf("%T", cmd)).Msg("Shell viewport returned command")
 			}
 			cmds = append(cmds, cmd)
+		case StateMovingAround:
+			// In moving-around mode, use timeline selection controls and scroll
+			if km, ok := msg_.(tea.KeyMsg); ok {
+				switch {
+				case key.Matches(km, m.keyMap.SelectNextMessage):
+					m.timelineSh.SelectNext()
+					m.scrollToSelected()
+				case key.Matches(km, m.keyMap.SelectPrevMessage):
+					m.timelineSh.SelectPrev()
+					m.scrollToSelected()
+				case key.Matches(km, m.keyMap.ScrollDown) || km.String() == "down":
+					m.timelineSh.ScrollDown(1)
+				case key.Matches(km, m.keyMap.ScrollUp) || km.String() == "up":
+					m.timelineSh.ScrollUp(1)
+				}
+			}
+			// Allow non-key messages (e.g., mouse wheel) to reach the shell viewport
+			m.timelineSh.UpdateViewport(msg_)
 		case StateSavingToFile:
 			log.Trace().
 				Int64("update_call_id", updateCallID).
@@ -477,16 +535,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		oldMessageCount := m.status.MessageCount
 		m.status.State = m.state
 		m.status.InputText = m.textArea.Value()
-		m.status.SelectedIdx = m.conversation.SelectedIdx()
-		m.status.MessageCount = len(m.conversation.Conversation())
+		m.status.SelectedIdx = m.timelineSh.SelectedIndex()
+		// Fallback approximation using rendered height if entity count is not available
+		m.status.MessageCount = lipgloss.Height(m.timelineSh.View())
 		m.status.Error = m.err
 
 		if oldMessageCount != m.status.MessageCount {
-			log.Trace().
-				Int64("update_call_id", updateCallID).
-				Int("old_count", oldMessageCount).
-				Int("new_count", m.status.MessageCount).
-				Msg("MESSAGE COUNT CHANGED")
+			logger.Trace().Int("old_count", oldMessageCount).Int("new_count", m.status.MessageCount).Msg("MESSAGE COUNT CHANGED")
 		}
 	}
 
@@ -496,21 +551,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Log all commands being returned
 	for i, cmd := range cmds {
 		if cmd != nil {
-			log.Trace().
-				Int64("update_call_id", updateCallID).
-				Int("cmd_index", i).
-				Str("cmd_type", fmt.Sprintf("%T", cmd)).
-				Msg("COMMAND BEING RETURNED - POTENTIAL LOOP SOURCE")
+			logger.Trace().Int("cmd_index", i).Str("cmd_type", fmt.Sprintf("%T", cmd)).Msg("COMMAND BEING RETURNED - POTENTIAL LOOP SOURCE")
 		}
 	}
 
-	log.Trace().
-		Int64("update_call_id", updateCallID).
-		Str("msg_type", msgType).
-		Dur("total_duration", updateDuration).
-		Int("cmd_count", cmdCount).
-		Str("final_state", string(m.state)).
-		Msg("UPDATE EXIT")
+	logger.Trace().Str("msg_type", msgType).Dur("total_duration", updateDuration).Int("cmd_count", cmdCount).Str("final_state", string(m.state)).Msg("UPDATE EXIT")
 
 	return m, tea.Batch(cmds...)
 }
@@ -519,55 +564,8 @@ func (m *model) updateKeyBindings() {
 	mode_keymap.EnableMode(&m.keyMap, string(m.state))
 }
 
-func (m *model) scrollToSelected() {
-	scrollCallID := atomic.AddInt64(&updateCallCounter, 1)
-	log.Trace().
-		Int64("scroll_call_id", scrollCallID).
-		Int("selected_idx", m.conversation.SelectedIdx()).
-		Int("viewport_y_offset", m.viewport.YOffset).
-		Int("viewport_height", m.viewport.Height).
-		Msg("SCROLL TO SELECTED ENTRY - POTENTIAL VIEW TRIGGER")
-
-	viewStart := time.Now()
-	v, pos := m.conversation.ViewAndSelectedPosition()
-	viewDuration := time.Since(viewStart)
-
-	log.Trace().
-		Int64("scroll_call_id", scrollCallID).
-		Dur("view_generation", viewDuration).
-		Int("view_length", len(v)).
-		Int("pos_offset", pos.Offset).
-		Int("pos_height", pos.Height).
-		Msg("View generated for scroll calculation")
-
-	setContentStart := time.Now()
-	m.viewport.SetContent(v)
-	setContentDuration := time.Since(setContentStart)
-
-	midScreenOffset := m.viewport.YOffset + m.viewport.Height/2
-	msgEndOffset := pos.Offset + pos.Height
-	bottomOffset := m.viewport.YOffset + m.viewport.Height
-
-	if pos.Offset > midScreenOffset && msgEndOffset > bottomOffset {
-		newOffset := pos.Offset - max(m.viewport.Height-pos.Height-1, m.viewport.Height/2)
-		m.viewport.SetYOffset(newOffset)
-		log.Trace().
-			Int64("scroll_call_id", scrollCallID).
-			Int("new_y_offset", newOffset).
-			Msg("Scrolled down to show message")
-	} else if pos.Offset < m.viewport.YOffset {
-		m.viewport.SetYOffset(pos.Offset)
-		log.Trace().
-			Int64("scroll_call_id", scrollCallID).
-			Int("new_y_offset", pos.Offset).
-			Msg("Scrolled up to show message")
-	}
-
-	log.Trace().
-		Int64("scroll_call_id", scrollCallID).
-		Dur("set_content_duration", setContentDuration).
-		Msg("SCROLL TO SELECTED EXIT")
-}
+// scrollToSelected scrolls the viewport to keep the selected entity in view
+func (m *model) scrollToSelected() { m.timelineSh.ScrollToSelected() }
 
 func (m *model) recomputeSize() {
 	recomputeCallID := atomic.AddInt64(&updateCallCounter, 1)
@@ -613,7 +611,10 @@ func (m *model) recomputeSize() {
 	textAreaHeight := lipgloss.Height(textAreaView)
 	textAreaDuration := time.Since(textAreaStart)
 
-	newHeight := m.height - textAreaHeight - headerHeight - helpViewHeight
+	newHeight := m.height - headerHeight - helpViewHeight
+	if !m.externalInput {
+		newHeight = m.height - textAreaHeight - headerHeight - helpViewHeight
+	}
 	if newHeight < 0 {
 		newHeight = 0
 	}
@@ -625,46 +626,23 @@ func (m *model) recomputeSize() {
 		Int("calculated_viewport_height", newHeight).
 		Msg("Text area computed, viewport height calculated")
 
-	// Set conversation width - might trigger internal updates
-	convWidthStart := time.Now()
-	m.conversation.SetWidth(m.width)
-	convWidthDuration := time.Since(convWidthStart)
-
-	// Update viewport dimensions
-	m.viewport.Width = m.width
-	m.viewport.Height = newHeight
-	m.viewport.YPosition = headerHeight + 1
+	// Update shell (timeline) dimensions and position
+	m.timelineSh.SetSize(m.width, newHeight)
 
 	h, _ := m.style.SelectedMessage.GetFrameSize()
 	m.textArea.SetWidth(m.width - h)
 
 	log.Trace().
 		Int64("recompute_call_id", recomputeCallID).
-		Dur("conversation_width_duration", convWidthDuration).
-		Int("viewport_width", m.viewport.Width).
-		Int("viewport_height", m.viewport.Height).
-		Int("viewport_y_position", m.viewport.YPosition).
 		Int("textarea_width", m.width-h).
 		Msg("Component dimensions updated")
 
-	// CRITICAL: This generates a new view and sets content - major cascade risk
-	viewStart := time.Now()
-	v, _ := m.conversation.ViewAndSelectedPosition()
-	viewDuration := time.Since(viewStart)
-
-	setContentStart := time.Now()
-	m.viewport.SetContent(v)
-	setContentDuration := time.Since(setContentStart)
-
-	gotoBottomStart := time.Now()
-	m.viewport.GotoBottom()
-	gotoBottomDuration := time.Since(gotoBottomStart)
-
+	// CRITICAL: Regenerate timeline view and set content
+	v := m.timelineSh.View()
+	log.Debug().Str("component", "chat").Str("when", "recompute_size").Int("view_len", len(v)).Msg("SetContent")
+	m.timelineSh.GotoBottom()
 	log.Trace().
 		Int64("recompute_call_id", recomputeCallID).
-		Dur("view_generation", viewDuration).
-		Dur("set_content", setContentDuration).
-		Dur("goto_bottom", gotoBottomDuration).
 		Int("view_length", len(v)).
 		Msg("RECOMPUTE SIZE EXIT - View regenerated and viewport updated")
 }
@@ -681,11 +659,20 @@ func (m model) textAreaView() string {
 		return m.style.SelectedMessage.Render(v)
 	}
 
+	if m.externalInput {
+		return "" // host renders its own input; we render nothing here
+	}
+
 	v := m.textArea.View()
 	switch m.state {
 	case StateUserInput:
 		v = m.style.FocusedMessage.Render(v)
-	case StateMovingAround, StateStreamCompletion:
+	case StateMovingAround:
+		// Grey out input when in selection mode
+		v = m.style.UnselectedMessage.Foreground(lipgloss.Color("240")).Render(v)
+	case StateStreamCompletion:
+		// Grey out and ensure blurred while streaming
+		m.textArea.Blur()
 		v = m.style.UnselectedMessage.Render(v)
 	case StateError, StateSavingToFile:
 	}
@@ -698,52 +685,18 @@ func (m model) View() string {
 	viewCallID := atomic.AddInt64(&viewCallCounter, 1)
 	viewStartTime := time.Now()
 
-	log.Trace().
-		Int64("view_call_id", viewCallID).
-		Str("state", string(m.state)).
-		Int("message_count", len(m.conversationManager.GetConversation())).
-		Bool("scroll_to_bottom", m.scrollToBottom).
-		Time("start_time", viewStartTime).
-		Msg("VIEW ENTRY - POTENTIAL EXCESSIVE CALL POINT")
+	vlogger := log.With().Int64("view_call_id", viewCallID).Logger()
+	vlogger.Trace().Str("state", string(m.state)).Bool("scroll_to_bottom", m.scrollToBottom).Time("start_time", viewStartTime).Msg("VIEW ENTRY - POTENTIAL EXCESSIVE CALL POINT")
 
 	headerStart := time.Now()
 	headerView := m.headerView()
 	headerDuration := time.Since(headerStart)
 
-	log.Trace().
-		Int64("view_call_id", viewCallID).
-		Dur("header_duration", headerDuration).
-		Bool("header_empty", headerView == "").
-		Msg("Header view generated")
+	vlogger.Trace().Dur("header_duration", headerDuration).Bool("header_empty", headerView == "").Msg("Header view generated")
 
-	// CRITICAL: This call might trigger cascading updates
-	conversationViewStart := time.Now()
-	view, position := m.conversation.ViewAndSelectedPosition()
-	conversationViewDuration := time.Since(conversationViewStart)
-
-	log.Trace().
-		Int64("view_call_id", viewCallID).
-		Dur("conversation_view_duration", conversationViewDuration).
-		Int("view_length", len(view)).
-		Int("position_offset", position.Offset).
-		Int("position_height", position.Height).
-		Msg("CONVERSATION VIEW GENERATED - EXPENSIVE OPERATION")
-
-	// CRITICAL: This might trigger viewport updates that cause loops
-	setContentStart := time.Now()
-	m.viewport.SetContent(view)
-	setContentDuration := time.Since(setContentStart)
-
-	log.Trace().
-		Int64("view_call_id", viewCallID).
-		Dur("set_content_duration", setContentDuration).
-		Int("viewport_width", m.viewport.Width).
-		Int("viewport_height", m.viewport.Height).
-		Int("viewport_y_position", m.viewport.YPosition).
-		Msg("VIEWPORT CONTENT SET - POTENTIAL TRIGGER FOR UPDATES")
-
+	// Generate timeline view via shell (no outer viewport wrapping)
 	viewportViewStart := time.Now()
-	viewportView := m.viewport.View()
+	viewportView := m.timelineSh.View()
 	viewportViewDuration := time.Since(viewportViewStart)
 
 	textAreaStart := time.Now()
@@ -754,12 +707,7 @@ func (m model) View() string {
 	helpView := m.help.View(m.keyMap)
 	helpDuration := time.Since(helpStart)
 
-	log.Trace().
-		Int64("view_call_id", viewCallID).
-		Dur("viewport_view_duration", viewportViewDuration).
-		Dur("textarea_duration", textAreaDuration).
-		Dur("help_duration", helpDuration).
-		Msg("UI component views generated")
+	vlogger.Trace().Dur("viewport_view_duration", viewportViewDuration).Dur("textarea_duration", textAreaDuration).Dur("help_duration", helpDuration).Msg("UI component views generated")
 
 	// debugging heights with trace logging
 	viewportHeight := lipgloss.Height(viewportView)
@@ -767,15 +715,7 @@ func (m model) View() string {
 	headerHeight := lipgloss.Height(headerView)
 	helpViewHeight := lipgloss.Height(helpView)
 
-	log.Trace().
-		Int64("view_call_id", viewCallID).
-		Int("viewport_height", viewportHeight).
-		Int("textarea_height", textAreaHeight).
-		Int("header_height", headerHeight).
-		Int("help_height", helpViewHeight).
-		Int("total_calculated_height", viewportHeight+textAreaHeight+headerHeight+helpViewHeight).
-		Int("model_height", m.height).
-		Msg("Height calculations")
+	vlogger.Trace().Int("viewport_height", viewportHeight).Int("textarea_height", textAreaHeight).Int("header_height", headerHeight).Int("help_height", helpViewHeight).Int("total_calculated_height", viewportHeight+textAreaHeight+headerHeight+helpViewHeight).Int("model_height", m.height).Msg("Height calculations")
 
 	ret := ""
 	if headerView != "" {
@@ -783,52 +723,52 @@ func (m model) View() string {
 	}
 
 	switch m.state {
-	case StateUserInput, StateError, StateMovingAround, StateStreamCompletion:
-		ret += viewportView + "\n" + textAreaView + "\n" + helpView
-		log.Trace().
-			Int64("view_call_id", viewCallID).
-			Str("combined_state", "viewport+textarea+help").
-			Int("final_length", len(ret)).
-			Msg("Combined view for main states")
+	case StateUserInput, StateError, StateStreamCompletion:
+		if m.externalInput {
+			ret += viewportView + "\n" + helpView
+		} else {
+			ret += viewportView + "\n" + textAreaView + "\n" + helpView
+		}
+		vlogger.Trace().Str("combined_state", "viewport+textarea+help").Int("final_length", len(ret)).Msg("Combined view for main states")
+	case StateMovingAround:
+		// Keep input visible (greyed) while selecting entities; if external, omit
+		if m.externalInput {
+			ret += viewportView + "\n" + helpView
+		} else {
+			ret += viewportView + "\n" + textAreaView + "\n" + helpView
+		}
+		vlogger.Trace().Str("combined_state", "viewport+textarea+help (selection mode)").Int("final_length", len(ret)).Msg("Combined view for moving-around state")
 
 	case StateSavingToFile:
 		ret += m.filepicker.View()
-		log.Trace().
-			Int64("view_call_id", viewCallID).
-			Str("combined_state", "filepicker").
-			Int("final_length", len(ret)).
-			Msg("Combined view for file saving state")
+		vlogger.Trace().Str("combined_state", "filepicker").Int("final_length", len(ret)).Msg("Combined view for file saving state")
 	}
 
 	viewDuration := time.Since(viewStartTime)
-	log.Trace().
-		Int64("view_call_id", viewCallID).
-		Dur("total_view_duration", viewDuration).
-		Int("final_output_length", len(ret)).
-		Msg("VIEW EXIT")
+	vlogger.Trace().Dur("total_view_duration", viewDuration).Int("final_output_length", len(ret)).Msg("VIEW EXIT")
 
 	return ret
 }
 
 func (m *model) startBackend() tea.Cmd {
 	startCallID := atomic.AddInt64(&updateCallCounter, 1)
-	log.Trace().
+	log.Debug().
 		Int64("start_call_id", startCallID).
 		Str("previous_state", string(m.state)).
 		Bool("backend_finished", m.backend.IsFinished()).
-		Int("conversation_length", len(m.conversationManager.GetConversation())).
 		Msg("START BACKEND ENTRY - MAJOR COMMAND GENERATOR")
 
 	m.state = StateStreamCompletion
+	m.textArea.Blur()
 	m.updateKeyBindings()
 
-	log.Trace().
+	log.Debug().
 		Int64("start_call_id", startCallID).
 		Msg("Calling viewport.GotoBottom()")
-	m.viewport.GotoBottom()
+	m.timelineSh.GotoBottom()
 
 	refreshCmd := func() tea.Msg {
-		log.Trace().
+		log.Debug().
 			Int64("start_call_id", startCallID).
 			Msg("REFRESH MESSAGE FROM START BACKEND - LOOP RISK")
 		return refreshMessageMsg{
@@ -837,25 +777,13 @@ func (m *model) startBackend() tea.Cmd {
 	}
 
 	backendCmd := func() tea.Msg {
-		log.Trace().
+		log.Debug().
 			Int64("start_call_id", startCallID).
-			Msg("BACKEND START COMMAND EXECUTING")
-		ctx := context2.Background()
-		cmd, err := m.backend.Start(ctx, m.conversationManager.GetConversation())
-		if err != nil {
-			log.Trace().
-				Int64("start_call_id", startCallID).
-				Err(err).
-				Msg("Backend start error")
-			return ErrorMsg(err)
-		}
-		log.Trace().
-			Int64("start_call_id", startCallID).
-			Msg("Backend started successfully, executing returned command")
-		return cmd()
+			Msg("BACKEND START COMMAND EXECUTING (no-op in new prompt flow)")
+		return nil
 	}
 
-	log.Trace().
+	log.Debug().
 		Int64("start_call_id", startCallID).
 		Msg("START BACKEND EXIT - returning batch of refresh + backend commands")
 
@@ -864,39 +792,67 @@ func (m *model) startBackend() tea.Cmd {
 
 func (m *model) submit() tea.Cmd {
 	submitCallID := atomic.AddInt64(&updateCallCounter, 1)
-	log.Trace().
-		Int64("submit_call_id", submitCallID).
+	slogger := log.With().Int64("submit_call_id", submitCallID).Logger()
+	slogger.Trace().
 		Bool("backend_finished", m.backend.IsFinished()).
 		Int("input_length", len(m.textArea.Value())).
-		Int("current_message_count", len(m.conversationManager.GetConversation())).
 		Msg("SUBMIT ENTRY")
 
 	if !m.backend.IsFinished() {
-		log.Trace().
-			Int64("submit_call_id", submitCallID).
-			Msg("Backend not finished - returning error")
+		slogger.Trace().Msg("Backend not finished - returning error")
 		return func() tea.Msg {
 			return ErrorMsg(errors.New("already streaming"))
 		}
 	}
 
-	userMessage := m.textArea.Value()
-	if err := m.conversationManager.AppendMessages(
-		geppetto_conversation.NewChatMessage(geppetto_conversation.RoleUser, userMessage)); err != nil {
-		log.Error().Err(err).Msg("Failed to append user message")
-		return func() tea.Msg {
+	// Filter out empty submissions (spaces/newlines only)
+	rawInput := m.textArea.Value()
+	userMessage := strings.TrimSpace(rawInput)
+	if userMessage == "" {
+		slogger.Debug().Msg("Ignoring empty submit (no message sent)")
+		return nil
+	}
+
+	// Transition to streaming: blur input immediately
+	m.state = StateStreamCompletion
+	if m.externalInput {
+		m.inputBlurred = true
+	} else {
+		m.textArea.Blur()
+	}
+	m.updateKeyBindings()
+
+	// Add entity to timeline
+	id := uuid.New().String()
+	log.Debug().Str("component", "chat").Str("when", "submit").Str("id", id).Msg("Adding user message to timeline")
+	m.timelineSh.OnCreated(timeline.UIEntityCreated{
+		ID:       timeline.EntityID{LocalID: id, Kind: "llm_text"},
+		Renderer: timeline.RendererDescriptor{Kind: "llm_text"},
+		Props:    map[string]any{"role": "user", "text": userMessage},
+	})
+	m.timelineSh.OnCompleted(timeline.UIEntityCompleted{ID: timeline.EntityID{LocalID: id, Kind: "llm_text"}})
+	log.Debug().Str("component", "chat").Str("when", "submit").Str("id", id).Msg("User message added to timeline")
+
+	if !m.externalInput {
+		m.textArea.SetValue("")
+	}
+
+	refreshCmd := func() tea.Msg {
+		log.Debug().
+			Int64("submit_call_id", submitCallID).
+			Msg("REFRESH COMMAND EXECUTED - POTENTIAL LOOP TRIGGER")
+		return refreshMessageMsg{GoToBottom: true}
+	}
+
+	backendCmd := func() tea.Msg {
+		ctx := context2.Background()
+		cmd, err := m.backend.Start(ctx, userMessage)
+		if err != nil {
 			return ErrorMsg(err)
 		}
+		return cmd()
 	}
-	m.textArea.SetValue("")
-
-	log.Trace().
-		Int64("submit_call_id", submitCallID).
-		Str("user_message", userMessage).
-		Int("new_message_count", len(m.conversationManager.GetConversation())).
-		Msg("User message appended, calling startBackend()")
-
-	return m.startBackend()
+	return tea.Batch(refreshCmd, backendCmd)
 }
 
 type refreshMessageMsg struct {
@@ -930,6 +886,7 @@ func (m *model) finishCompletion() tea.Cmd {
 		m.backend.Kill()
 
 		m.state = StateUserInput
+		m.inputBlurred = false
 		m.textArea.Focus()
 		m.textArea.SetValue("")
 
@@ -964,13 +921,24 @@ func (m model) handleUserAction(msg UserActionMsg) (tea.Model, tea.Cmd) {
 		if m.state == StateUserInput {
 			m.textArea.Blur()
 			m.state = StateMovingAround
-			m.conversation.SetActive(true)
-			if m.scrollToBottom {
-				m.conversation.SetSelectedIdx(len(m.conversation.Conversation()) - 1)
-			}
-			m.scrollToSelected()
+			// Enter moving around; select last entity and show selection highlight
+			m.timelineSh.SelectLast()
+			m.timelineSh.SetSelectionVisible(true)
+			v := m.timelineSh.View()
+			log.Debug().Str("component", "chat").Str("when", "handleUserAction_search").Int("view_len", len(v)).Msg("SetContent")
 			m.updateKeyBindings()
+			log.Debug().Str("component", "chat").Str("transition", "user-input->moving-around").Int("selected_index", m.timelineSh.SelectedIndex()).Msg("State transition")
 		}
+	case BlurInputMsg:
+		// Blur the input and prevent further typing until UnblurInputMsg is received
+		m.textArea.Blur()
+		m.inputBlurred = true
+		return m, nil
+	case UnblurInputMsg:
+		// Restore focus to the input
+		m.inputBlurred = false
+		m.textArea.Focus()
+		return m, nil
 
 	case QuitMsg:
 		if !m.quitReceived {
@@ -996,167 +964,58 @@ func (m model) handleUserAction(msg UserActionMsg) (tea.Model, tea.Cmd) {
 		cmd = m.textArea.Focus()
 
 		m.scrollToBottom = true
-		m.viewport.GotoBottom()
+		m.timelineSh.GotoBottom()
 
-		m.conversation.SetActive(false)
 		m.state = StateUserInput
+		// Hide highlight in input mode
+		m.timelineSh.SetSelectionVisible(false)
 		m.updateKeyBindings()
+		log.Debug().Str("component", "chat").Str("transition", "moving-around->user-input").Msg("State transition")
 
 	case SelectNextMessageMsg:
-		messages := m.conversation.Conversation()
-		if m.conversation.SelectedIdx() < len(messages)-1 {
-			m.conversation.SetSelectedIdx(m.conversation.SelectedIdx() + 1)
-			m.scrollToSelected()
-		} else if m.conversation.SelectedIdx() == len(messages)-1 {
-			m.scrollToBottom = true
-			m.viewport.GotoBottom()
-		}
+		m.timelineSh.SelectNext()
+		m.scrollToSelected()
 
 	case SelectPrevMessageMsg:
-		if m.conversation.SelectedIdx() > 0 {
-			m.conversation.SetSelectedIdx(m.conversation.SelectedIdx() - 1)
-			m.scrollToSelected()
-			m.scrollToBottom = false
-		}
+		m.timelineSh.SelectPrev()
+		m.scrollToBottom = false
+		m.scrollToSelected()
 
 	case SubmitMessageMsg:
+		if m.state == StateStreamCompletion {
+			// Ignore submits while streaming
+			break
+		}
+		log.Debug().Str("component", "chat").Msg("SubmitMessageMsg received - calling submit()")
 		cmd = m.submit()
 
 	case CopyToClipboardMsg:
-		msgs := m.conversation.Conversation()
-		if len(msgs) > 0 {
-			if m.state == StateMovingAround {
-				selectedIdx := m.conversation.SelectedIdx()
-				if selectedIdx < len(msgs) && selectedIdx >= 0 {
-					msg_ := msgs[selectedIdx]
-					err := clipboard.WriteAll(msg_.Content.String())
-					if err != nil {
-						cmd = func() tea.Msg {
-							return ErrorMsg(err)
-						}
-					}
-				}
-			} else {
-				text := ""
-				for _, m := range msgs {
-					if content, ok := m.Content.(*geppetto_conversation.ChatMessageContent); ok {
-						if content.Role == geppetto_conversation.RoleAssistant {
-							text += content.Text + "\n"
-						}
-					}
-				}
-				err := clipboard.WriteAll(text)
-				if err != nil {
-					cmd = func() tea.Msg {
-						return ErrorMsg(err)
-					}
+		// If selecting, request copy from selected entity model; else copy last assistant reply
+		if m.state == StateMovingAround {
+			cmd = func() tea.Msg { return timeline.EntityCopyTextMsg{} }
+		} else {
+			if _, props, ok := m.timelineSh.GetLastLLMByRole("assistant"); ok {
+				if txt, _ := props["text"].(string); txt != "" {
+					return m, func() tea.Msg { return timeline.CopyTextRequestedMsg{Text: txt} }
 				}
 			}
 		}
 
 	case CopyLastResponseToClipboardMsg:
-		msgs := m.conversation.Conversation()
-		if len(msgs) > 0 {
-			if m.state == StateMovingAround {
-				selectedIdx := m.conversation.SelectedIdx()
-				if selectedIdx < len(msgs) && selectedIdx >= 0 {
-					msg_ := msgs[selectedIdx]
-					if content, ok := msg_.Content.(*geppetto_conversation.ChatMessageContent); ok {
-						err := clipboard.WriteAll(content.Text)
-						if err != nil {
-							cmd = func() tea.Msg {
-								return ErrorMsg(err)
-							}
-						}
-					}
-				}
-			} else {
-				if m.state == StateUserInput {
-					lastMsg := msgs[len(msgs)-1]
-					if content, ok := lastMsg.Content.(*geppetto_conversation.ChatMessageContent); ok {
-						err := clipboard.WriteAll(content.Text)
-						if err != nil {
-							cmd = func() tea.Msg {
-								return ErrorMsg(err)
-							}
-						}
-					}
-				}
+		if _, props, ok := m.timelineSh.GetLastLLMByRole("assistant"); ok {
+			if txt, _ := props["text"].(string); txt != "" {
+				return m, func() tea.Msg { return timeline.CopyTextRequestedMsg{Text: txt} }
 			}
 		}
 
 	case CopyLastSourceBlocksToClipboardMsg:
-		msgs := m.conversation.Conversation()
-		if len(msgs) > 0 {
-			if m.state == StateMovingAround {
-				selectedIdx := m.conversation.SelectedIdx()
-				if selectedIdx < len(msgs) && selectedIdx >= 0 {
-					msg_ := msgs[selectedIdx]
-					if content, ok := msg_.Content.(*geppetto_conversation.ChatMessageContent); ok {
-						code := markdown.ExtractQuotedBlocks(content.Text, false)
-						err := clipboard.WriteAll(strings.Join(code, "\n"))
-						if err != nil {
-							cmd = func() tea.Msg {
-								return ErrorMsg(err)
-							}
-						}
-					}
-				}
-			} else {
-				if m.state == StateUserInput {
-					text := ""
-					for _, m := range msgs {
-						if content, ok := m.Content.(*geppetto_conversation.ChatMessageContent); ok {
-							if content.Role == geppetto_conversation.RoleAssistant {
-								text += content.Text + "\n"
-							}
-						}
-					}
-					code := markdown.ExtractQuotedBlocks(text, false)
-					err := clipboard.WriteAll(strings.Join(code, "\n"))
-					if err != nil {
-						cmd = func() tea.Msg {
-							return ErrorMsg(err)
-						}
-					}
-				}
-			}
-		}
+		// Future: extract from last assistant text
 
 	case CopySourceBlocksToClipboardMsg:
-		msgs := m.conversation.Conversation()
-		if len(msgs) > 0 {
-			if m.state == StateMovingAround {
-				selectedIdx := m.conversation.SelectedIdx()
-				if selectedIdx < len(msgs) && selectedIdx >= 0 {
-					msg_ := msgs[selectedIdx]
-					if content, ok := msg_.Content.(*geppetto_conversation.ChatMessageContent); ok {
-						code := markdown.ExtractQuotedBlocks(content.Text, false)
-						err := clipboard.WriteAll(strings.Join(code, "\n"))
-						if err != nil {
-							cmd = func() tea.Msg {
-								return ErrorMsg(err)
-							}
-						}
-					}
-				}
-			} else {
-				text := ""
-				for _, m := range msgs {
-					if content, ok := m.Content.(*geppetto_conversation.ChatMessageContent); ok {
-						if content.Role == geppetto_conversation.RoleAssistant {
-							text += content.Text + "\n"
-						}
-					}
-				}
-				code := markdown.ExtractQuotedBlocks(text, false)
-				err := clipboard.WriteAll(strings.Join(code, "\n"))
-				if err != nil {
-					cmd = func() tea.Msg {
-						return ErrorMsg(err)
-					}
-				}
-			}
+		// Ask the selected timeline entity to provide code blocks
+		cmd := m.timelineSh.SendToSelected(timeline.EntityCopyCodeMsg{})
+		if cmd != nil {
+			return m, cmd
 		}
 
 	case SaveToFileMsg:
@@ -1171,11 +1030,9 @@ func (m model) handleUserAction(msg UserActionMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case DismissErrorMsg:
-		if m.state == StateError {
-			m.err = nil
-			m.state = StateUserInput
-			m.updateKeyBindings()
-		}
+		m.err = nil
+		m.state = StateUserInput
+		m.updateKeyBindings()
 
 	case ReplaceInputTextMsg:
 		m.replaceInputText(msg_.Text)

@@ -33,7 +33,10 @@ type KeyMap struct {
 	CopySourceBlocksToClipboard     key.Binding `keymap-mode:"moving-around"`
 
 	Help key.Binding `keymap-mode:"*"`
-	Quit key.Binding `keymap-mode:"*"`
+	// demo triggers for tool calls
+	TriggerWeatherTool   key.Binding `keymap-mode:"user-input"`
+	TriggerWebSearchTool key.Binding `keymap-mode:"user-input"`
+	Quit                 key.Binding `keymap-mode:"*"`
 }
 
 var DefaultKeyMap = KeyMap{
@@ -95,12 +98,12 @@ var DefaultKeyMap = KeyMap{
 	),
 
 	ScrollUp: key.NewBinding(
-		key.WithKeys("shift+pgup"),
-		key.WithHelp("shift+pgup", "scroll up"),
+		key.WithKeys("pgup"),
+		key.WithHelp("pgup", "page up"),
 	),
 	ScrollDown: key.NewBinding(
-		key.WithKeys("shift+pgdown"),
-		key.WithHelp("shift+pgdown", "scroll down"),
+		key.WithKeys("pgdown"),
+		key.WithHelp("pgdown", "page down"),
 	),
 
 	Quit: key.NewBinding(
@@ -120,6 +123,15 @@ var DefaultKeyMap = KeyMap{
 	NextConversationThread: key.NewBinding(
 		key.WithKeys("right"),
 		key.WithHelp("right", "next conversation thread"),
+	),
+
+	TriggerWeatherTool: key.NewBinding(
+		key.WithKeys("alt+w"),
+		key.WithHelp("alt+w", "demo weather tool"),
+	),
+	TriggerWebSearchTool: key.NewBinding(
+		key.WithKeys("alt+s"),
+		key.WithHelp("alt+s", "demo web search tool"),
 	),
 }
 

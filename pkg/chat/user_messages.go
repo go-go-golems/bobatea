@@ -51,6 +51,10 @@ type PrependInputTextMsg struct {
 
 type GetInputTextMsg struct{}
 
+// Demo tool triggers
+type TriggerWeatherToolMsg struct{}
+type TriggerWebSearchToolMsg struct{}
+
 func (ToggleHelpMsg) isUserAction()                      {}
 func (UnfocusMessageMsg) isUserAction()                  {}
 func (QuitMsg) isUserAction()                            {}
@@ -68,7 +72,16 @@ func (DismissErrorMsg) isUserAction()                    {}
 func (InputTextMsg) isUserAction()                       {}
 
 // Add isUserAction() methods for the new types
-func (ReplaceInputTextMsg) isUserAction() {}
-func (AppendInputTextMsg) isUserAction()  {}
-func (PrependInputTextMsg) isUserAction() {}
-func (GetInputTextMsg) isUserAction()     {}
+func (ReplaceInputTextMsg) isUserAction()     {}
+func (AppendInputTextMsg) isUserAction()      {}
+func (PrependInputTextMsg) isUserAction()     {}
+func (GetInputTextMsg) isUserAction()         {}
+func (TriggerWeatherToolMsg) isUserAction()   {}
+func (TriggerWebSearchToolMsg) isUserAction() {}
+
+// Blur and Unblur input control messages
+type BlurInputMsg struct{}
+type UnblurInputMsg struct{}
+
+func (BlurInputMsg) isUserAction()   {}
+func (UnblurInputMsg) isUserAction() {}

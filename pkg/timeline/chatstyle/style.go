@@ -1,4 +1,4 @@
-package conversation
+package chatstyle
 
 import "github.com/charmbracelet/lipgloss"
 
@@ -20,41 +20,32 @@ type BorderColors struct {
 func DefaultStyles() *Style {
 	lightModeColors := BorderColors{
 		Unselected: "#CCCCCC",
-		Selected:   "#FFB6C1", // Light pink
-		Focused:    "#FFFF99", // Light yellow
+		Selected:   "#FFB6C1",
+		Focused:    "#FFFF99",
 	}
 
 	darkModeColors := BorderColors{
 		Unselected: "#444444",
-		Selected:   "#DD7090", // Desaturated pink for dark mode
-		Focused:    "#DDDD77", // Desaturated yellow for dark mode
+		Selected:   "#DD7090",
+		Focused:    "#DDDD77",
 	}
 
 	errorColors := BorderColors{
-		Unselected: "#FF6B6B", // Light red
-		Selected:   "#FF4444", // Darker red for selected
-		Focused:    "#FF8888", // Medium red for focused
+		Unselected: "#FF6B6B",
+		Selected:   "#FF4444",
+		Focused:    "#FF8888",
 	}
 
 	return &Style{
 		UnselectedMessage: lipgloss.NewStyle().Border(lipgloss.NormalBorder()).
 			Padding(0, 1).
-			BorderForeground(lipgloss.AdaptiveColor{
-				Light: lightModeColors.Unselected,
-				Dark:  darkModeColors.Unselected,
-			}),
+			BorderForeground(lipgloss.AdaptiveColor{Light: lightModeColors.Unselected, Dark: darkModeColors.Unselected}),
 		SelectedMessage: lipgloss.NewStyle().Border(lipgloss.ThickBorder()).
 			Padding(0, 1).
-			BorderForeground(lipgloss.AdaptiveColor{
-				Light: lightModeColors.Selected,
-				Dark:  darkModeColors.Selected,
-			}),
+			BorderForeground(lipgloss.AdaptiveColor{Light: lightModeColors.Selected, Dark: darkModeColors.Selected}),
 		FocusedMessage: lipgloss.NewStyle().Border(lipgloss.NormalBorder()).
 			Padding(0, 1).
-			BorderForeground(lipgloss.AdaptiveColor{
-				Light: lightModeColors.Focused,
-				Dark:  darkModeColors.Focused,
-			}),
+			BorderForeground(lipgloss.AdaptiveColor{Light: lightModeColors.Focused, Dark: darkModeColors.Focused}),
 		MetadataStyle: lipgloss.NewStyle().
 			Foreground(lipgloss.Color("240")).
 			Align(lipgloss.Right),

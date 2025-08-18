@@ -2,15 +2,14 @@ package main
 
 import (
 	"fmt"
-	"net/http"
 	"os"
 	"time"
 
-	"github.com/go-go-golems/geppetto/pkg/conversation"
-
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/go-go-golems/bobatea/pkg/chat"
-	"github.com/gorilla/mux"
+	"github.com/go-go-golems/bobatea/pkg/timeline"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 )
 
@@ -26,22 +25,51 @@ var fakeCmd = &cobra.Command{
 	Run:   runFakeBackend,
 }
 
-var httpCmd = &cobra.Command{
-	Use:   "http",
-	Short: "Run the chat application with an HTTP backend",
-	Run:   runHTTPBackend,
+// removed http command
+
+// chatCmd mirrors the fake backend for convenience
+var chatCmd = &cobra.Command{
+	Use:   "chat",
+	Short: "Run the chat application (alias of fake)",
+	Run:   runFakeBackend,
 }
 
-var httpAddr string
+// var httpAddr string // removed
 
 func init() {
 	rootCmd.AddCommand(fakeCmd)
-	rootCmd.AddCommand(httpCmd)
-
-	httpCmd.Flags().StringVarP(&httpAddr, "addr", "a", ":8080", "HTTP server address")
+	rootCmd.AddCommand(chatCmd)
 }
 
 func main() {
+	// Initialize zerolog to log to /tmp/fake-chat.log
+	logFile, err := os.OpenFile("/tmp/fake-chat.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666) // #nosec G302
+	if err != nil {
+		fmt.Printf("Error opening log file: %v\n", err)
+		os.Exit(1)
+	}
+	defer func() {
+		if err := logFile.Close(); err != nil {
+			fmt.Printf("Error closing log file: %v\n", err)
+		}
+	}()
+
+	zerolog.TimeFieldFormat = time.StampMilli
+	// Filter out trace-level logs for readability unless overridden
+	if lvl, ok := os.LookupEnv("BOBATEA_LOG_LEVEL"); ok {
+		if parsed, err := zerolog.ParseLevel(lvl); err == nil {
+			zerolog.SetGlobalLevel(parsed)
+		} else {
+			zerolog.SetGlobalLevel(zerolog.DebugLevel)
+		}
+	} else {
+		zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	}
+	// Configure writer without colors/non-ASCII for file logs and add caller info
+	cw := zerolog.ConsoleWriter{Out: logFile, NoColor: true, TimeFormat: time.StampMilli, PartsOrder: []string{"time", "level", "caller", "message"}}
+	logger := zerolog.New(cw).With().Caller().Timestamp().Logger()
+	log.Logger = logger
+
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Println(err)
 		os.Exit(1)
@@ -49,23 +77,16 @@ func main() {
 }
 
 func runFakeBackend(cmd *cobra.Command, args []string) {
-	runChat(func() chat.Backend {
-		return NewFakeBackend()
+	runChatWithOptions(func() chat.Backend { return NewFakeBackend() }, func(reg *timeline.Registry) {
+		log.Debug().Str("component", "main").Msg("registering tool renderers via timeline hook")
+		reg.RegisterModelFactory(ToolWeatherFactory{})
+		reg.RegisterModelFactory(ToolWebSearchFactory{})
+		reg.RegisterModelFactory(CheckboxFactory{})
 	})
 }
 
-func runHTTPBackend(cmd *cobra.Command, args []string) {
-	runChat(func() chat.Backend {
-		return NewHTTPBackend("/backend", WithLogFile("/tmp/http-backend.log"))
-	})
-}
-
-func runChat(backendFactory func() chat.Backend) {
+func runChatWithOptions(backendFactory func() chat.Backend, tlHook func(*timeline.Registry)) {
 	status := &chat.Status{}
-
-	manager := conversation.NewManager(conversation.WithMessages(
-		conversation.NewChatMessage(conversation.RoleSystem, "Welcome to the chat application!"),
-	))
 
 	backend := backendFactory()
 
@@ -74,38 +95,8 @@ func runChat(backendFactory func() chat.Backend) {
 		tea.WithAltScreen(),
 	}
 
-	p := tea.NewProgram(
-		chat.InitialModel(manager, backend, chat.WithStatus(status)),
-		options...,
-	)
-
-	// Set up the HTTP server
-	r := mux.NewRouter()
-
-	// Set up the user backend
-	userBackend := chat.NewUserBackend(status, chat.WithLogFile("/tmp/http-backend.log"))
-	userBackend.SetProgram(p)
-	r.PathPrefix("/user").Handler(http.StripPrefix("/user", userBackend.Router()))
-
-	// Set up the HTTP backend
-	if httpBackend, ok := backend.(*HTTPBackend); ok {
-		httpBackend.SetRouter(r.PathPrefix("/backend").Subrouter())
-	}
-
-	// Start the HTTP server with timeouts
-	go func() {
-		server := &http.Server{
-			Addr:         httpAddr,
-			Handler:      r,
-			ReadTimeout:  10 * time.Second,
-			WriteTimeout: 10 * time.Second,
-			IdleTimeout:  120 * time.Second,
-		}
-		if err := server.ListenAndServe(); err != nil {
-			fmt.Printf("Error running HTTP server: %v\n", err)
-			os.Exit(1)
-		}
-	}()
+	model := chat.InitialModel(backend, chat.WithStatus(status), chat.WithTimelineRegister(tlHook))
+	p := tea.NewProgram(model, options...)
 
 	// Set the program for the backend after initialization
 	if setterBackend, ok := backend.(interface{ SetProgram(*tea.Program) }); ok {
