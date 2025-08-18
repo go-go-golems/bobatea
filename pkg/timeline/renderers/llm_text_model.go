@@ -228,14 +228,6 @@ func NewLLMTextFactory() *LLMTextFactory {
 
 var codeBlockRe = regexp.MustCompile("(?s)```[a-zA-Z0-9_-]*\n(.*?)\n```")
 
-func extractFirstCodeBlock(s string) string {
-	m := codeBlockRe.FindStringSubmatch(s)
-	if len(m) >= 2 {
-		return m[1]
-	}
-	return ""
-}
-
 func extractAllCodeBlocks(s string) []string {
 	matches := codeBlockRe.FindAllStringSubmatch(s, -1)
 	var blocks []string
