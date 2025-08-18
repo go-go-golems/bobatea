@@ -43,7 +43,7 @@ func init() {
 
 func main() {
 	// Initialize zerolog to log to /tmp/fake-chat.log
-	logFile, err := os.OpenFile("/tmp/fake-chat.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	logFile, err := os.OpenFile("/tmp/fake-chat.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666) // #nosec G302
 	if err != nil {
 		fmt.Printf("Error opening log file: %v\n", err)
 		os.Exit(1)

@@ -126,7 +126,7 @@ func (m demoModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func main() {
 	// initialize logging to tmp file
-	f, err := os.OpenFile("/tmp/timeline-demo.log", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	f, err := os.OpenFile("/tmp/timeline-demo.log", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644) // #nosec G302
 	if err == nil {
 		log.Logger = zerolog.New(f).With().Timestamp().Logger()
 		log.Info().Msg("logger initialized")
