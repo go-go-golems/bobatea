@@ -14,17 +14,18 @@ import (
 
 // Model represents the UI state for the REPL
 type Model struct {
-	evaluator      Evaluator
-	config         Config
-	styles         Styles
-	history        *History
-	textInput      textinput.Model
-	multilineMode  bool
-	multilineText  []string
-	width          int
-	quitting       bool
-	evaluating     bool
-	customCommands map[string]func([]string) tea.Cmd
+	evaluator         Evaluator
+	config            Config
+	styles            Styles
+	history           *History
+	textInput         textinput.Model
+	multilineMode     bool
+	multilineText     []string
+	width             int
+	quitting          bool
+	evaluating        bool
+	customCommands    map[string]func([]string) tea.Cmd
+	rawCustomCommands map[string]func(string, []string) tea.Cmd
 }
 
 // NewModel creates a new REPL model
@@ -42,17 +43,18 @@ func NewModel(evaluator Evaluator, config Config) Model {
 	history := NewHistory(config.MaxHistorySize)
 
 	return Model{
-		evaluator:      evaluator,
-		config:         config,
-		styles:         DefaultStyles(),
-		history:        history,
-		textInput:      ti,
-		multilineMode:  config.StartMultiline,
-		multilineText:  []string{},
-		width:          config.Width,
-		quitting:       false,
-		evaluating:     false,
-		customCommands: make(map[string]func([]string) tea.Cmd),
+		evaluator:         evaluator,
+		config:            config,
+		styles:            DefaultStyles(),
+		history:           history,
+		textInput:         ti,
+		multilineMode:     config.StartMultiline,
+		multilineText:     []string{},
+		width:             config.Width,
+		quitting:          false,
+		evaluating:        false,
+		customCommands:    make(map[string]func([]string) tea.Cmd),
+		rawCustomCommands: make(map[string]func(string, []string) tea.Cmd),
 	}
 }
 
@@ -257,6 +259,11 @@ func (m *Model) AddCustomCommand(name string, handler func([]string) tea.Cmd) {
 	m.customCommands[name] = handler
 }
 
+// AddCustomCommandRaw registers a command and provides the raw argument string alongside tokenized args.
+func (m *Model) AddCustomCommandRaw(name string, handler func(string, []string) tea.Cmd) {
+	m.rawCustomCommands[name] = handler
+}
+
 // SetWidth sets the width of the REPL model
 func (m *Model) SetWidth(width int) {
 	m.width = width
@@ -297,15 +304,23 @@ func (m Model) processInput(input string) tea.Cmd {
 
 // handleSlashCommand processes slash commands
 func (m Model) handleSlashCommand(input string) tea.Cmd {
-	parts := strings.Fields(input)
-	if len(parts) == 0 {
-		return nil
+	// Preserve raw remainder after command name
+	s := strings.TrimPrefix(input, "/")
+	var cmd string
+	var raw string
+	if idx := strings.IndexRune(s, ' '); idx >= 0 {
+		cmd = s[:idx]
+		raw = strings.TrimSpace(s[idx+1:])
+	} else {
+		cmd = s
+		raw = ""
 	}
-
-	cmd := strings.TrimPrefix(parts[0], "/")
-	args := parts[1:]
+	args := strings.Fields(raw)
 
 	// Check for custom commands first
+	if handlerRaw, exists := m.rawCustomCommands[cmd]; exists {
+		return handlerRaw(raw, args)
+	}
 	if handler, exists := m.customCommands[cmd]; exists {
 		return handler(args)
 	}
