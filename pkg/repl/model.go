@@ -251,8 +251,9 @@ func (m *Model) submit(code string) tea.Cmd {
 	return func() tea.Msg {
 		turnID := newTurnID(m.turnSeq)
 		m.turnSeq++
-		// Publish input and stream evaluator events via Watermill
-		_ = m.publishReplEvent(turnID, Event{Kind: EventInput, Props: map[string]any{"markdown": "```\n" + code + "\n```"}})
+		// Create input entity directly on UI bus to guarantee ordering and avoid extra newlines
+		_ = m.publishUIEntityCreated(turnID, timeline.EntityID{TurnID: turnID, LocalID: "input", Kind: "text"}, timeline.RendererDescriptor{Kind: "text"}, map[string]any{"text": code})
+		// Optionally still publish the semantic input event to repl.events? We skip to avoid duplicate UI entities.
 		_ = m.evaluator.EvaluateStream(context.Background(), code, func(e Event) {
 			log.Trace().Str("turn_id", turnID).Interface("event", e).Msg("publishing repl event")
 			_ = m.publishReplEvent(turnID, e)
@@ -269,6 +270,17 @@ func (m *Model) publishReplEvent(turnID string, e Event) error {
 	}{TurnID: turnID, Event: e, Time: time.Now()})
 	log.Trace().Str("turn_id", turnID).Interface("event", e).Msg("publishing repl event")
 	return m.pub.Publish(eventbus.TopicReplEvents, message.NewMessage(watermill.NewUUID(), payload))
+}
+
+func (m *Model) publishUIEntityCreated(turnID string, id timeline.EntityID, rd timeline.RendererDescriptor, props map[string]any) error {
+    // Envelope must match timeline.RegisterUIForwarder expectations
+    created := timeline.UIEntityCreated{ID: id, Renderer: rd, Props: props, StartedAt: time.Now()}
+    b, _ := json.Marshal(created)
+    env, _ := json.Marshal(struct{
+        Type string `json:"type"`
+        Payload json.RawMessage `json:"payload"`
+    }{Type: "timeline.created", Payload: b})
+    return m.pub.Publish(eventbus.TopicUIEntities, message.NewMessage(watermill.NewUUID(), env))
 }
 
 func max(a, b int) int {
