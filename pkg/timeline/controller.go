@@ -1,11 +1,12 @@
 package timeline
 
 import (
-	"encoding/json"
-	"fmt"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/rs/zerolog/log"
-	"strings"
+    "encoding/json"
+    "fmt"
+    tea "github.com/charmbracelet/bubbletea"
+    "github.com/rs/zerolog/log"
+    "strings"
+    "time"
 )
 
 type Controller struct {
@@ -167,30 +168,36 @@ func (c *Controller) View() string {
 	misses := 0
 	for _, id := range c.store.order {
 		rec, _ := c.store.get(id)
+		log.Trace().Str("component", "timeline_controller").Str("phase", "view").Str("entity_id", rec.ID.LocalID).Str("entity_kind", rec.ID.Kind).Msg("rendering entity")
 		// Interactive models are now the only rendering path
 		sel := c.selectionVisible && c.selected >= 0 && keyID(id) == keyID(c.store.order[c.selected])
-		if rec.model != nil {
-			rec.model.Update(EntityPropsUpdatedMsg{ID: rec.ID, Patch: map[string]any{"selected": sel}})
-			if sel {
-				rec.model.Update(EntitySelectedMsg{ID: rec.ID})
-			} else {
-				rec.model.Update(EntityUnselectedMsg{ID: rec.ID})
-			}
-			if sel && c.entering {
-				rec.model.Update(EntityFocusMsg{ID: rec.ID})
-			} else {
-				rec.model.Update(EntityBlurMsg{ID: rec.ID})
-			}
-			s := rec.model.View()
-			b.WriteString(s)
-			b.WriteByte('\n')
-			continue
-		}
+        if rec.model != nil {
+            rec.model.Update(EntityPropsUpdatedMsg{ID: rec.ID, Patch: map[string]any{"selected": sel}})
+            if sel {
+                rec.model.Update(EntitySelectedMsg{ID: rec.ID})
+            } else {
+                rec.model.Update(EntityUnselectedMsg{ID: rec.ID})
+            }
+            if sel && c.entering {
+                rec.model.Update(EntityFocusMsg{ID: rec.ID})
+            } else {
+                rec.model.Update(EntityBlurMsg{ID: rec.ID})
+            }
+            start := time.Now()
+            log.Trace().Str("component", "timeline_controller").Str("phase", "view").Str("entity_id", rec.ID.LocalID).Str("entity_kind", rec.ID.Kind).Msg("calling model.View")
+            s := rec.model.View()
+            dur := time.Since(start)
+            log.Trace().Str("component", "timeline_controller").Str("phase", "view").Str("entity_id", rec.ID.LocalID).Str("entity_kind", rec.ID.Kind).Dur("dur", dur).Int("len", len(s)).Msg("model.View duration")
+            b.WriteString(s)
+            b.WriteByte('\n')
+            continue
+        }
 		// If no model, render a minimal plain line
 		s := "[entity] " + rec.ID.Kind
 		b.WriteString(s)
 		b.WriteByte('\n')
 		misses++
+		log.Trace().Str("component", "timeline_controller").Str("phase", "view").Str("entity_id", rec.ID.LocalID).Str("entity_kind", rec.ID.Kind).Msg("rendered entity")
 	}
 	out := b.String()
 	log.Trace().

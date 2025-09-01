@@ -13,7 +13,9 @@ import (
     "time"
 
     tea "github.com/charmbracelet/bubbletea"
+    "github.com/go-go-golems/bobatea/pkg/eventbus"
     "github.com/go-go-golems/bobatea/pkg/repl"
+    "github.com/go-go-golems/bobatea/pkg/timeline"
     "github.com/rs/zerolog"
     zlog "github.com/rs/zerolog/log"
 )
@@ -175,9 +177,28 @@ func main() {
         EnableHistory:        true,
         MaxHistorySize:       1000,
     }
-    m := repl.NewModel(evaluator, cfg)
+    // Build in-memory bus
+    bus, err := eventbus.NewInMemoryBus()
+    if err != nil { log.Fatal(err) }
+    // Register transformer and UI forwarder
+    repl.RegisterReplToTimelineTransformer(bus)
+
+    // Construct model with publisher
+    m := repl.NewModel(evaluator, cfg, bus.Publisher)
     p := tea.NewProgram(m, tea.WithAltScreen())
-    if _, err := p.Run(); err != nil {
-        log.Fatal(err)
+    timeline.RegisterUIForwarder(bus, p)
+
+    // Run router + program together
+    ctx, cancel := context.WithCancel(context.Background())
+    defer cancel()
+    errs := make(chan error, 2)
+    go func() { errs <- bus.Run(ctx) }()
+    go func() {
+        _, e := p.Run()
+        cancel()
+        errs <- e
+    }()
+    if e := <-errs; e != nil {
+        log.Fatal(e)
     }
 }
