@@ -76,9 +76,6 @@ func (m *TextModel) View() string {
         }
     }
     content := m.text.String()
-    if m.selected {
-        content = "▶ " + content
-    }
     return sty.Width(m.width - sty.GetHorizontalPadding()).Render(content)
 }
 

@@ -64,9 +64,6 @@ func (m *StructuredDataModel) View() string {
         sty = st.SelectedMessage
     }
     content := m.rendered
-    if m.selected {
-        content = "▶ " + content
-    }
     return sty.Width(m.width - sty.GetHorizontalPadding()).Render(content)
 }
 

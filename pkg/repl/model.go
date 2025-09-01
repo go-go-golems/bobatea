@@ -156,9 +156,11 @@ func (m *Model) updateInput(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 	switch k.String() {
-	case "tab":
-		m.focus = "timeline"
-		return m, nil
+    case "tab":
+        m.focus = "timeline"
+        m.textInput.Blur()
+        m.sh.SetSelectionVisible(true)
+        return m, nil
 	case "enter":
 		input := m.textInput.Value()
 		if strings.TrimSpace(input) == "" {
@@ -190,10 +192,12 @@ func (m *Model) updateInput(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) updateTimeline(k tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch k.String() {
-	case "tab":
-		m.focus = "input"
-		return m, nil
+    switch k.String() {
+    case "tab":
+        m.focus = "input"
+        m.textInput.Focus()
+        m.sh.SetSelectionVisible(false)
+        return m, nil
 	case "up":
 		m.sh.SelectPrev()
 		return m, nil
@@ -228,8 +232,12 @@ func (m *Model) View() string {
 	// timeline view (viewport-wrapped)
 	b.WriteString(m.sh.View())
 	b.WriteString("\n")
-	// input
-	b.WriteString(m.textInput.View())
+    // input (dim when in selection mode)
+    inputView := m.textInput.View()
+    if m.focus == "timeline" {
+        inputView = m.styles.HelpText.Render(inputView)
+    }
+    b.WriteString(inputView)
 	b.WriteString("\n")
 	// help
 	help := "TAB: switch focus | Enter: submit | Up/Down: history/selection | c: copy code | y: copy text | Ctrl+C: quit"
