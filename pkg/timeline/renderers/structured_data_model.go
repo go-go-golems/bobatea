@@ -63,7 +63,11 @@ func (m *StructuredDataModel) View() string {
     if m.selected {
         sty = st.SelectedMessage
     }
-    return sty.Width(m.width - sty.GetHorizontalPadding()).Render(m.rendered)
+    content := m.rendered
+    if m.selected {
+        content = "▶ " + content
+    }
+    return sty.Width(m.width - sty.GetHorizontalPadding()).Render(content)
 }
 
 type StructuredDataFactory struct{}
@@ -93,4 +97,3 @@ func prettyJSONFromAny(v any) string {
     }
     return strings.TrimSpace(string(b))
 }
-

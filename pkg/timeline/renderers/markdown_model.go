@@ -109,6 +109,10 @@ func (m *MarkdownModel) View() string {
         m.cachedMD = m.md
     }
 
+    // Add selection indicator
+    if m.selected {
+        body = "▶ " + body
+    }
     // Box it
     return sty.Width(m.width - sty.GetHorizontalPadding()).Render(body)
 }

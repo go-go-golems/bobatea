@@ -1,14 +1,17 @@
 package main
 
 import (
-	"context"
-	"fmt"
-	"log"
-	"strings"
+    "context"
+    "fmt"
+    "log"
+    "strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/go-go-golems/bobatea/pkg/repl"
+    tea "github.com/charmbracelet/bubbletea"
+    "github.com/go-go-golems/bobatea/pkg/eventbus"
+    "github.com/go-go-golems/bobatea/pkg/logutil"
+    "github.com/go-go-golems/bobatea/pkg/repl"
+    "github.com/go-go-golems/bobatea/pkg/timeline"
+    "github.com/rs/zerolog"
 )
 
 // ThemeDemo evaluator that demonstrates different themes
@@ -460,10 +463,31 @@ func (app *ThemeSwitcherApp) View() string {
 }
 
 func main() {
-	app := NewThemeSwitcherApp()
+    // Silence logs for TUI
+    logutil.InitTUILoggingToDiscard(zerolog.ErrorLevel)
 
-	p := tea.NewProgram(app, tea.WithAltScreen())
-	if _, err := p.Run(); err != nil {
-		log.Fatal(err)
-	}
+    // Simplified theme demo: run REPL with ThemeDemo evaluator via Watermill bus
+    evaluator := NewThemeDemo()
+    config := repl.Config{
+        Title:                "Theme Demo (simplified)",
+        Placeholder:          "Type 'demo' or 'colors'",
+        Width:                100,
+        EnableHistory:        true,
+        MaxHistorySize:       200,
+    }
+
+    bus, err := eventbus.NewInMemoryBus()
+    if err != nil { log.Fatal(err) }
+    repl.RegisterReplToTimelineTransformer(bus)
+
+    model := repl.NewModel(evaluator, config, bus.Publisher)
+    p := tea.NewProgram(model, tea.WithAltScreen())
+    timeline.RegisterUIForwarder(bus, p)
+
+    ctx, cancel := context.WithCancel(context.Background())
+    defer cancel()
+    errs := make(chan error, 2)
+    go func() { errs <- bus.Run(ctx) }()
+    go func() { _, e := p.Run(); cancel(); errs <- e }()
+    if e := <-errs; e != nil { log.Fatal(e) }
 }

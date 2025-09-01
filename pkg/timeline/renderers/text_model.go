@@ -76,6 +76,9 @@ func (m *TextModel) View() string {
         }
     }
     content := m.text.String()
+    if m.selected {
+        content = "▶ " + content
+    }
     return sty.Width(m.width - sty.GetHorizontalPadding()).Render(content)
 }
 
@@ -88,4 +91,3 @@ func (TextFactory) NewEntityModel(initialProps map[string]any) timeline.EntityMo
     m.onProps(initialProps)
     return m
 }
-
