@@ -2,12 +2,16 @@ package repl
 
 import (
     "context"
+    "encoding/json"
     "fmt"
     "strings"
     "time"
 
+    "github.com/ThreeDotsLabs/watermill"
+    "github.com/ThreeDotsLabs/watermill/message"
     "github.com/charmbracelet/bubbles/textinput"
     tea "github.com/charmbracelet/bubbletea"
+    "github.com/go-go-golems/bobatea/pkg/eventbus"
     "github.com/go-go-golems/bobatea/pkg/timeline"
     renderers "github.com/go-go-golems/bobatea/pkg/timeline/renderers"
 )
@@ -32,10 +36,9 @@ type Model struct {
     sh    *timeline.Shell
     focus string // "input" or "timeline"
 
-    // streaming
-    events chan tea.Msg // EvalEventMsg or EvalDoneMsg
+    // bus publisher
+    pub message.Publisher
     turnSeq int
-    streams map[string]struct{ Stdout, Stderr bool }
 
     // refresh scheduling
     refreshPending   bool
@@ -43,7 +46,7 @@ type Model struct {
 }
 
 // NewModel constructs a new REPL shell with timeline transcript.
-func NewModel(evaluator Evaluator, config Config) *Model {
+func NewModel(evaluator Evaluator, config Config, pub message.Publisher) *Model {
     if config.Prompt == "" {
         config.Prompt = evaluator.GetPrompt()
     }
@@ -73,28 +76,13 @@ func NewModel(evaluator Evaluator, config Config) *Model {
         reg:       reg,
         sh:        sh,
         focus:     "input",
-        events:    make(chan tea.Msg, 128),
-        streams:   map[string]struct{ Stdout, Stderr bool }{},
+        pub:       pub,
     }
-}
-
-// Messages
-type EvalEventMsg struct {
-    TurnID string
-    Event  Event
-}
-type EvalDoneMsg struct {
-    TurnID string
-    Err    error
-}
-
-func waitForEvents(ch <-chan tea.Msg) tea.Cmd {
-    return func() tea.Msg { return <-ch }
 }
 
 // Init subscribes to evaluator events.
 func (m *Model) Init() tea.Cmd {
-    return tea.Batch(textinput.Blink, waitForEvents(m.events), m.sh.Init())
+    return tea.Batch(textinput.Blink, m.sh.Init())
 }
 
 // Update handles TUI events.
@@ -118,14 +106,22 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
             return m.updateTimeline(v)
         }
 
-    case EvalEventMsg:
-        m.applyEvent(v.TurnID, v.Event)
-        // schedule refresh to coalesce bursts
-        return m, tea.Batch(waitForEvents(m.events), m.scheduleRefresh())
-
-    case EvalDoneMsg:
-        // For now, do nothing; evaluators should have emitted final result entity
-        return m, waitForEvents(m.events)
+    case timeline.UIEntityCreated:
+        m.ctrl().OnCreated(v)
+        m.refreshPending = true
+        return m, m.scheduleRefresh()
+    case timeline.UIEntityUpdated:
+        m.ctrl().OnUpdated(v)
+        m.refreshPending = true
+        return m, m.scheduleRefresh()
+    case timeline.UIEntityCompleted:
+        m.ctrl().OnCompleted(v)
+        m.refreshPending = true
+        return m, m.scheduleRefresh()
+    case timeline.UIEntityDeleted:
+        m.ctrl().OnDeleted(v)
+        m.refreshPending = true
+        return m, m.scheduleRefresh()
     case timelineRefreshMsg:
         m.refreshScheduled = false
         if m.refreshPending {
@@ -219,64 +215,26 @@ func (m *Model) View() string {
 func (m *Model) submit(code string) tea.Cmd {
     turnID := newTurnID(m.turnSeq)
     m.turnSeq++
-    // Emit input as a markdown code fence so it looks nice
+    // Publish input and stream evaluator events via Watermill
     go func() {
-        m.events <- EvalEventMsg{TurnID: turnID, Event: Event{Kind: EventInput, Props: map[string]any{"markdown": "```\n"+code+"\n```"}}}
-        // stream from evaluator
+        _ = m.publishReplEvent(turnID, Event{Kind: EventInput, Props: map[string]any{"markdown": "```\n" + code + "\n```"}})
         _ = m.evaluator.EvaluateStream(context.Background(), code, func(e Event) {
-            m.events <- EvalEventMsg{TurnID: turnID, Event: e}
+            _ = m.publishReplEvent(turnID, e)
         })
-        m.events <- EvalDoneMsg{TurnID: turnID, Err: nil}
     }()
     return nil
 }
 
-func (m *Model) applyEvent(turnID string, e Event) {
-    switch e.Kind {
-    case EventInput:
-        id := timeline.EntityID{TurnID: turnID, LocalID: "input", Kind: "markdown"}
-        m.ctrl().OnCreated(timeline.UIEntityCreated{ID: id, Renderer: timeline.RendererDescriptor{Kind: "markdown"}, Props: e.Props, StartedAt: timeNow()})
-    case EventStdout:
-        id := timeline.EntityID{TurnID: turnID, LocalID: "stdout", Kind: "text"}
-        if st, ok := m.streams[turnID]; !ok || !st.Stdout {
-            m.ctrl().OnCreated(timeline.UIEntityCreated{ID: id, Renderer: timeline.RendererDescriptor{Kind: "text"}, Props: map[string]any{"text": "", "streaming": true}, StartedAt: timeNow()})
-            st.Stdout = true
-            if !ok { st.Stderr = false }
-            m.streams[turnID] = st
-        }
-        m.ctrl().OnUpdated(timeline.UIEntityUpdated{ID: id, Patch: ensureAppendPatch(e.Props), Version: timeNow().UnixNano(), UpdatedAt: timeNow()})
-    case EventStderr:
-        id := timeline.EntityID{TurnID: turnID, LocalID: "stderr", Kind: "text"}
-        if st, ok := m.streams[turnID]; !ok || !st.Stderr {
-            m.ctrl().OnCreated(timeline.UIEntityCreated{ID: id, Renderer: timeline.RendererDescriptor{Kind: "text"}, Props: map[string]any{"text": "", "streaming": true, "is_error": true}, StartedAt: timeNow()})
-            st.Stderr = true
-            if !ok { st.Stdout = false }
-            m.streams[turnID] = st
-        }
-        p := ensureAppendPatch(e.Props)
-        p["is_error"] = true
-        m.ctrl().OnUpdated(timeline.UIEntityUpdated{ID: id, Patch: p, Version: timeNow().UnixNano(), UpdatedAt: timeNow()})
-    case EventResultMarkdown:
-        // Each result gets its own local id sequence
-        local := fmt.Sprintf("result-%d", m.turnSeq)
-        id := timeline.EntityID{TurnID: turnID, LocalID: local, Kind: "markdown"}
-        m.ctrl().OnCreated(timeline.UIEntityCreated{ID: id, Renderer: timeline.RendererDescriptor{Kind: "markdown"}, Props: e.Props, StartedAt: timeNow()})
-        // mark complete immediately
-        m.ctrl().OnCompleted(timeline.UIEntityCompleted{ID: id, Result: nil})
-    case EventInspector:
-        local := fmt.Sprintf("inspect-%d", m.turnSeq)
-        id := timeline.EntityID{TurnID: turnID, LocalID: local, Kind: "structured_data"}
-        m.ctrl().OnCreated(timeline.UIEntityCreated{ID: id, Renderer: timeline.RendererDescriptor{Kind: "structured_data"}, Props: e.Props, StartedAt: timeNow()})
-        m.ctrl().OnCompleted(timeline.UIEntityCompleted{ID: id, Result: nil})
-    default:
-        // Fallback to text
-        local := fmt.Sprintf("event-%d", m.turnSeq)
-        id := timeline.EntityID{TurnID: turnID, LocalID: local, Kind: "text"}
-        m.ctrl().OnCreated(timeline.UIEntityCreated{ID: id, Renderer: timeline.RendererDescriptor{Kind: "text"}, Props: e.Props, StartedAt: timeNow()})
-        m.ctrl().OnCompleted(timeline.UIEntityCompleted{ID: id, Result: nil})
-    }
-    m.refreshPending = true
+func (m *Model) publishReplEvent(turnID string, e Event) error {
+    payload, _ := json.Marshal(struct {
+        TurnID string    `json:"turn_id"`
+        Event  Event     `json:"event"`
+        Time   time.Time `json:"time"`
+    }{TurnID: turnID, Event: e, Time: time.Now()})
+    return m.pub.Publish(eventbus.TopicReplEvents, message.NewMessage(watermill.NewUUID(), payload))
 }
+
+
 
 func max(a, b int) int { if a > b { return a }; return b }
 
