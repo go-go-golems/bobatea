@@ -114,9 +114,14 @@ func RegisterReplToTimelineTransformer(bus *eventbus.Bus) {
 			}
 			return publish("timeline.completed", timeline.UIEntityCompleted{ID: c.ID, Result: nil})
 		case EventStructuredLog:
-			mu.Lock(); st.seq++; local := fmt.Sprintf("slog-%d", st.seq); mu.Unlock()
+			mu.Lock()
+			st.seq++
+			local := fmt.Sprintf("slog-%d", st.seq)
+			mu.Unlock()
 			c := timeline.UIEntityCreated{ID: timeline.EntityID{TurnID: turnID, LocalID: local, Kind: "structured_log_event"}, Renderer: timeline.RendererDescriptor{Kind: "structured_log_event"}, Props: in.Event.Props, StartedAt: time.Now()}
-			if err := publish("timeline.created", c); err != nil { return err }
+			if err := publish("timeline.created", c); err != nil {
+				return err
+			}
 			return publish("timeline.completed", timeline.UIEntityCompleted{ID: c.ID, Result: nil})
 		case EventInspector:
 			mu.Lock()

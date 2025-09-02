@@ -10,8 +10,8 @@ const (
 	EventResultMarkdown EventKind = "repl_result_markdown" // props: markdown|string in "markdown" or "text"
 	EventStdout         EventKind = "repl_stdout"          // props: append|string or text
 	EventStderr         EventKind = "repl_stderr"          // props: append|string or text, is_error=true
-	EventLog            EventKind = "repl_log"              // props: level, message, metadata(optional), fields(optional)
-	EventStructuredLog  EventKind = "repl_structured_log"   // props: level, message(optional), data|metadata|fields
+	EventLog            EventKind = "repl_log"             // props: level, message, metadata(optional), fields(optional)
+	EventStructuredLog  EventKind = "repl_structured_log"  // props: level, message(optional), data|metadata|fields
 	EventToolCalls      EventKind = "repl_tool_calls"
 	EventProgress       EventKind = "repl_progress"
 	EventPerf           EventKind = "repl_perf"

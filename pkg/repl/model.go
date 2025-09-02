@@ -61,10 +61,10 @@ func NewModel(evaluator Evaluator, config Config, pub message.Publisher) *Model 
 	reg := timeline.NewRegistry()
 	// Register base widgets
 	reg.RegisterModelFactory(renderers.TextFactory{})
-    reg.RegisterModelFactory(renderers.NewMarkdownFactory())
+	reg.RegisterModelFactory(renderers.NewMarkdownFactory())
 	reg.RegisterModelFactory(renderers.StructuredDataFactory{})
-    reg.RegisterModelFactory(renderers.LogEventFactory{})
-    reg.RegisterModelFactory(renderers.StructuredLogEventFactory{})
+	reg.RegisterModelFactory(renderers.LogEventFactory{})
+	reg.RegisterModelFactory(renderers.StructuredLogEventFactory{})
 
 	sh := timeline.NewShell(reg)
 

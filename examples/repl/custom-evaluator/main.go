@@ -1,20 +1,20 @@
 package main
 
 import (
-    "context"
-    "fmt"
-    "log"
-    "math"
-    "regexp"
-    "strconv"
-    "strings"
+	"context"
+	"fmt"
+	"log"
+	"math"
+	"regexp"
+	"strconv"
+	"strings"
 
-    tea "github.com/charmbracelet/bubbletea"
-    "github.com/go-go-golems/bobatea/pkg/eventbus"
-    "github.com/go-go-golems/bobatea/pkg/logutil"
-    "github.com/go-go-golems/bobatea/pkg/repl"
-    "github.com/go-go-golems/bobatea/pkg/timeline"
-    "github.com/rs/zerolog"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/go-go-golems/bobatea/pkg/eventbus"
+	"github.com/go-go-golems/bobatea/pkg/logutil"
+	"github.com/go-go-golems/bobatea/pkg/repl"
+	"github.com/go-go-golems/bobatea/pkg/timeline"
+	"github.com/rs/zerolog"
 )
 
 // AdvancedCalculatorEvaluator is a more sophisticated calculator
@@ -49,51 +49,51 @@ func NewAdvancedCalculatorEvaluator() *AdvancedCalculatorEvaluator {
 }
 
 func (e *AdvancedCalculatorEvaluator) EvaluateStream(ctx context.Context, code string, emit func(repl.Event)) error {
-    code = strings.TrimSpace(code)
-    if code == "" {
-        emit(repl.Event{Kind: repl.EventResultMarkdown, Props: map[string]any{"markdown": "Empty expression"}})
-        return nil
-    }
+	code = strings.TrimSpace(code)
+	if code == "" {
+		emit(repl.Event{Kind: repl.EventResultMarkdown, Props: map[string]any{"markdown": "Empty expression"}})
+		return nil
+	}
 
 	// Add to history
 	e.history = append(e.history, code)
 
-    // Handle variable assignment: x = 42
-    if strings.Contains(code, "=") && !strings.Contains(code, "==") {
-        out, err := e.handleAssignment(code)
-        if err != nil {
-            emit(repl.Event{Kind: repl.EventResultMarkdown, Props: map[string]any{"markdown": fmt.Sprintf("Error: %v", err)}})
-            return nil
-        }
-        emit(repl.Event{Kind: repl.EventResultMarkdown, Props: map[string]any{"markdown": out}})
-        return nil
-    }
+	// Handle variable assignment: x = 42
+	if strings.Contains(code, "=") && !strings.Contains(code, "==") {
+		out, err := e.handleAssignment(code)
+		if err != nil {
+			emit(repl.Event{Kind: repl.EventResultMarkdown, Props: map[string]any{"markdown": fmt.Sprintf("Error: %v", err)}})
+			return nil
+		}
+		emit(repl.Event{Kind: repl.EventResultMarkdown, Props: map[string]any{"markdown": out}})
+		return nil
+	}
 
 	// Handle special commands
-    if strings.HasPrefix(code, "vars") {
-        emit(repl.Event{Kind: repl.EventResultMarkdown, Props: map[string]any{"markdown": e.showVariables()}})
-        return nil
-    }
+	if strings.HasPrefix(code, "vars") {
+		emit(repl.Event{Kind: repl.EventResultMarkdown, Props: map[string]any{"markdown": e.showVariables()}})
+		return nil
+	}
 
-    if strings.HasPrefix(code, "funcs") {
-        emit(repl.Event{Kind: repl.EventResultMarkdown, Props: map[string]any{"markdown": e.showFunctions()}})
-        return nil
-    }
+	if strings.HasPrefix(code, "funcs") {
+		emit(repl.Event{Kind: repl.EventResultMarkdown, Props: map[string]any{"markdown": e.showFunctions()}})
+		return nil
+	}
 
-    if strings.HasPrefix(code, "hist") {
-        emit(repl.Event{Kind: repl.EventResultMarkdown, Props: map[string]any{"markdown": e.showHistory()}})
-        return nil
-    }
+	if strings.HasPrefix(code, "hist") {
+		emit(repl.Event{Kind: repl.EventResultMarkdown, Props: map[string]any{"markdown": e.showHistory()}})
+		return nil
+	}
 
 	// Evaluate mathematical expression
-    result, err := e.evaluateExpression(code)
-    if err != nil {
-        emit(repl.Event{Kind: repl.EventResultMarkdown, Props: map[string]any{"markdown": fmt.Sprintf("Error: %v", err)}})
-        return nil
-    }
-    e.variables["ans"] = result
-    emit(repl.Event{Kind: repl.EventResultMarkdown, Props: map[string]any{"markdown": fmt.Sprintf("%.6g", result)}})
-    return nil
+	result, err := e.evaluateExpression(code)
+	if err != nil {
+		emit(repl.Event{Kind: repl.EventResultMarkdown, Props: map[string]any{"markdown": fmt.Sprintf("Error: %v", err)}})
+		return nil
+	}
+	e.variables["ans"] = result
+	emit(repl.Event{Kind: repl.EventResultMarkdown, Props: map[string]any{"markdown": fmt.Sprintf("%.6g", result)}})
+	return nil
 }
 
 func (e *AdvancedCalculatorEvaluator) handleAssignment(code string) (string, error) {
@@ -288,32 +288,36 @@ func (e *AdvancedCalculatorEvaluator) GetFileExtension() string {
 }
 
 func main() {
-    // Silence logs for TUI
-    logutil.InitTUILoggingToDiscard(zerolog.ErrorLevel)
+	// Silence logs for TUI
+	logutil.InitTUILoggingToDiscard(zerolog.ErrorLevel)
 
-    evaluator := NewAdvancedCalculatorEvaluator()
-    config := repl.Config{
-        Title:                "Advanced Calculator REPL",
-        Placeholder:          "Enter mathematical expression...",
-        Width:                100,
-        StartMultiline:       false,
-        EnableExternalEditor: true,
-        EnableHistory:        true,
-        MaxHistorySize:       500,
-    }
+	evaluator := NewAdvancedCalculatorEvaluator()
+	config := repl.Config{
+		Title:                "Advanced Calculator REPL",
+		Placeholder:          "Enter mathematical expression...",
+		Width:                100,
+		StartMultiline:       false,
+		EnableExternalEditor: true,
+		EnableHistory:        true,
+		MaxHistorySize:       500,
+	}
 
-    bus, err := eventbus.NewInMemoryBus()
-    if err != nil { log.Fatal(err) }
-    repl.RegisterReplToTimelineTransformer(bus)
+	bus, err := eventbus.NewInMemoryBus()
+	if err != nil {
+		log.Fatal(err)
+	}
+	repl.RegisterReplToTimelineTransformer(bus)
 
-    model := repl.NewModel(evaluator, config, bus.Publisher)
-    p := tea.NewProgram(model, tea.WithAltScreen())
-    timeline.RegisterUIForwarder(bus, p)
+	model := repl.NewModel(evaluator, config, bus.Publisher)
+	p := tea.NewProgram(model, tea.WithAltScreen())
+	timeline.RegisterUIForwarder(bus, p)
 
-    ctx, cancel := context.WithCancel(context.Background())
-    defer cancel()
-    errs := make(chan error, 2)
-    go func() { errs <- bus.Run(ctx) }()
-    go func() { _, e := p.Run(); cancel(); errs <- e }()
-    if e := <-errs; e != nil { log.Fatal(e) }
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errs := make(chan error, 2)
+	go func() { errs <- bus.Run(ctx) }()
+	go func() { _, e := p.Run(); cancel(); errs <- e }()
+	if e := <-errs; e != nil {
+		log.Fatal(e)
+	}
 }

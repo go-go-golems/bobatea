@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log"
 	"strings"
@@ -9,7 +10,11 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/go-go-golems/bobatea/pkg/eventbus"
+	"github.com/go-go-golems/bobatea/pkg/logutil"
 	"github.com/go-go-golems/bobatea/pkg/repl"
+	"github.com/go-go-golems/bobatea/pkg/timeline"
+	"github.com/rs/zerolog"
 )
 
 // Application modes
@@ -60,6 +65,17 @@ func (e *SimpleEvaluator) Evaluate(ctx context.Context, code string) (string, er
 	return fmt.Sprintf("Command '%s' executed successfully (command #%d)", code, e.commandCount), nil
 }
 
+// Implement streaming adapter
+func (e *SimpleEvaluator) EvaluateStream(ctx context.Context, code string, emit func(repl.Event)) error {
+	out, err := e.Evaluate(ctx, code)
+	if err != nil {
+		emit(repl.Event{Kind: repl.EventResultMarkdown, Props: map[string]any{"markdown": fmt.Sprintf("Error: %v", err)}})
+		return nil
+	}
+	emit(repl.Event{Kind: repl.EventResultMarkdown, Props: map[string]any{"markdown": out}})
+	return nil
+}
+
 func (e *SimpleEvaluator) GetPrompt() string        { return "app> " }
 func (e *SimpleEvaluator) GetName() string          { return "App Command Processor" }
 func (e *SimpleEvaluator) SupportsMultiline() bool  { return false }
@@ -73,7 +89,7 @@ type AppModel struct {
 	height      int
 
 	// Components
-	repl       repl.Model
+	repl       *repl.Model
 	textInput  textinput.Model
 	logEntries []LogEntry
 
@@ -143,7 +159,7 @@ func NewAppStyles() AppStyles {
 	}
 }
 
-func NewAppModel() AppModel {
+func NewAppModel(bus *eventbus.Bus) AppModel {
 	// Create the evaluator
 	evaluator := NewSimpleEvaluator()
 
@@ -158,27 +174,15 @@ func NewAppModel() AppModel {
 		MaxHistorySize:       100,
 	}
 
-	// Create REPL model
-	replModel := repl.NewModel(evaluator, config)
-	replModel.SetTheme(repl.BuiltinThemes["dark"])
-
-	// Add custom commands
-	replModel.AddCustomCommand("app-info", func(args []string) tea.Cmd {
-		return func() tea.Msg {
-			return repl.EvaluationCompleteMsg{
-				Input:  "/app-info",
-				Output: "Multi-Mode Application v1.0.0\nModes: Menu, REPL, Log Viewer",
-				Error:  nil,
-			}
-		}
-	})
+	// Create REPL model with provided bus publisher
+	replModel := repl.NewModel(evaluator, config, bus.Publisher)
 
 	// Create text input for menu mode
 	ti := textinput.New()
 	ti.Placeholder = "Enter command..."
 	ti.Focus()
 
-	return AppModel{
+	m := AppModel{
 		currentMode:      ModeMenu,
 		repl:             replModel,
 		textInput:        ti,
@@ -194,6 +198,8 @@ func NewAppModel() AppModel {
 		},
 		styles: NewAppStyles(),
 	}
+
+	return m
 }
 
 func (m AppModel) Init() tea.Cmd {
@@ -210,7 +216,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.repl.SetWidth(msg.Width - 4)
+		// REPL model handles sizing internally via WindowSizeMsg
 
 	case tea.KeyMsg:
 		switch m.currentMode {
@@ -249,34 +255,14 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-	case repl.EvaluationCompleteMsg:
-		// Log REPL activity
-		level := "INFO"
-		if msg.Error != nil {
-			level = "ERROR"
-		}
-
-		m.logEntries = append(m.logEntries, LogEntry{
-			Level:   level,
-			Message: fmt.Sprintf("REPL: %s -> %s", msg.Input, msg.Output),
-			Time:    "now",
-		})
-
-		// Keep only last 50 log entries
-		if len(m.logEntries) > 50 {
-			m.logEntries = m.logEntries[len(m.logEntries)-50:]
-		}
-
-	case repl.QuitMsg:
-		m.currentMode = ModeMenu
-		return m, nil
+		// In timeline-based REPL, results are pushed as UI entities, not EvaluationCompleteMsg.
 	}
 
 	// Update components based on current mode
 	if m.currentMode == ModeREPL {
 		var cmd tea.Cmd
 		updatedModel, cmd := m.repl.Update(msg)
-		if replModel, ok := updatedModel.(repl.Model); ok {
+		if replModel, ok := updatedModel.(*repl.Model); ok {
 			m.repl = replModel
 		}
 		cmds = append(cmds, cmd)
@@ -413,25 +399,61 @@ func (m AppModel) viewLog() string {
 }
 
 func (m AppModel) viewStatusBar() string {
-	status := fmt.Sprintf("Mode: %s | Commands: %d | Logs: %d | Press ? for help",
+	status := fmt.Sprintf("Mode: %s | Logs: %d | Press ? for help",
 		m.currentMode,
-		len(m.repl.GetHistory().GetAll()),
 		len(m.logEntries),
 	)
 
 	return m.styles.StatusBar.Width(m.width).Render(status)
 }
 
+func parseLevel(s string) zerolog.Level {
+	switch strings.ToLower(s) {
+	case "trace":
+		return zerolog.TraceLevel
+	case "debug":
+		return zerolog.DebugLevel
+	case "info":
+		return zerolog.InfoLevel
+	case "warn", "warning":
+		return zerolog.WarnLevel
+	case "error", "err":
+		return zerolog.ErrorLevel
+	default:
+		return zerolog.ErrorLevel
+	}
+}
+
 func main() {
-	model := NewAppModel()
+	// CLI flags for logging
+	ll := flag.String("log-level", "error", "log level: trace, debug, info, warn, error")
+	lf := flag.String("log-file", "", "log file path (optional)")
+	flag.Parse()
 
-	p := tea.NewProgram(
-		model,
-		tea.WithAltScreen(),
-		tea.WithMouseCellMotion(),
-	)
+	level := parseLevel(*ll)
+	if *lf != "" {
+		logutil.InitTUILoggingToFile(level, *lf)
+	} else {
+		logutil.InitTUILoggingToDiscard(level)
+	}
 
-	if _, err := p.Run(); err != nil {
+	// Build the app and wire bus + forwarder
+	// Create bus and forwarder
+	bus, err := eventbus.NewInMemoryBus()
+	if err != nil {
 		log.Fatal(err)
+	}
+	repl.RegisterReplToTimelineTransformer(bus)
+	app := NewAppModel(bus)
+	p := tea.NewProgram(app, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	timeline.RegisterUIForwarder(bus, p)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errs := make(chan error, 2)
+	go func() { errs <- bus.Run(ctx) }()
+	go func() { _, e := p.Run(); cancel(); errs <- e }()
+	if e := <-errs; e != nil {
+		log.Fatal(e)
 	}
 }
