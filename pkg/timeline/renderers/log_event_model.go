@@ -1,7 +1,6 @@
 package renderers
 
 import (
-	"fmt"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -54,19 +53,38 @@ func (m *LogEventModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *LogEventModel) View() string {
-	// Borderless, unobtrusive gray style
+	// Container (no foreground to allow inner colored spans)
 	base := lipgloss.NewStyle().Padding(0, 1)
-	// Darker gray foreground (adaptive-ish by using numbers)
-	gray := lipgloss.Color("245")
-	if m.selected {
-		gray = lipgloss.Color("252")
-	}
-	base = base.Foreground(gray)
 
-	header := strings.TrimSpace(fmt.Sprintf("[%s] %s", strings.ToUpper(strings.TrimSpace(m.level)), strings.TrimSpace(m.message)))
-	body := header
+	level := strings.ToUpper(strings.TrimSpace(m.level))
+	msg := strings.TrimSpace(m.message)
+
+	// Level color
+	var lvlColor lipgloss.Color
+	switch strings.ToLower(level) {
+	case "error", "err":
+		lvlColor = lipgloss.Color("196")
+	case "warn", "warning":
+		lvlColor = lipgloss.Color("214")
+	case "debug":
+		lvlColor = lipgloss.Color("243")
+	case "info":
+		lvlColor = lipgloss.Color("39")
+	default:
+		lvlColor = lipgloss.Color("245")
+	}
+
+	lvl := lipgloss.NewStyle().Foreground(lvlColor).Bold(true).Render("[" + level + "]")
+	msgColor := lipgloss.Color("245")
+	if m.selected {
+		msgColor = lipgloss.Color("252")
+	}
+	msgStyled := lipgloss.NewStyle().Foreground(msgColor).Render(msg)
+
+	body := strings.TrimSpace(lvl + " " + msgStyled)
 	if m.showMeta && strings.TrimSpace(m.yamlStr) != "" {
-		body += "\n\n" + m.yamlStr
+		meta := lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render(m.yamlStr)
+		body += "\n\n" + meta
 	}
 	return base.Width(m.width - base.GetHorizontalPadding()).Render(body)
 }

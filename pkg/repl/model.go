@@ -2,598 +2,318 @@ package repl
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"io"
-	"os"
-	"os/exec"
 	"strings"
+	"time"
 
+	"github.com/ThreeDotsLabs/watermill"
+	"github.com/ThreeDotsLabs/watermill/message"
+	"github.com/charmbracelet/bubbles/cursor"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/go-go-golems/bobatea/pkg/eventbus"
+	"github.com/go-go-golems/bobatea/pkg/timeline"
+	renderers "github.com/go-go-golems/bobatea/pkg/timeline/renderers"
+	"github.com/rs/zerolog/log"
 )
 
-// Model represents the UI state for the REPL
+// Model is a timeline-first REPL shell: timeline transcript + input line.
 type Model struct {
-	evaluator         Evaluator
-	config            Config
-	styles            Styles
-	history           *History
-	textInput         textinput.Model
-	multilineMode     bool
-	multilineText     []string
-	width             int
-	quitting          bool
-	evaluating        bool
-	customCommands    map[string]func([]string) tea.Cmd
-	rawCustomCommands map[string]func(string, []string) tea.Cmd
+	evaluator Evaluator
+	config    Config
+	styles    Styles
+
+	// input & history
+	history   *History
+	textInput textinput.Model
+	multiline bool
+	lines     []string
+
+	// layout
+	width, height int
+
+	// timeline shell (viewport + controller)
+	reg   *timeline.Registry
+	sh    *timeline.Shell
+	focus string // "input" or "timeline"
+
+	// bus publisher
+	pub     message.Publisher
+	turnSeq int
+
+	// refresh scheduling
+	refreshPending   bool
+	refreshScheduled bool
 }
 
-// NewModel creates a new REPL model
-func NewModel(evaluator Evaluator, config Config) Model {
+// NewModel constructs a new REPL shell with timeline transcript.
+func NewModel(evaluator Evaluator, config Config, pub message.Publisher) *Model {
 	if config.Prompt == "" {
 		config.Prompt = evaluator.GetPrompt()
 	}
-
 	ti := textinput.New()
+	ti.Prompt = config.Prompt
 	ti.Placeholder = config.Placeholder
 	ti.Focus()
-	ti.Width = config.Width
-	ti.Prompt = config.Prompt
+	ti.Width = max(10, config.Width-10)
 
-	history := NewHistory(config.MaxHistorySize)
+	reg := timeline.NewRegistry()
+	// Register base widgets
+	reg.RegisterModelFactory(renderers.TextFactory{})
+	reg.RegisterModelFactory(renderers.NewMarkdownFactory())
+	reg.RegisterModelFactory(renderers.StructuredDataFactory{})
+	reg.RegisterModelFactory(renderers.LogEventFactory{})
+	reg.RegisterModelFactory(renderers.StructuredLogEventFactory{})
 
-	return Model{
-		evaluator:         evaluator,
-		config:            config,
-		styles:            DefaultStyles(),
-		history:           history,
-		textInput:         ti,
-		multilineMode:     config.StartMultiline,
-		multilineText:     []string{},
-		width:             config.Width,
-		quitting:          false,
-		evaluating:        false,
-		customCommands:    make(map[string]func([]string) tea.Cmd),
-		rawCustomCommands: make(map[string]func(string, []string) tea.Cmd),
+	sh := timeline.NewShell(reg)
+
+	return &Model{
+		evaluator: evaluator,
+		config:    config,
+		styles:    DefaultStyles(),
+		history:   NewHistory(config.MaxHistorySize),
+		textInput: ti,
+		multiline: config.StartMultiline,
+		lines:     []string{},
+		width:     config.Width,
+		reg:       reg,
+		sh:        sh,
+		focus:     "input",
+		pub:       pub,
 	}
 }
 
-// Init initializes the REPL model
-func (m Model) Init() tea.Cmd {
-	return textinput.Blink
+// Init subscribes to evaluator events.
+func (m *Model) Init() tea.Cmd {
+	// no blinking on text input, because it makes copy paste impossible
+	return tea.Batch(m.sh.Init())
 }
 
-// Update handles UI events and updates the model
-func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmd tea.Cmd
-
-	switch msg := msg.(type) {
+// Update handles TUI events.
+func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	log.Trace().Interface("msg", msg).Interface("type", fmt.Sprintf("%T", msg)).Msg("updating repl model")
+	switch v := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.textInput.Width = msg.Width - 10
-
-	case EvaluationCompleteMsg:
-		m.evaluating = false
-		if m.config.EnableHistory {
-			m.history.Add(msg.Input, msg.Output, msg.Error != nil)
-		}
-
-	case ExternalEditorCompleteMsg:
-		if msg.Error != nil {
-			if m.config.EnableHistory {
-				m.history.Add("/edit", fmt.Sprintf("Editor error: %v", msg.Error), true)
-			}
-		} else {
-			lines := strings.Split(strings.TrimSpace(msg.Content), "\n")
-			if len(lines) > 1 {
-				m.multilineMode = true
-				m.multilineText = lines
-				m.textInput.Reset()
-			} else {
-				m.multilineMode = false
-				m.multilineText = []string{}
-				m.textInput.SetValue(lines[0])
-			}
-		}
-
-	case ClearHistoryMsg:
-		if m.config.EnableHistory {
-			m.history.Clear()
-		}
-
-	case QuitMsg:
-		m.quitting = true
-		return m, tea.Quit
+		m.width, m.height = v.Width, v.Height
+		m.textInput.Width = max(10, v.Width-10)
+		// give most of the space to timeline shell viewport
+		tlHeight := max(0, v.Height-4)
+		m.sh.SetSize(v.Width, tlHeight)
+		// initial refresh to fit new size
+		m.sh.RefreshView(false)
+		var cmd tea.Cmd
+		m.textInput, cmd = m.textInput.Update(msg)
+		return m, cmd
 
 	case tea.KeyMsg:
-		// Handle special key combinations
-		//nolint:exhaustive
-		switch msg.Type {
-		case tea.KeyCtrlC:
-			m.quitting = true
-			return m, tea.Quit
-
-		case tea.KeyCtrlE:
-			if m.config.EnableExternalEditor {
-				return m, m.handleExternalEditor()
-			}
-
-		case tea.KeyCtrlJ:
-			if m.evaluator.SupportsMultiline() {
-				if !m.multilineMode {
-					m.multilineMode = true
-					m.multilineText = []string{m.textInput.Value()}
-				} else {
-					m.multilineText = append(m.multilineText, m.textInput.Value())
-				}
-				m.textInput.Reset()
-				return m, nil
-			}
+		switch m.focus {
+		case "input":
+			return m.updateInput(v)
+		case "timeline":
+			return m.updateTimeline(v)
 		}
 
-		// Handle regular keys
-		switch msg.String() {
-		case "up":
-			if m.config.EnableHistory {
-				if entry := m.history.NavigateUp(); entry != "" {
-					m.textInput.SetValue(entry)
-				}
-			}
-			return m, nil
-
-		case "down":
-			if m.config.EnableHistory {
-				entry := m.history.NavigateDown()
-				m.textInput.SetValue(entry)
-			}
-			return m, nil
-
-		case "enter":
-			input := m.textInput.Value()
-
-			if m.multilineMode {
-				if input == "" {
-					// Execute multiline code
-					fullInput := strings.Join(m.multilineText, "\n")
-					m.multilineMode = false
-					m.multilineText = []string{}
-					m.textInput.Reset()
-					return m, m.processInput(fullInput)
-				} else {
-					// Add line to multiline input
-					m.multilineText = append(m.multilineText, input)
-					m.textInput.Reset()
-					return m, nil
-				}
-			} else {
-				if input == "" {
-					return m, nil
-				}
-				m.textInput.Reset()
-				if m.config.EnableHistory {
-					m.history.ResetNavigation()
-				}
-				return m, m.processInput(input)
-			}
+	case timeline.UIEntityCreated:
+		m.ctrl().OnCreated(v)
+		m.refreshPending = true
+		return m, m.scheduleRefresh()
+	case timeline.UIEntityUpdated:
+		m.ctrl().OnUpdated(v)
+		m.refreshPending = true
+		return m, m.scheduleRefresh()
+	case timeline.UIEntityCompleted:
+		m.ctrl().OnCompleted(v)
+		m.refreshPending = true
+		return m, m.scheduleRefresh()
+	case timeline.UIEntityDeleted:
+		m.ctrl().OnDeleted(v)
+		m.refreshPending = true
+		return m, m.scheduleRefresh()
+	case timelineRefreshMsg:
+		m.refreshScheduled = false
+		if m.refreshPending {
+			m.sh.RefreshView(true)
+			m.refreshPending = false
 		}
+		return m, nil
+
+	case cursor.BlinkMsg:
+		return m, nil
+	default:
+		var cmd tea.Cmd
+		m.textInput, cmd = m.textInput.Update(msg)
+		return m, cmd
 	}
 
-	m.textInput, cmd = m.textInput.Update(msg)
+	log.Trace().Interface("msg", msg).Msg("updating repl model default case")
+
+	return m, nil
+}
+
+func (m *Model) updateInput(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+	log.Trace().Interface("k", k).Str("key", k.String()).Msg("updating input")
+	//nolint:exhaustive
+	switch k.Type {
+	case tea.KeyCtrlC:
+		return m, tea.Quit
+	}
+	switch k.String() {
+	case "tab":
+		m.focus = "timeline"
+		m.textInput.Blur()
+		m.sh.SetSelectionVisible(true)
+		return m, nil
+	case "enter":
+		input := m.textInput.Value()
+		if strings.TrimSpace(input) == "" {
+			return m, nil
+		}
+		m.textInput.Reset()
+		if m.config.EnableHistory {
+			m.history.Add(input, "", false)
+			m.history.ResetNavigation()
+		}
+		return m, m.submit(input)
+	case "up":
+		if m.config.EnableHistory {
+			if entry := m.history.NavigateUp(); entry != "" {
+				m.textInput.SetValue(entry)
+			}
+		}
+		return m, nil
+	case "down":
+		if m.config.EnableHistory {
+			entry := m.history.NavigateDown()
+			m.textInput.SetValue(entry)
+		}
+		return m, nil
+	}
+	var cmd tea.Cmd
+	m.textInput, cmd = m.textInput.Update(k)
 	return m, cmd
 }
 
-// View renders the UI
-func (m Model) View() string {
-	var sb strings.Builder
+func (m *Model) updateTimeline(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch k.String() {
+	case "tab":
+		m.focus = "input"
+		m.textInput.Focus()
+		m.sh.SetSelectionVisible(false)
+		return m, nil
+	case "up":
+		m.sh.SelectPrev()
+		return m, nil
+	case "down":
+		m.sh.SelectNext()
+		return m, nil
+	case "enter":
+		if m.sh.IsEntering() {
+			m.sh.ExitSelection()
+		} else {
+			m.sh.EnterSelection()
+		}
+		return m, nil
+	case "c":
+		return m, m.sh.SendToSelected(timeline.EntityCopyCodeMsg{})
+	case "y":
+		return m, m.sh.SendToSelected(timeline.EntityCopyTextMsg{})
+	}
+	// route keys to shell/controller (e.g., Tab cycles inside entity)
+	cmd := m.sh.HandleMsg(k)
+	return m, cmd
+}
 
-	// Title
+func (m *Model) View() string {
+	var b strings.Builder
 	title := m.config.Title
 	if title == "" {
 		title = fmt.Sprintf("%s REPL", m.evaluator.GetName())
 	}
-	sb.WriteString(m.styles.Title.Render(fmt.Sprintf(" %s ", title)))
-	sb.WriteString("\n\n")
-
-	// History
-	if m.config.EnableHistory {
-		for _, entry := range m.history.GetEntries() {
-			// Input
-			sb.WriteString(m.styles.Prompt.Render(m.config.Prompt))
-			sb.WriteString(m.wrapText(entry.Input, m.width-len(m.config.Prompt)))
-			sb.WriteString("\n")
-
-			// Output
-			if entry.IsErr {
-				sb.WriteString(m.wrapText(m.styles.Error.Render(entry.Output), m.width))
-			} else {
-				sb.WriteString(m.wrapText(m.styles.Result.Render(entry.Output), m.width))
-			}
-			sb.WriteString("\n\n")
-		}
+	b.WriteString(m.styles.Title.Render(" " + title + " "))
+	b.WriteString("\n\n")
+	// timeline view (viewport-wrapped)
+	b.WriteString(m.sh.View())
+	b.WriteString("\n")
+	// input (dim when in selection mode)
+	inputView := m.textInput.View()
+	if m.focus == "timeline" {
+		inputView = m.styles.HelpText.Render(inputView)
 	}
-
-	// Multiline input display
-	if m.multilineMode {
-		sb.WriteString(m.styles.Info.Render("Multiline Mode (press Enter on empty line to execute):\n"))
-		for _, line := range m.multilineText {
-			sb.WriteString(m.styles.Prompt.Render("... "))
-			sb.WriteString(m.wrapText(line, m.width-5))
-			sb.WriteString("\n")
-		}
-	}
-
-	// Input field
-	sb.WriteString(m.textInput.View())
-	sb.WriteString("\n\n")
-
-	// Status/Help text
-	if m.evaluating {
-		sb.WriteString(m.styles.Info.Render("Evaluating..."))
-	} else {
-		helpText := m.buildHelpText()
-		sb.WriteString(m.styles.HelpText.Render(helpText))
-	}
-	sb.WriteString("\n")
-
-	if m.quitting {
-		sb.WriteString("\n")
-		sb.WriteString(m.styles.Info.Render("Exiting..."))
-		sb.WriteString("\n")
-	}
-
-	return sb.String()
+	b.WriteString(inputView)
+	b.WriteString("\n")
+	// help
+	help := "TAB: switch focus | Enter: submit | Up/Down: history/selection | c: copy code | y: copy text | Ctrl+C: quit"
+	b.WriteString(m.styles.HelpText.Render(help))
+	b.WriteString("\n")
+	return b.String()
 }
 
-// SetStyles updates the styles for the REPL
-func (m *Model) SetStyles(styles Styles) {
-	m.styles = styles
-}
-
-// SetTheme updates the theme for the REPL
-func (m *Model) SetTheme(theme Theme) {
-	m.styles = theme.Styles
-}
-
-// AddCustomCommand adds a custom slash command
-func (m *Model) AddCustomCommand(name string, handler func([]string) tea.Cmd) {
-	m.customCommands[name] = handler
-}
-
-// AddCustomCommandRaw registers a command and provides the raw argument string alongside tokenized args.
-func (m *Model) AddCustomCommandRaw(name string, handler func(string, []string) tea.Cmd) {
-	m.rawCustomCommands[name] = handler
-}
-
-// SetWidth sets the width of the REPL model
-func (m *Model) SetWidth(width int) {
-	m.width = width
-	m.textInput.Width = width - 10
-}
-
-// GetHistory returns the history object
-func (m *Model) GetHistory() *History {
-	return m.history
-}
-
-// processInput handles user input and returns appropriate command
-func (m Model) processInput(input string) tea.Cmd {
-	if strings.HasPrefix(input, "/") {
-		return m.handleSlashCommand(input)
-	}
-
-	// Handle evaluation
-	m.evaluating = true
+// submit runs evaluation and streams events to m.events
+func (m *Model) submit(code string) tea.Cmd {
 	return func() tea.Msg {
-		ctx := context.Background()
-		output, err := m.evaluator.Evaluate(ctx, input)
-
-		var outputStr string
-		if err != nil {
-			outputStr = err.Error()
-		} else {
-			outputStr = output
-		}
-
-		return EvaluationCompleteMsg{
-			Input:  input,
-			Output: outputStr,
-			Error:  err,
-		}
+		turnID := newTurnID(m.turnSeq)
+		m.turnSeq++
+		// Create input entity directly on UI bus to guarantee ordering and avoid extra newlines
+		_ = m.publishUIEntityCreated(turnID, timeline.EntityID{TurnID: turnID, LocalID: "input", Kind: "text"}, timeline.RendererDescriptor{Kind: "text"}, map[string]any{"text": code})
+		// Optionally still publish the semantic input event to repl.events? We skip to avoid duplicate UI entities.
+		_ = m.evaluator.EvaluateStream(context.Background(), code, func(e Event) {
+			log.Trace().Str("turn_id", turnID).Interface("event", e).Msg("publishing repl event")
+			_ = m.publishReplEvent(turnID, e)
+		})
+		return nil
 	}
 }
 
-// handleSlashCommand processes slash commands
-func (m Model) handleSlashCommand(input string) tea.Cmd {
-	// Preserve raw remainder after command name
-	s := strings.TrimPrefix(input, "/")
-	var cmd string
-	var raw string
-	if idx := strings.IndexRune(s, ' '); idx >= 0 {
-		cmd = s[:idx]
-		raw = strings.TrimSpace(s[idx+1:])
-	} else {
-		cmd = s
-		raw = ""
-	}
-	args := strings.Fields(raw)
-
-	// Check for custom commands first
-	if handlerRaw, exists := m.rawCustomCommands[cmd]; exists {
-		return handlerRaw(raw, args)
-	}
-	if handler, exists := m.customCommands[cmd]; exists {
-		return handler(args)
-	}
-
-	// Handle built-in commands
-	switch cmd {
-	case "help":
-		return m.showHelp()
-
-	case "clear":
-		return func() tea.Msg {
-			return ClearHistoryMsg{}
-		}
-
-	case "quit", "exit":
-		return func() tea.Msg {
-			return QuitMsg{}
-		}
-
-	case "multiline":
-		if m.evaluator.SupportsMultiline() {
-			m.multilineMode = !m.multilineMode
-			status := "disabled"
-			if m.multilineMode {
-				status = "enabled"
-			}
-			return func() tea.Msg {
-				return EvaluationCompleteMsg{
-					Input:  input,
-					Output: fmt.Sprintf("Multiline mode %s", status),
-					Error:  nil,
-				}
-			}
-		}
-		return func() tea.Msg {
-			return EvaluationCompleteMsg{
-				Input:  input,
-				Output: "Multiline mode not supported by this evaluator",
-				Error:  fmt.Errorf("multiline not supported"),
-			}
-		}
-
-	case "edit":
-		if m.config.EnableExternalEditor {
-			return m.handleExternalEditor()
-		}
-		return func() tea.Msg {
-			return EvaluationCompleteMsg{
-				Input:  input,
-				Output: "External editor not enabled",
-				Error:  fmt.Errorf("external editor disabled"),
-			}
-		}
-
-	default:
-		return func() tea.Msg {
-			return EvaluationCompleteMsg{
-				Input:  input,
-				Output: fmt.Sprintf("Unknown command: %s", cmd),
-				Error:  fmt.Errorf("unknown command: %s", cmd),
-			}
-		}
-	}
+func (m *Model) publishReplEvent(turnID string, e Event) error {
+	payload, _ := json.Marshal(struct {
+		TurnID string    `json:"turn_id"`
+		Event  Event     `json:"event"`
+		Time   time.Time `json:"time"`
+	}{TurnID: turnID, Event: e, Time: time.Now()})
+	log.Trace().Str("turn_id", turnID).Interface("event", e).Msg("publishing repl event")
+	return m.pub.Publish(eventbus.TopicReplEvents, message.NewMessage(watermill.NewUUID(), payload))
 }
 
-// handleExternalEditor opens content in external editor
-func (m Model) handleExternalEditor() tea.Cmd {
-	var content string
-	if m.multilineMode && len(m.multilineText) > 0 {
-		content = strings.Join(m.multilineText, "\n")
-	} else {
-		content = m.textInput.Value()
-	}
-
-	return func() tea.Msg {
-		editedContent, err := m.openExternalEditor(content)
-		return ExternalEditorCompleteMsg{
-			Content: editedContent,
-			Error:   err,
-		}
-	}
+func (m *Model) publishUIEntityCreated(turnID string, id timeline.EntityID, rd timeline.RendererDescriptor, props map[string]any) error {
+	// Envelope must match timeline.RegisterUIForwarder expectations
+	created := timeline.UIEntityCreated{ID: id, Renderer: rd, Props: props, StartedAt: time.Now()}
+	b, _ := json.Marshal(created)
+	env, _ := json.Marshal(struct {
+		Type    string          `json:"type"`
+		Payload json.RawMessage `json:"payload"`
+	}{Type: "timeline.created", Payload: b})
+	return m.pub.Publish(eventbus.TopicUIEntities, message.NewMessage(watermill.NewUUID(), env))
 }
 
-// openExternalEditor opens content in external editor
-func (m Model) openExternalEditor(content string) (string, error) {
-	editor := os.Getenv("EDITOR")
-	if editor == "" {
-		for _, candidate := range []string{"nano", "vim", "vi"} {
-			if _, err := exec.LookPath(candidate); err == nil {
-				editor = candidate
-				break
-			}
-		}
-		if editor == "" {
-			return "", fmt.Errorf("no suitable editor found. Set $EDITOR environment variable")
-		}
+func ensureAppendPatch(props map[string]any) map[string]any {
+	if props == nil {
+		return map[string]any{}
 	}
-
-	// Create temporary file
-	ext := m.evaluator.GetFileExtension()
-	tmpFile, err := os.CreateTemp("", fmt.Sprintf("repl-*%s", ext))
-	if err != nil {
-		return "", fmt.Errorf("failed to create temporary file: %w", err)
+	if _, ok := props["append"]; ok {
+		return props
 	}
-	defer func() {
-		_ = os.Remove(tmpFile.Name()) // Best effort cleanup
-	}()
-
-	// Write content to temp file
-	if _, err := tmpFile.WriteString(content); err != nil {
-		_ = tmpFile.Close()
-		return "", fmt.Errorf("failed to write to temporary file: %w", err)
+	if s, ok := props["text"].(string); ok {
+		return map[string]any{"append": s}
 	}
-	if err := tmpFile.Close(); err != nil {
-		return "", fmt.Errorf("failed to close temporary file: %w", err)
-	}
-
-	// Launch editor
-	cmd := exec.Command(editor, tmpFile.Name())
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("editor exited with error: %w", err)
-	}
-
-	// Read edited content
-	editedFile, err := os.Open(tmpFile.Name())
-	if err != nil {
-		return "", fmt.Errorf("failed to read edited file: %w", err)
-	}
-	defer func() {
-		_ = editedFile.Close() // Best effort cleanup
-	}()
-
-	editedBytes, err := io.ReadAll(editedFile)
-	if err != nil {
-		return "", fmt.Errorf("failed to read edited content: %w", err)
-	}
-
-	return string(editedBytes), nil
+	return props
 }
 
-// showHelp returns help message
-func (m Model) showHelp() tea.Cmd {
-	helpText := `Available commands:
-/help      - Show this help
-/clear     - Clear the screen
-/quit      - Exit the REPL`
+// internal helpers
+type timelineRefreshMsg struct{}
 
-	if m.evaluator.SupportsMultiline() {
-		helpText += `
-/multiline - Toggle multiline mode`
+func (m *Model) scheduleRefresh() tea.Cmd {
+	if m.refreshScheduled {
+		return nil
 	}
-
-	if m.config.EnableExternalEditor {
-		helpText += `
-/edit      - Open current content in external editor (same as Ctrl+E)`
-	}
-
-	helpText += `
-
-Keyboard shortcuts:`
-
-	if m.evaluator.SupportsMultiline() {
-		helpText += `
-Ctrl+J     - Add line in multiline mode`
-	}
-
-	if m.config.EnableExternalEditor {
-		helpText += `
-Ctrl+E     - Open external editor`
-	}
-
-	helpText += `
-Ctrl+C     - Exit REPL`
-
-	if m.config.EnableHistory {
-		helpText += `
-Up/Down    - Navigate command history`
-	}
-
-	// Add custom command help
-	if len(m.customCommands) > 0 {
-		helpText += `
-
-Custom commands:`
-		for name := range m.customCommands {
-			helpText += fmt.Sprintf(`
-/%s       - Custom command`, name)
-		}
-	}
-
-	return func() tea.Msg {
-		return EvaluationCompleteMsg{
-			Input:  "/help",
-			Output: helpText,
-			Error:  nil,
-		}
-	}
+	m.refreshScheduled = true
+	return tea.Tick(50*time.Millisecond, func(time.Time) tea.Msg { return timelineRefreshMsg{} })
 }
 
-// buildHelpText creates the help text for the status bar
-func (m Model) buildHelpText() string {
-	helpText := fmt.Sprintf("Type %s code or /help for commands", m.evaluator.GetName())
+func (m *Model) ctrl() *timeline.Controller { return m.sh.Controller() }
 
-	if m.multilineMode {
-		helpText = "Multiline mode: Enter empty line to execute"
-		if m.config.EnableExternalEditor {
-			helpText += ", Ctrl+E to edit"
-		}
-		if m.config.EnableHistory {
-			helpText += ", ↑/↓ for history"
-		}
-	} else {
-		if m.evaluator.SupportsMultiline() {
-			helpText += " (Ctrl+J for multiline"
-		}
-		if m.config.EnableExternalEditor {
-			if m.evaluator.SupportsMultiline() {
-				helpText += ", Ctrl+E to edit"
-			} else {
-				helpText += " (Ctrl+E to edit"
-			}
-		}
-		if m.config.EnableHistory {
-			helpText += ", ↑/↓ for history"
-		}
-		if m.evaluator.SupportsMultiline() || m.config.EnableExternalEditor || m.config.EnableHistory {
-			helpText += ")"
-		}
-	}
-
-	return helpText
+func newTurnID(seq int) string {
+	return timeNow().Format("20060102-150405.000000000") + ":" + fmt.Sprintf("%d", seq)
 }
 
-// wrapText wraps text to fit within the given width
-func (m Model) wrapText(text string, width int) string {
-	if width <= 0 {
-		return text
-	}
-
-	var sb strings.Builder
-	lines := strings.Split(text, "\n")
-
-	for i, line := range lines {
-		if len(line) <= width {
-			sb.WriteString(line)
-		} else {
-			// Wrap the line
-			currentWidth := 0
-			words := strings.Fields(line)
-			for j, word := range words {
-				wordLen := len(word)
-				if currentWidth+wordLen > width {
-					// Start a new line with proper indentation
-					sb.WriteString("\n    ")
-					currentWidth = 4 // Account for indentation
-				} else if j > 0 {
-					sb.WriteString(" ")
-					currentWidth++
-				}
-				sb.WriteString(word)
-				currentWidth += wordLen
-			}
-		}
-
-		// Add newline between original lines, but not after the last one
-		if i < len(lines)-1 {
-			sb.WriteString("\n")
-		}
-	}
-
-	return sb.String()
-}
+func timeNow() time.Time { return time.Now() }

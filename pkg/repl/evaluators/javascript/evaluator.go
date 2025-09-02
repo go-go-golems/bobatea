@@ -150,6 +150,17 @@ func (e *Evaluator) Evaluate(ctx context.Context, code string) (string, error) {
 	return output, nil
 }
 
+// EvaluateStream adapts Evaluate to the streaming interface used by the timeline-based REPL.
+func (e *Evaluator) EvaluateStream(ctx context.Context, code string, emit func(repl.Event)) error {
+	out, err := e.Evaluate(ctx, code)
+	if err != nil {
+		emit(repl.Event{Kind: repl.EventResultMarkdown, Props: map[string]any{"markdown": fmt.Sprintf("Error: %v", err)}})
+		return nil
+	}
+	emit(repl.Event{Kind: repl.EventResultMarkdown, Props: map[string]any{"markdown": out}})
+	return nil
+}
+
 // GetPrompt returns the prompt string for JavaScript evaluation
 func (e *Evaluator) GetPrompt() string {
 	return "js>"

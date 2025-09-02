@@ -8,7 +8,9 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/go-go-golems/bobatea/pkg/eventbus"
 	"github.com/go-go-golems/bobatea/pkg/repl"
+	"github.com/go-go-golems/bobatea/pkg/timeline"
 )
 
 // MathEvaluator is a simple math evaluator
@@ -37,6 +39,17 @@ func (e *MathEvaluator) Evaluate(ctx context.Context, code string) (string, erro
 	}
 
 	return "", fmt.Errorf("invalid expression: %s", code)
+}
+
+// Implement streaming by adapting Evaluate
+func (e *MathEvaluator) EvaluateStream(ctx context.Context, code string, emit func(repl.Event)) error {
+	out, err := e.Evaluate(ctx, code)
+	if err != nil {
+		emit(repl.Event{Kind: repl.EventResultMarkdown, Props: map[string]any{"markdown": fmt.Sprintf("Error: %v", err)}})
+		return nil
+	}
+	emit(repl.Event{Kind: repl.EventResultMarkdown, Props: map[string]any{"markdown": out}})
+	return nil
 }
 
 func (e *MathEvaluator) evaluateOperation(code, op string, fn func(int, int) int) (string, error) {
@@ -85,44 +98,24 @@ func main() {
 	config.Title = "Math REPL"
 	config.Placeholder = "Enter math expression (e.g., 5 + 3)"
 
-	// Create the model
-	model := repl.NewModel(evaluator, config)
-
-	// Set dark theme
-	model.SetTheme(repl.BuiltinThemes["dark"])
-
-	// Add a custom command
-	model.AddCustomCommand("square", func(args []string) tea.Cmd {
-		return func() tea.Msg {
-			if len(args) != 1 {
-				return repl.EvaluationCompleteMsg{
-					Input:  "/square",
-					Output: "Usage: /square <number>",
-					Error:  fmt.Errorf("invalid usage"),
-				}
-			}
-
-			num, err := strconv.Atoi(args[0])
-			if err != nil {
-				return repl.EvaluationCompleteMsg{
-					Input:  "/square " + args[0],
-					Output: "Invalid number",
-					Error:  err,
-				}
-			}
-
-			result := num * num
-			return repl.EvaluationCompleteMsg{
-				Input:  "/square " + args[0],
-				Output: strconv.Itoa(result),
-				Error:  nil,
-			}
-		}
-	})
-
-	// Run the program
-	p := tea.NewProgram(model, tea.WithAltScreen())
-	if _, err := p.Run(); err != nil {
+	// Wire bus and forwarders
+	bus, err := eventbus.NewInMemoryBus()
+	if err != nil {
 		log.Fatal(err)
+	}
+	repl.RegisterReplToTimelineTransformer(bus)
+
+	// Create the timeline-based model and program
+	model := repl.NewModel(evaluator, config, bus.Publisher)
+	p := tea.NewProgram(model, tea.WithAltScreen())
+	timeline.RegisterUIForwarder(bus, p)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errs := make(chan error, 2)
+	go func() { errs <- bus.Run(ctx) }()
+	go func() { _, e := p.Run(); cancel(); errs <- e }()
+	if e := <-errs; e != nil {
+		log.Fatal(e)
 	}
 }

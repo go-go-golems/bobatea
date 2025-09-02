@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/go-go-golems/bobatea/pkg/eventbus"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -76,14 +77,15 @@ func TestHistory(t *testing.T) {
 func TestModel(t *testing.T) {
 	evaluator := NewExampleEvaluator()
 	config := DefaultConfig()
-	model := NewModel(evaluator, config)
+	bus, err := eventbus.NewInMemoryBus()
+	assert.NoError(t, err)
+	model := NewModel(evaluator, config, bus.Publisher)
 
 	// Test initialization
 	assert.Equal(t, evaluator, model.evaluator)
 	assert.Equal(t, config, model.config)
-	assert.False(t, model.multilineMode)
-	assert.False(t, model.quitting)
-	assert.False(t, model.evaluating)
+	// multiline should mirror config
+	assert.Equal(t, config.StartMultiline, model.multiline)
 }
 
 func TestConfig(t *testing.T) {
@@ -94,7 +96,8 @@ func TestConfig(t *testing.T) {
 	assert.Equal(t, "Enter code or /command", config.Placeholder)
 	assert.Equal(t, 80, config.Width)
 	assert.False(t, config.StartMultiline)
-	assert.True(t, config.EnableExternalEditor)
+	// Default config for external editor is disabled in timeline-based REPL
+	assert.False(t, config.EnableExternalEditor)
 	assert.True(t, config.EnableHistory)
 	assert.Equal(t, 1000, config.MaxHistorySize)
 }

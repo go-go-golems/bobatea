@@ -1,55 +1,39 @@
 package repl
 
-import (
-	"context"
+import "context"
+
+// EventKind enumerates structured output kinds for the timeline.
+type EventKind string
+
+const (
+	EventInput          EventKind = "repl_input"           // recommended to be emitted by REPL shell
+	EventResultMarkdown EventKind = "repl_result_markdown" // props: markdown|string in "markdown" or "text"
+	EventStdout         EventKind = "repl_stdout"          // props: append|string or text
+	EventStderr         EventKind = "repl_stderr"          // props: append|string or text, is_error=true
+	EventLog            EventKind = "repl_log"             // props: level, message, metadata(optional), fields(optional)
+	EventStructuredLog  EventKind = "repl_structured_log"  // props: level, message(optional), data|metadata|fields
+	EventToolCalls      EventKind = "repl_tool_calls"
+	EventProgress       EventKind = "repl_progress"
+	EventPerf           EventKind = "repl_perf"
+	EventTable          EventKind = "repl_table"
+	EventDiff           EventKind = "repl_diff"
+	EventShellCmd       EventKind = "repl_shell_cmd"
+	EventInspector      EventKind = "repl_inspector"
 )
 
-// Evaluator represents the interface for pluggable evaluators
+// Event carries a semantic payload for the UI.
+type Event struct {
+	Kind  EventKind
+	Props map[string]any
+}
+
+// Evaluator executes code and streams events.
+// Errors should be represented as events too (e.g., stderr or result with error annotation),
+// with the returned error used for terminal failures.
 type Evaluator interface {
-	// Evaluate executes the given code and returns the result
-	Evaluate(ctx context.Context, code string) (string, error)
-
-	// GetPrompt returns the prompt string for this evaluator
+	EvaluateStream(ctx context.Context, code string, emit func(Event)) error
 	GetPrompt() string
-
-	// GetName returns the name of this evaluator (for display)
 	GetName() string
-
-	// SupportsMultiline returns true if this evaluator supports multiline input
 	SupportsMultiline() bool
-
-	// GetFileExtension returns the file extension for external editor
 	GetFileExtension() string
-}
-
-// EvaluatorResult represents the result of an evaluation
-type EvaluatorResult struct {
-	Output string
-	Error  error
-}
-
-// Config holds configuration for the REPL
-type Config struct {
-	Title                string
-	Prompt               string
-	Placeholder          string
-	Width                int
-	StartMultiline       bool
-	EnableExternalEditor bool
-	EnableHistory        bool
-	MaxHistorySize       int
-}
-
-// DefaultConfig returns a default configuration
-func DefaultConfig() Config {
-	return Config{
-		Title:                "REPL",
-		Prompt:               "> ",
-		Placeholder:          "Enter code or /command",
-		Width:                80,
-		StartMultiline:       false,
-		EnableExternalEditor: true,
-		EnableHistory:        true,
-		MaxHistorySize:       1000,
-	}
 }
