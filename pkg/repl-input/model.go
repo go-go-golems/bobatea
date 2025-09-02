@@ -64,6 +64,9 @@ type Model struct {
 
     // static commands (optional)
     staticCommands []SlashCommand
+
+    // prompt string shown before the input
+    prompt string
 }
 
 // New creates a new REPL input model.
@@ -71,6 +74,10 @@ func New(completioner Completioner, width, maxSuggestions int) Model {
     ti := textinput.New()
     ti.Placeholder = "Type a message… or /command"
     ti.Focus()
+    // Avoid double prompt: we render our own prompt in View
+    ti.Prompt = ""
+    // Disable built-in suggestions to avoid interference with our own
+    ti.ShowSuggestions = false
 
     li := listbox.New(maxSuggestions)
     // Match sample: no visible pointer arrow; we highlight via background
@@ -82,6 +89,7 @@ func New(completioner Completioner, width, maxSuggestions int) Model {
         width:          width,
         maxSuggestions: maxSuggestions,
         completioner:   completioner,
+        prompt:         "> ",
     }
     m.initStyles()
     return m
@@ -91,8 +99,8 @@ func (m *Model) initStyles() {
     // vertical bar style; keep default colors
     m.sideBarStyle = lipgloss.NewStyle()
     // input background with subtle color difference
-    m.inputBgStyle = lipgloss.NewStyle().
-        Background(lipgloss.AdaptiveColor{Light: "#F7F7F7", Dark: "#101010"})
+    bg := lipgloss.AdaptiveColor{Light: "#F7F7F7", Dark: "#101010"}
+    m.inputBgStyle = lipgloss.NewStyle().Background(bg)
     // thin underline style
     m.underlineStyle = lipgloss.NewStyle().
         Foreground(lipgloss.AdaptiveColor{Light: "#D0D0D0", Dark: "#2A2A2A"})
@@ -100,6 +108,21 @@ func (m *Model) initStyles() {
     m.suggestionStyle = lipgloss.NewStyle()
     m.suggestionSelStyle = lipgloss.NewStyle().
         Background(lipgloss.AdaptiveColor{Light: "#EFEFEF", Dark: "#1A1A1A"})
+    
+    // Keep textinput styles neutral (no background); we paint background externally
+    m.input.PromptStyle = lipgloss.NewStyle()
+    m.input.TextStyle = lipgloss.NewStyle()
+    m.input.PlaceholderStyle = lipgloss.NewStyle().
+        Foreground(lipgloss.AdaptiveColor{Light: "#999999", Dark: "#666666"})
+    m.input.CompletionStyle = lipgloss.NewStyle().
+        Foreground(lipgloss.AdaptiveColor{Light: "#AAAAAA", Dark: "#777777"})
+    // Align cursor styling with our background so the cell under cursor doesn't invert
+    m.input.Cursor.Style = lipgloss.NewStyle().
+        Background(bg).
+        Foreground(lipgloss.AdaptiveColor{Light: "#000000", Dark: "#FFFFFF"})
+    m.input.Cursor.TextStyle = lipgloss.NewStyle().
+        Background(bg).
+        Foreground(lipgloss.AdaptiveColor{Light: "#000000", Dark: "#FFFFFF"})
 }
 
 // SetCommands installs a static set of commands and uses a default completioner.
@@ -132,10 +155,34 @@ func (m Model) Init() tea.Cmd { return textinput.Blink }
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
     switch msg := msg.(type) {
     case tea.WindowSizeMsg:
-        m.width = msg.Width
-        // bubble down to list so it can compute truncation
+        // Clamp to minimum reasonable width to avoid negative layout
+        if msg.Width < 10 {
+            m.width = 10
+        } else {
+            m.width = msg.Width
+        }
+
+        // keep textinput width in sync (inner width minus prompt)
+        inner := m.getInnerWidth()
+        if inner < 0 {
+            inner = 0
+        }
+        contentW := inner - lipgloss.Width(m.prompt)
+        if contentW < 0 {
+            contentW = 0
+        }
+        m.input.Width = contentW
+
+        // Update styles that depend on width and ensure backgrounds are consistent
+        m.initStyles()
+
+        // bubble down to list so it can compute truncation based on new width
         newList, cmd := m.list.Update(msg)
-        m.list = newList.(listbox.ListModel)
+        if lm, ok := newList.(listbox.ListModel); ok {
+            m.list = lm
+        }
+
+        // Return model and any command; Bubble Tea will re-render
         return m, cmd
 
     case listbox.SelectedMsg:
@@ -237,7 +284,7 @@ func (m Model) View() string {
         leftTrunc := runewidth.Truncate(left, leftW, "…")
 
         gap := "  "
-        remaining := innerW - runewidth.StringWidth(leftTrunc) - runewidth.StringWidth(gap)
+        remaining := innerW - lipgloss.Width(leftTrunc) - lipgloss.Width(gap)
         if remaining < 0 {
             remaining = 0
         }
@@ -254,21 +301,24 @@ func (m Model) View() string {
     }
 
     // Input row with background
-    prompt := "> "
-    contentW := innerW - runewidth.StringWidth(prompt)
+    prompt := m.prompt
+    contentW := innerW - lipgloss.Width(prompt)
     if contentW < 0 {
         contentW = 0
     }
+    // Render the textinput as-is; its styles are neutral and cursor matches bg
     inputStr := m.input.View()
     inputStr = runewidth.Truncate(inputStr, contentW, "")
-    inputLine := prompt + inputStr + strings.Repeat(" ", contentW-runewidth.StringWidth(inputStr))
+    
+    inputLine := prompt + inputStr + strings.Repeat(" ", contentW-lipgloss.Width(inputStr))
     inputLine = m.inputBgStyle.Width(innerW).Render(inputLine)
     b.WriteString(m.frameLine(inputLine))
     b.WriteString("\n")
 
     // Thin underline (spans inner width)
     underline := strings.Repeat("─", innerW)
-    underline = m.underlineStyle.Render(underline)
+    // Ensure underline occupies the full inner width without wrapping anomalies
+    underline = m.underlineStyle.Width(innerW).Render(underline)
     b.WriteString(m.frameLine(underline))
 
     return b.String()
@@ -287,7 +337,7 @@ func (m Model) frameLine(inner string) string {
     // pad/truncate inner to exact inner width
     innerW := m.getInnerWidth()
     innerTrunc := runewidth.Truncate(inner, innerW, "")
-    pad := innerW - runewidth.StringWidth(innerTrunc)
+    pad := innerW - lipgloss.Width(innerTrunc)
     if pad < 0 {
         pad = 0
     }

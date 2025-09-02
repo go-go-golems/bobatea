@@ -11,6 +11,8 @@ import (
 type model struct {
     repl replinput.Model
     last string
+    width int
+    height int
 }
 
 func newModel() model {
@@ -33,6 +35,14 @@ func (m model) Init() tea.Cmd { return m.repl.Init() }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
     switch msg := msg.(type) {
+    case tea.WindowSizeMsg:
+        m.width = msg.Width
+        m.height = msg.Height
+        // Let the repl handle the resize
+        var cmd tea.Cmd
+        rm, cmd := m.repl.Update(msg)
+        m.repl = rm.(replinput.Model)
+        return m, cmd
     case tea.KeyMsg:
         if msg.Type == tea.KeyCtrlC {
             return m, tea.Quit
@@ -48,10 +58,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) View() string {
+    header := "REPL Input Demo"
+    if m.width > 0 {
+        header += fmt.Sprintf(" (Terminal: %dx%d)", m.width, m.height)
+    }
+    
     if m.last != "" {
         return fmt.Sprintf("Submitted: %s\n\n%s", m.last, m.repl.View())
     }
-    return "REPL Input Demo\n\n" + m.repl.View()
+    return header + "\n\n" + m.repl.View()
 }
 
 func main() {
