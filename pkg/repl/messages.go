@@ -2,9 +2,9 @@ package repl
 
 // EvaluationCompleteMsg is sent when evaluation is complete
 type EvaluationCompleteMsg struct {
-    Input  string
-    Output string
-    Error  error
+	Input  string
+	Output string
+	Error  error
 }
 
 // HistoryNavigationMsg is sent when history navigation occurs
@@ -37,12 +37,6 @@ type QuitMsg struct{}
 
 // SlashCommandMsg is sent when a slash command is executed
 type SlashCommandMsg struct {
-    Command string
-    Args    []string
-}
-
-// New messages for streaming evaluator bridge
-// Note: these are also declared in model.go for internal usage but kept here for completeness.
-type _ReplEventMsg struct { // unused placeholder to avoid breaking external imports
-    _ string
+	Command string
+	Args    []string
 }

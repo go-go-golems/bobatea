@@ -44,6 +44,17 @@ func (e *ExampleEvaluator) Evaluate(ctx context.Context, code string) (string, e
 	return fmt.Sprintf("You typed: %s", code), nil
 }
 
+// EvaluateStream adapts Evaluate to the streaming interface expected by the REPL timeline.
+func (e *ExampleEvaluator) EvaluateStream(ctx context.Context, code string, emit func(Event)) error {
+	out, err := e.Evaluate(ctx, code)
+	if err != nil {
+		emit(Event{Kind: EventResultMarkdown, Props: map[string]any{"markdown": fmt.Sprintf("Error: %v", err)}})
+		return nil
+	}
+	emit(Event{Kind: EventResultMarkdown, Props: map[string]any{"markdown": out}})
+	return nil
+}
+
 // GetPrompt returns the prompt string
 func (e *ExampleEvaluator) GetPrompt() string {
 	return "example> "

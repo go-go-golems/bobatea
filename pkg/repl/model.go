@@ -63,6 +63,8 @@ func NewModel(evaluator Evaluator, config Config, pub message.Publisher) *Model 
 	reg.RegisterModelFactory(renderers.TextFactory{})
     reg.RegisterModelFactory(renderers.NewMarkdownFactory())
 	reg.RegisterModelFactory(renderers.StructuredDataFactory{})
+    reg.RegisterModelFactory(renderers.LogEventFactory{})
+    reg.RegisterModelFactory(renderers.StructuredLogEventFactory{})
 
 	sh := timeline.NewShell(reg)
 
@@ -136,8 +138,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-    case cursor.BlinkMsg:
-            return m, nil
+	case cursor.BlinkMsg:
+		return m, nil
 	default:
 		var cmd tea.Cmd
 		m.textInput, cmd = m.textInput.Update(msg)
@@ -151,16 +153,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *Model) updateInput(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	log.Trace().Interface("k", k).Str("key", k.String()).Msg("updating input")
+	//nolint:exhaustive
 	switch k.Type {
 	case tea.KeyCtrlC:
 		return m, tea.Quit
 	}
 	switch k.String() {
-    case "tab":
-        m.focus = "timeline"
-        m.textInput.Blur()
-        m.sh.SetSelectionVisible(true)
-        return m, nil
+	case "tab":
+		m.focus = "timeline"
+		m.textInput.Blur()
+		m.sh.SetSelectionVisible(true)
+		return m, nil
 	case "enter":
 		input := m.textInput.Value()
 		if strings.TrimSpace(input) == "" {
@@ -192,12 +195,12 @@ func (m *Model) updateInput(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) updateTimeline(k tea.KeyMsg) (tea.Model, tea.Cmd) {
-    switch k.String() {
-    case "tab":
-        m.focus = "input"
-        m.textInput.Focus()
-        m.sh.SetSelectionVisible(false)
-        return m, nil
+	switch k.String() {
+	case "tab":
+		m.focus = "input"
+		m.textInput.Focus()
+		m.sh.SetSelectionVisible(false)
+		return m, nil
 	case "up":
 		m.sh.SelectPrev()
 		return m, nil
@@ -232,12 +235,12 @@ func (m *Model) View() string {
 	// timeline view (viewport-wrapped)
 	b.WriteString(m.sh.View())
 	b.WriteString("\n")
-    // input (dim when in selection mode)
-    inputView := m.textInput.View()
-    if m.focus == "timeline" {
-        inputView = m.styles.HelpText.Render(inputView)
-    }
-    b.WriteString(inputView)
+	// input (dim when in selection mode)
+	inputView := m.textInput.View()
+	if m.focus == "timeline" {
+		inputView = m.styles.HelpText.Render(inputView)
+	}
+	b.WriteString(inputView)
 	b.WriteString("\n")
 	// help
 	help := "TAB: switch focus | Enter: submit | Up/Down: history/selection | c: copy code | y: copy text | Ctrl+C: quit"
@@ -273,21 +276,14 @@ func (m *Model) publishReplEvent(turnID string, e Event) error {
 }
 
 func (m *Model) publishUIEntityCreated(turnID string, id timeline.EntityID, rd timeline.RendererDescriptor, props map[string]any) error {
-    // Envelope must match timeline.RegisterUIForwarder expectations
-    created := timeline.UIEntityCreated{ID: id, Renderer: rd, Props: props, StartedAt: time.Now()}
-    b, _ := json.Marshal(created)
-    env, _ := json.Marshal(struct{
-        Type string `json:"type"`
-        Payload json.RawMessage `json:"payload"`
-    }{Type: "timeline.created", Payload: b})
-    return m.pub.Publish(eventbus.TopicUIEntities, message.NewMessage(watermill.NewUUID(), env))
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
+	// Envelope must match timeline.RegisterUIForwarder expectations
+	created := timeline.UIEntityCreated{ID: id, Renderer: rd, Props: props, StartedAt: time.Now()}
+	b, _ := json.Marshal(created)
+	env, _ := json.Marshal(struct {
+		Type    string          `json:"type"`
+		Payload json.RawMessage `json:"payload"`
+	}{Type: "timeline.created", Payload: b})
+	return m.pub.Publish(eventbus.TopicUIEntities, message.NewMessage(watermill.NewUUID(), env))
 }
 
 func ensureAppendPatch(props map[string]any) map[string]any {
