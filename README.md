@@ -81,6 +81,19 @@ payload, _ := json.Marshal(struct {
 bus.Publisher.Publish(eventbus.TopicReplEvents, message.NewMessage(watermill.NewUUID(), payload))
 ```
 
+### Logging for TUIs
+
+To prevent logs from disrupting the terminal UI, initialize zerolog via `pkg/logutil` and expose CLI flags for level and file:
+
+```go
+ll := flag.String("log-level", "error", "log level: trace, debug, info, warn, error")
+lf := flag.String("log-file", "", "log file path (optional)")
+flag.Parse()
+
+level := parseLevel(*ll)
+if *lf != "" { logutil.InitTUILoggingToFile(level, *lf) } else { logutil.InitTUILoggingToDiscard(level) }
+```
+
 ## Features
 
 - **🔧 Performance Optimized** - Components are optimized for large datasets and complex UIs

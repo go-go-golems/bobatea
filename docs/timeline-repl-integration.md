@@ -29,6 +29,7 @@ This tutorial shows how to add the new timeline-first REPL to an existing Bubble
 - Go 1.21+
 - Familiarity with Bubble Tea
 - A project set up similar to the Bobatea repository
+- Optional: configure logging using zerolog via `bobatea/pkg/logutil`
 
 ## Core concepts (quick recap)
 
@@ -218,6 +219,37 @@ Guidelines:
 - Choose a stable `TurnID` per logical operation to group entities
 - Prefer `EventStdout`/`EventStderr` with `append` for streaming text
 - Use `EventStructuredLog` with `data` for rich inspection; it renders with YAML/JSON renderers
+
+## Logging configuration
+
+When running TUIs, logs should not interfere with stdout. Use the provided helpers to send logs to a file or discard output while preserving levels:
+
+```go
+import (
+    "flag"
+    "github.com/go-go-golems/bobatea/pkg/logutil"
+    "github.com/rs/zerolog"
+)
+
+func parseLevel(s string) zerolog.Level { /* map: trace/debug/info/warn/error */ }
+
+func main() {
+    ll := flag.String("log-level", "error", "log level: trace, debug, info, warn, error")
+    lf := flag.String("log-file", "", "log file path (optional)")
+    flag.Parse()
+
+    level := parseLevel(*ll)
+    if *lf != "" {
+        logutil.InitTUILoggingToFile(level, *lf)
+    } else {
+        logutil.InitTUILoggingToDiscard(level)
+    }
+
+    // ... then run the REPL (helper or manual wiring)
+}
+```
+
+These helpers configure global zerolog state to avoid polluting the terminal UI while still capturing diagnostics when needed.
 
 ## Renderers and expected props
 
