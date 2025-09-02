@@ -10,7 +10,7 @@ This package contains either modified versions of common Bubble Tea bubbles or c
 
 - **[filepicker](pkg/filepicker/)** - A powerful, feature-rich file selection component with multi-selection, file operations, search, and advanced navigation ([Documentation](docs/filepicker.md))
 
-- **[REPL](pkg/repl/)** - A generic, embeddable REPL (Read-Eval-Print Loop) component with pluggable evaluators, theming, and advanced features ([Documentation](docs/repl.md))
+- **[REPL](pkg/repl/)** - A generic, embeddable REPL (Read-Eval-Print Loop) component with pluggable evaluators, theming, and advanced features ([Documentation](docs/repl.md), [Timeline REPL Tutorial](docs/timeline-repl-integration.md))
 
 ### Specialized Components
 
@@ -31,39 +31,54 @@ This package contains either modified versions of common Bubble Tea bubbles or c
 ## Quick Start
 
 ```go
+// Quick run: timeline-first REPL with in-memory bus
 import (
     "github.com/go-go-golems/bobatea/pkg/repl"
-    "github.com/go-go-golems/bobatea/pkg/filepicker"
-    "github.com/go-go-golems/bobatea/pkg/textarea"
-    "github.com/go-go-golems/bobatea/pkg/sparkline"
 )
 
-// Use components in your Bubble Tea application
-func main() {
-    // Create a REPL with custom evaluator
-    evaluator := &MyEvaluator{}
-    config := repl.DefaultConfig()
-    replModel := repl.NewModel(evaluator, config)
-    
-    // Create a filepicker
-    picker := filepicker.New(
-        filepicker.WithStartPath("."),
-        filepicker.WithShowPreview(true),
-    )
-    
-    // Create a sparkline for data visualization
-    sparklineConfig := sparkline.Config{
-        Width:  40,
-        Height: 6,
-        Style:  sparkline.StyleBars,
-        Title:  "CPU Usage",
-    }
-    chart := sparkline.New(sparklineConfig)
-    
-    // Run your application
-    p := tea.NewProgram(replModel)
-    p.Run()
+type MyEvaluator struct{}
+
+func (e *MyEvaluator) EvaluateStream(ctx context.Context, code string, emit func(repl.Event)) error {
+    emit(repl.Event{Kind: repl.EventResultMarkdown, Props: map[string]any{"markdown": "You said: " + code}})
+    return nil
 }
+func (e *MyEvaluator) GetPrompt() string        { return "my> " }
+func (e *MyEvaluator) GetName() string          { return "MyEval" }
+func (e *MyEvaluator) SupportsMultiline() bool  { return false }
+func (e *MyEvaluator) GetFileExtension() string { return ".txt" }
+
+func main() {
+    cfg := repl.DefaultConfig()
+    cfg.Title = "My REPL"
+    if err := repl.RunTimelineRepl(&MyEvaluator{}, cfg); err != nil { panic(err) }
+}
+```
+
+### Integrating via Watermill in a larger app
+
+If you need to embed the REPL model inside a broader Bubble Tea app and publish events from other subsystems:
+
+1) Create a shared in-memory bus and register the REPL transformer and UI forwarder.
+2) Construct the REPL model with `bus.Publisher`.
+3) Anywhere in your app, publish semantic REPL events to `repl.events` to enrich the timeline.
+
+```go
+bus, _ := eventbus.NewInMemoryBus()
+repl.RegisterReplToTimelineTransformer(bus)
+
+eval := &MyEvaluator{}
+cfg := repl.DefaultConfig()
+m := repl.NewModel(eval, cfg, bus.Publisher)
+p := tea.NewProgram(m)
+timeline.RegisterUIForwarder(bus, p)
+
+// From elsewhere in your app (e.g., a worker), emit an event:
+payload, _ := json.Marshal(struct {
+    TurnID string    `json:"turn_id"`
+    Event  repl.Event `json:"event"`
+    Time   time.Time `json:"time"`
+}{TurnID: "ext-1", Event: repl.Event{Kind: repl.EventLog, Props: map[string]any{"level": "info", "message": "external note"}}, Time: time.Now()})
+bus.Publisher.Publish(eventbus.TopicReplEvents, message.NewMessage(watermill.NewUUID(), payload))
 ```
 
 ## Features
