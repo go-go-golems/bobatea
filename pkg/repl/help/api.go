@@ -50,3 +50,26 @@ type Backend interface {
 type RelatedBackend interface {
 	Related(ctx context.Context, section *Section) (map[string][]*Section, error)
 }
+
+// BackendRegistration describes a backend with presentation metadata and optional slug prefix.
+type BackendRegistration struct {
+	ID          string
+	Title       string
+	Description string
+	Backend     Backend
+	SlugPrefix  string
+}
+
+// TopLevelGroup bundles a backend's top-level page with its identity for grouped rendering.
+type TopLevelGroup struct {
+	BackendID    string
+	BackendTitle string
+	BackendDesc  string
+	Page         *TopLevelPage
+}
+
+// ScopedSection is a section annotated with its backend source for grouped results.
+type ScopedSection struct {
+	BackendID string
+	Section   *Section
+}

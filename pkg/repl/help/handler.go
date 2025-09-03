@@ -8,13 +8,13 @@ import (
 
 // Config configures the help handler.
 type Config struct {
-	Backend         Backend
+	Registrations   []BackendRegistration
 	ShowRelated     bool
 	Renderer        Renderer
 	ContextProvider func() (string, []string)
 }
 
-// HandleHelpCommand parses the input (expected to start with /help), queries the backend,
+// HandleHelpCommand parses the input (expected to start with /help), queries backends,
 // and renders markdown output according to the renderer.
 func HandleHelpCommand(ctx context.Context, cfg Config, input string) string {
 	if cfg.Renderer == nil {
@@ -26,51 +26,120 @@ func HandleHelpCommand(ctx context.Context, cfg Config, input string) string {
 		return fmt.Sprintf("Error: %v", err)
 	}
 
+	renderTop := func() string {
+		var groups []TopLevelGroup
+		for _, r := range cfg.Registrations {
+			page, err := r.Backend.TopLevel(ctx)
+			if err != nil {
+				continue
+			}
+			groups = append(groups, TopLevelGroup{BackendID: r.ID, BackendTitle: r.Title, BackendDesc: r.Description, Page: page})
+		}
+		if gr, ok := cfg.Renderer.(GroupedRenderer); ok {
+			return gr.RenderTopLevelGrouped(groups)
+		}
+		flat := &TopLevelPage{}
+		for _, g := range groups {
+			if g.Page == nil {
+				continue
+			}
+			flat.AllGeneralTopics = append(flat.AllGeneralTopics, g.Page.AllGeneralTopics...)
+			flat.AllExamples = append(flat.AllExamples, g.Page.AllExamples...)
+			flat.AllApplications = append(flat.AllApplications, g.Page.AllApplications...)
+			flat.AllTutorials = append(flat.AllTutorials, g.Page.AllTutorials...)
+		}
+		return cfg.Renderer.RenderTopLevel(flat)
+	}
+
 	// Default: show top-level if no specific request
 	if args.ShowAll || (strings.TrimSpace(args.Slug) == "" && strings.TrimSpace(args.Query) == "" &&
 		len(args.Types) == 0 && len(args.Topics) == 0 && len(args.Flags) == 0 && len(args.Commands) == 0 && strings.TrimSpace(args.Search) == "") {
-		page, err := cfg.Backend.TopLevel(ctx)
-		if err != nil {
-			return fmt.Sprintf("Error: %v", err)
-		}
-		return cfg.Renderer.RenderTopLevel(page)
+		return renderTop()
 	}
 
-	// Slug lookup has priority if provided explicitly
-	if strings.TrimSpace(args.Slug) != "" {
-		sec, err := cfg.Backend.GetBySlug(ctx, args.Slug)
-		if err != nil || sec == nil {
-			// Suggest using search
-			return fmt.Sprintf("Help topic '%s' not found. Try /help --search \"%s\" or /help --query \"%s\".", args.Slug, args.Slug, args.Slug)
+	// Slug lookup with id:slug, prefix, then first match
+	if slug := strings.TrimSpace(args.Slug); slug != "" {
+		// id:slug routing
+		if i := strings.IndexByte(slug, ':'); i > 0 {
+			id := slug[:i]
+			inner := slug[i+1:]
+			for _, r := range cfg.Registrations {
+				if r.ID == id {
+					sec, err := r.Backend.GetBySlug(ctx, inner)
+					if err != nil || sec == nil {
+						return fmt.Sprintf("Help topic '%s' not found in backend '%s'.", inner, id)
+					}
+					var related map[string][]*Section
+					if cfg.ShowRelated {
+						if rb, ok := r.Backend.(RelatedBackend); ok {
+							if m, e := rb.Related(ctx, sec); e == nil {
+								related = m
+							}
+						}
+					}
+					return cfg.Renderer.RenderSection(sec, related)
+				}
+			}
+			return fmt.Sprintf("Unknown backend '%s' in slug.", id)
 		}
-
-		var related map[string][]*Section
-		if cfg.ShowRelated {
-			if rb, ok := cfg.Backend.(RelatedBackend); ok {
-				if m, rerr := rb.Related(ctx, sec); rerr == nil {
-					related = m
+		// slug prefix routing
+		for _, r := range cfg.Registrations {
+			if strings.TrimSpace(r.SlugPrefix) != "" && strings.HasPrefix(slug, r.SlugPrefix) {
+				if sec, err := r.Backend.GetBySlug(ctx, slug); err == nil && sec != nil {
+					var related map[string][]*Section
+					if cfg.ShowRelated {
+						if rb, ok := r.Backend.(RelatedBackend); ok {
+							if m, e := rb.Related(ctx, sec); e == nil {
+								related = m
+							}
+						}
+					}
+					return cfg.Renderer.RenderSection(sec, related)
 				}
 			}
 		}
-		return cfg.Renderer.RenderSection(sec, related)
+		// first backend that matches
+		for _, r := range cfg.Registrations {
+			if sec, err := r.Backend.GetBySlug(ctx, slug); err == nil && sec != nil {
+				var related map[string][]*Section
+				if cfg.ShowRelated {
+					if rb, ok := r.Backend.(RelatedBackend); ok {
+						if m, e := rb.Related(ctx, sec); e == nil {
+							related = m
+						}
+					}
+				}
+				return cfg.Renderer.RenderSection(sec, related)
+			}
+		}
+		return fmt.Sprintf("Help topic '%s' not found. Try /help --search \"%s\" or /help --query \"%s\".", slug, slug, slug)
 	}
 
-	// Build DSL from convenience flags / search
+	// Build DSL and fan-out query
 	if dsl, ok := BuildDSL(args); ok {
-		results, supported, err := cfg.Backend.Query(ctx, dsl)
-		if err != nil {
-			return fmt.Sprintf("Invalid query: %v", err)
+		var scoped []ScopedSection
+		for _, r := range cfg.Registrations {
+			res, ok, err := r.Backend.Query(ctx, dsl)
+			if err != nil {
+				return fmt.Sprintf("Invalid query: %v", err)
+			}
+			if !ok {
+				continue
+			}
+			for _, s := range res {
+				scoped = append(scoped, ScopedSection{BackendID: r.ID, Section: s})
+			}
 		}
-		if !supported {
-			return "This help backend does not support queries. Try a slug: /help <slug> or /help --all"
+		if gr, ok := cfg.Renderer.(GroupedRenderer); ok {
+			return gr.RenderQueryResultsGrouped(scoped)
 		}
-		return cfg.Renderer.RenderQueryResults(results)
+		flat := make([]*Section, 0, len(scoped))
+		for _, ss := range scoped {
+			flat = append(flat, ss.Section)
+		}
+		return cfg.Renderer.RenderQueryResults(flat)
 	}
 
-	// Fallback: if nothing matched above, return top-level
-	page, err := cfg.Backend.TopLevel(ctx)
-	if err != nil {
-		return fmt.Sprintf("Error: %v", err)
-	}
-	return cfg.Renderer.RenderTopLevel(page)
+	// Fallback
+	return renderTop()
 }

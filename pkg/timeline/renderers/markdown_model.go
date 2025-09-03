@@ -23,6 +23,7 @@ type MarkdownModel struct {
 	streaming bool
 	md        string
 	renderer  *glamour.TermRenderer
+	style     string
 	// cache rendered output by width and content
 	cachedRendered string
 	cachedWidth    int
@@ -91,6 +92,25 @@ func (m *MarkdownModel) View() string {
 		contentWidth = 0
 	}
 
+	// Ensure renderer is prepared for this width without re-running style checks
+	if m.renderer == nil || m.cachedWidth != contentWidth {
+		// fallback wrap width if zero
+		wrap := contentWidth
+		if wrap <= 0 {
+			wrap = 80
+		}
+		r, err := glamour.NewTermRenderer(
+			glamour.WithStandardStyle(m.style),
+			glamour.WithWordWrap(wrap),
+		)
+		if err != nil {
+			log.Error().Err(err).Str("component", "markdown_model").Msg("failed to create glamour renderer")
+			m.renderer = nil
+		} else {
+			m.renderer = r
+		}
+	}
+
 	// Render markdown with cache
 	var body string
 	if m.cachedRendered != "" && m.cachedWidth == contentWidth && m.cachedMD == m.md {
@@ -117,17 +137,17 @@ func (m *MarkdownModel) View() string {
 	return sty.Width(m.width - sty.GetHorizontalPadding()).Render(body)
 }
 
-type MarkdownFactory struct{ renderer *glamour.TermRenderer }
+type MarkdownFactory struct{ style string }
 
 func (MarkdownFactory) Key() string  { return "renderer.markdown.v1" }
 func (MarkdownFactory) Kind() string { return "markdown" }
 func (f MarkdownFactory) NewEntityModel(initialProps map[string]any) timeline.EntityModel {
-	m := &MarkdownModel{renderer: f.renderer}
+	m := &MarkdownModel{style: f.style}
 	m.onProps(initialProps)
 	return m
 }
 
-// NewMarkdownFactory constructs a factory with a shared glamour renderer.
+// NewMarkdownFactory constructs a factory with a shared glamour style.
 func NewMarkdownFactory() *MarkdownFactory {
 	var style string
 	if !term.IsTerminal(int(os.Stdout.Fd())) {
@@ -137,15 +157,7 @@ func NewMarkdownFactory() *MarkdownFactory {
 	} else {
 		style = "light"
 	}
-	r, err := glamour.NewTermRenderer(
-		glamour.WithStandardStyle(style),
-		glamour.WithWordWrap(80),
-	)
-	if err != nil {
-		log.Error().Err(err).Str("component", "markdown_factory").Msg("failed to create glamour renderer")
-		r = nil
-	}
-	return &MarkdownFactory{renderer: r}
+	return &MarkdownFactory{style: style}
 }
 
 var mdCodeBlockRe = regexp.MustCompile("(?s)```[a-zA-Z0-9_-]*\n(.*?)\n```")
