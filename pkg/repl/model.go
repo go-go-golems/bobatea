@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/go-go-golems/bobatea/pkg/eventbus"
+	"github.com/go-go-golems/bobatea/pkg/repl/slash"
 	"github.com/go-go-golems/bobatea/pkg/timeline"
 	renderers "github.com/go-go-golems/bobatea/pkg/timeline/renderers"
 	"github.com/rs/zerolog/log"
@@ -48,6 +49,10 @@ type Model struct {
 
 	// helper toggle
 	showHelper bool
+
+	// slash commands
+	slashReg        slash.Registry
+	slashDispatcher slash.Dispatcher
 }
 
 // NewModel constructs a new REPL shell with timeline transcript.
@@ -71,7 +76,7 @@ func NewModel(evaluator Evaluator, config Config, pub message.Publisher) *Model 
 
 	sh := timeline.NewShell(reg)
 
-	return &Model{
+	m := &Model{
 		evaluator: evaluator,
 		config:    config,
 		styles:    DefaultStyles(),
@@ -85,6 +90,10 @@ func NewModel(evaluator Evaluator, config Config, pub message.Publisher) *Model 
 		focus:     "input",
 		pub:       pub,
 	}
+	// initialize slash registry/dispatcher by default
+	m.slashReg = slash.NewRegistry()
+	m.slashDispatcher = slash.NewDispatcher(m.slashReg)
+	return m
 }
 
 // Init subscribes to evaluator events.
@@ -163,10 +172,42 @@ func (m *Model) updateInput(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	switch k.String() {
 	case "tab":
-		m.focus = "timeline"
+		// If input starts with '/', use Tab for completion
+		if strings.HasPrefix(m.textInput.Value(), "/") {
+			// compute suggestions via slash dispatcher
+			caret := len(m.textInput.Value())
+			suggestions, st, _ := m.slashDispatcher.Complete(context.Background(), m.textInput.Value(), caret)
+			if len(suggestions) > 0 {
+				sug := suggestions[0]
+				before := m.textInput.Value()[:st.TokenStart]
+				after := m.textInput.Value()[st.TokenEnd:]
+				ins := sug.Value
+				if st.Phase == slash.PhaseName && st.TokenStart == 0 && !strings.HasPrefix(ins, "/") {
+					ins = "/" + ins
+				}
+				m.textInput.SetValue(before + ins + after)
+				m.textInput.SetCursor(len(before) + len(ins))
+				return m, nil
+			}
+			return m, nil
+		}
+		// Otherwise, keep legacy focus switch if configured to Tab
+		if m.config.FocusToggleKey == "tab" {
+			m.focus = "timeline"
+			m.textInput.Blur()
+			m.sh.SetSelectionVisible(true)
+			return m, nil
+		}
 		m.textInput.Blur()
 		m.sh.SetSelectionVisible(true)
 		return m, nil
+	case "esc":
+		if m.config.FocusToggleKey == "esc" {
+			m.focus = "timeline"
+			m.textInput.Blur()
+			m.sh.SetSelectionVisible(true)
+			return m, nil
+		}
 	case "ctrl+h":
 		m.showHelper = !m.showHelper
 		return m, nil
@@ -203,10 +244,19 @@ func (m *Model) updateInput(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *Model) updateTimeline(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch k.String() {
 	case "tab":
-		m.focus = "input"
-		m.textInput.Focus()
-		m.sh.SetSelectionVisible(false)
-		return m, nil
+		if m.config.FocusToggleKey == "tab" {
+			m.focus = "input"
+			m.textInput.Focus()
+			m.sh.SetSelectionVisible(false)
+			return m, nil
+		}
+	case "esc":
+		if m.config.FocusToggleKey == "esc" {
+			m.focus = "input"
+			m.textInput.Focus()
+			m.sh.SetSelectionVisible(false)
+			return m, nil
+		}
 	case "up":
 		m.sh.SelectPrev()
 		return m, nil
@@ -268,6 +318,18 @@ func (m *Model) submit(code string) tea.Cmd {
 		// Create input entity directly on UI bus to guarantee ordering and avoid extra newlines
 		_ = m.publishUIEntityCreated(turnID, timeline.EntityID{TurnID: turnID, LocalID: "input", Kind: "text"}, timeline.RendererDescriptor{Kind: "text"}, map[string]any{"text": code})
 		// Optionally still publish the semantic input event to repl.events? We skip to avoid duplicate UI entities.
+		// Try slash dispatcher first for /commands
+		if strings.HasPrefix(strings.TrimSpace(code), "/") {
+			handled := m.slashDispatcher.TryHandle(context.Background(), code, func(kind string, props map[string]any) {
+				e := Event{Kind: EventKind(kind), Props: props}
+				log.Trace().Str("turn_id", turnID).Interface("event", e).Msg("publishing repl event")
+				_ = m.publishReplEvent(turnID, e)
+			})
+			if handled {
+				return nil
+			}
+		}
+		// Fallback to evaluator for regular code
 		_ = m.evaluator.EvaluateStream(context.Background(), code, func(e Event) {
 			log.Trace().Str("turn_id", turnID).Interface("event", e).Msg("publishing repl event")
 			_ = m.publishReplEvent(turnID, e)
@@ -328,3 +390,6 @@ func newTurnID(seq int) string {
 }
 
 func timeNow() time.Time { return time.Now() }
+
+// SlashRegistry exposes the slash command registry for integration code.
+func (m *Model) SlashRegistry() slash.Registry { return m.slashReg }

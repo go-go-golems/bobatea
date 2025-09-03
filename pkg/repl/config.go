@@ -13,6 +13,9 @@ type Config struct {
 
 	// Optional helper content rendered above the input when toggled
 	HelperMarkdown string
+
+	// Keybinding to toggle focus between input and timeline (default: "tab")
+	FocusToggleKey string
 }
 
 // DefaultConfig returns a sensible default configuration.
@@ -26,5 +29,6 @@ func DefaultConfig() Config {
 		EnableExternalEditor: false,
 		EnableHistory:        true,
 		MaxHistorySize:       1000,
+		FocusToggleKey:       "tab",
 	}
 }
