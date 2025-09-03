@@ -45,6 +45,9 @@ type Model struct {
 	// refresh scheduling
 	refreshPending   bool
 	refreshScheduled bool
+
+	// helper toggle
+	showHelper bool
 }
 
 // NewModel constructs a new REPL shell with timeline transcript.
@@ -164,6 +167,9 @@ func (m *Model) updateInput(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.textInput.Blur()
 		m.sh.SetSelectionVisible(true)
 		return m, nil
+	case "ctrl+h":
+		m.showHelper = !m.showHelper
+		return m, nil
 	case "enter":
 		input := m.textInput.Value()
 		if strings.TrimSpace(input) == "" {
@@ -235,6 +241,11 @@ func (m *Model) View() string {
 	// timeline view (viewport-wrapped)
 	b.WriteString(m.sh.View())
 	b.WriteString("\n")
+	// optional helper
+	if m.showHelper && strings.TrimSpace(m.config.HelperMarkdown) != "" {
+		b.WriteString(m.config.HelperMarkdown)
+		b.WriteString("\n\n")
+	}
 	// input (dim when in selection mode)
 	inputView := m.textInput.View()
 	if m.focus == "timeline" {
@@ -243,7 +254,7 @@ func (m *Model) View() string {
 	b.WriteString(inputView)
 	b.WriteString("\n")
 	// help
-	help := "TAB: switch focus | Enter: submit | Up/Down: history/selection | c: copy code | y: copy text | Ctrl+C: quit"
+	help := "TAB: switch focus | Ctrl+H: toggle helper | Enter: submit | Up/Down: history/selection | c: copy code | y: copy text | Ctrl+C: quit"
 	b.WriteString(m.styles.HelpText.Render(help))
 	b.WriteString("\n")
 	return b.String()

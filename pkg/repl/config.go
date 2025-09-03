@@ -10,6 +10,9 @@ type Config struct {
 	EnableExternalEditor bool
 	EnableHistory        bool
 	MaxHistorySize       int
+
+	// Optional helper content rendered above the input when toggled
+	HelperMarkdown string
 }
 
 // DefaultConfig returns a sensible default configuration.
