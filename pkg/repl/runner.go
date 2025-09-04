@@ -18,7 +18,7 @@ func NewTimelineRepl(evaluator Evaluator, config Config) (*eventbus.Bus, *Model,
 	}
 	RegisterReplToTimelineTransformer(bus)
 	model := NewModel(evaluator, config, bus.Publisher)
-	p := tea.NewProgram(model, tea.WithAltScreen())
+	p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	timeline.RegisterUIForwarder(bus, p)
 	return bus, model, p, nil
 }

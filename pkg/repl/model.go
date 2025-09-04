@@ -118,7 +118,47 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.textInput, cmd = m.textInput.Update(msg)
 		return m, cmd
 
+	case tea.MouseMsg:
+		// Scroll wheel always moves the timeline viewport by one line, in any mode
+		if v.Action == tea.MouseActionPress && (v.Button == tea.MouseButtonWheelUp || v.Button == tea.MouseButtonWheelLeft) {
+			m.sh.ScrollUp(1)
+			return m, nil
+		}
+		if v.Action == tea.MouseActionPress && (v.Button == tea.MouseButtonWheelDown || v.Button == tea.MouseButtonWheelRight) {
+			m.sh.ScrollDown(1)
+			return m, nil
+		}
+		return m, nil
+
 	case tea.KeyMsg:
+		// Shift+Up/Down scroll the viewport by one line regardless of focus
+		s := v.String()
+		if s == "shift+up" {
+			m.sh.ScrollUp(1)
+			return m, nil
+		}
+		if s == "shift+down" {
+			m.sh.ScrollDown(1)
+			return m, nil
+		}
+		// Page up/down moves by 10 lines regardless of focus
+		if s == "pgup" {
+			m.sh.ScrollUp(10)
+			return m, nil
+		}
+		if s == "pgdown" {
+			m.sh.ScrollDown(10)
+			return m, nil
+		}
+		if s == "home" {
+			m.sh.GotoTop()
+			return m, nil
+		}
+		if s == "end" {
+			m.sh.GotoBottom()
+			return m, nil
+		}
+		
 		switch m.focus {
 		case "input":
 			return m.updateInput(v)
@@ -304,7 +344,7 @@ func (m *Model) View() string {
 	b.WriteString(inputView)
 	b.WriteString("\n")
 	// help
-	help := "TAB: switch focus | Ctrl+H: toggle helper | Enter: submit | Up/Down: history/selection | c: copy code | y: copy text | Ctrl+C: quit"
+	help := "TAB: switch focus | Ctrl+H: toggle helper | Enter: submit | Up/Down: history/selection | Shift+Up/Down/PgUp/PgDn or Wheel: scroll timeline | c: copy code | y: copy text | Ctrl+C: quit"
 	b.WriteString(m.styles.HelpText.Render(help))
 	b.WriteString("\n")
 	return b.String()
