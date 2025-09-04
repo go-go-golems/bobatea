@@ -81,6 +81,9 @@ func (s *Shell) RefreshView(goToBottom bool) {
 // GotoBottom forces the viewport to scroll to the bottom.
 func (s *Shell) GotoBottom() { s.viewport.GotoBottom() }
 
+// GotoTop forces the viewport to scroll to the top.
+func (s *Shell) GotoTop() { s.viewport.GotoTop() }
+
 // ScrollDown scrolls the viewport by n lines.
 func (s *Shell) ScrollDown(n int) {
 	before := s.viewport.YOffset
