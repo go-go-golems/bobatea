@@ -5,6 +5,7 @@ go 1.24.3
 toolchain go1.24.4
 
 require (
+	github.com/ThreeDotsLabs/watermill v1.4.6
 	github.com/atotto/clipboard v0.1.4
 	github.com/charmbracelet/bubbles v0.21.0
 	github.com/charmbracelet/bubbletea v1.3.6
@@ -15,7 +16,7 @@ require (
 	github.com/go-go-golems/geppetto v0.4.55
 	github.com/go-go-golems/go-go-goja v0.0.4
 	github.com/google/uuid v1.6.0
-	github.com/lucasb-eyer/go-colorful v1.2.0
+	github.com/lucasb-eyer/go-colorful v1.3.0
 	github.com/mattn/go-runewidth v0.0.16
 	github.com/muesli/ansi v0.0.0-20230316100256-276c6243b2f6
 	github.com/muesli/reflow v0.3.0
@@ -29,7 +30,6 @@ require (
 )
 
 require (
-	github.com/ThreeDotsLabs/watermill v1.4.6 // indirect
 	github.com/alecthomas/chroma/v2 v2.16.0 // indirect
 	github.com/aymerick/douceur v0.2.0 // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
