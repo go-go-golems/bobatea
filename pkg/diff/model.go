@@ -1,7 +1,7 @@
 package diff
 
 import (
-	"fmt"
+    "fmt"
  	"sort"
  	"strings"
 
@@ -66,12 +66,7 @@ func NewModelWith(provider DataProvider, config Config, options ...Option) Model
  		wrapped[i] = itemAdapter{item: items[i]}
  	}
 
- 	l := list.New(wrapped, list.NewDefaultDelegate(), 0, 0)
- 	l.Title = "Items"
- 	l.SetShowHelp(false)
- 	l.SetFilteringEnabled(false)
- 	l.SetShowPagination(false)
- 	l.DisableQuitKeybindings()
+    l := newItemList(items, styles)
 
  	input := textinput.New()
  	input.Placeholder = "Search"
@@ -134,6 +129,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
  			m.showSearch = true
  			m.focus = focusSearch
  			m.searchInput.Focus()
+			// Recompute layout to account for search widget height
+			m.computeLayout()
+			m.applyContentSizes()
  		case "esc":
  			if m.focus == focusSearch {
  				m.focus = focusList
@@ -141,6 +139,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
  				m.searchQuery = ""
  				m.visibleItems = filterItems(m.items, m.searchQuery)
  				m.resetListItems()
+				// Recompute layout after hiding search
+				m.computeLayout()
+				m.applyContentSizes()
  			}
  		case "r":
  			m.redacted = !m.redacted
@@ -289,17 +290,12 @@ func (m *Model) renderDetail() string {
  	if m.focus == focusDetail {
  		style = m.styles.DetailFocused
  	}
-	content := m.detail.View()
+    content := m.detail.View()
 	return style.Width(m.rightWidth).Height(m.bodyHeight).Render(content)
 }
 
 func (m *Model) resetListItems() {
- 	wrapped := make([]list.Item, len(m.visibleItems))
- 	for i := range m.visibleItems {
- 		wrapped[i] = itemAdapter{item: m.visibleItems[i]}
- 	}
- 	m.list.SetItems(wrapped)
- 	m.list.Select(0)
+    setListItems(&m.list, m.visibleItems)
 }
 
 func (m *Model) updateDetailContent() {
@@ -384,24 +380,6 @@ func (m *Model) renderFooter() string {
 	return lipgloss.NewStyle().Faint(true).Render(help)
 }
 
-// itemAdapter adapts DiffItem to bubbles/list.Item
-type itemAdapter struct{ item DiffItem }
-
-func (i itemAdapter) Title() string { return i.item.Name() }
-func (i itemAdapter) Description() string {
- 	// Optional: basic counts of changes
- 	total := 0
- 	for _, c := range i.item.Categories() {
- 		if c == nil {
- 			continue
- 		}
- 		total += len(c.Changes())
- 	}
- 	if total == 0 {
- 		return ""
- 	}
- 	return fmt.Sprintf("%d changes", total)
-}
-func (i itemAdapter) FilterValue() string { return i.item.Name() }
+// (moved to list.go)
 
 

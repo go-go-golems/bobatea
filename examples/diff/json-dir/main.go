@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
     "fmt"
+    "encoding/json"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/go-go-golems/bobatea/examples/diff/internal/xdiff"
@@ -106,12 +107,12 @@ func ensureSampleJSONDir(beforeDir, afterDir string) {
     if _, err := os.Stat(afterDir); os.IsNotExist(err) {
         _ = os.MkdirAll(afterDir, 0o755)
     }
-    // Only create files if directory is empty
-    createIfMissing(filepath.Join(beforeDir, "app.json"), `{"name":"svc","replicas":1,"env":{"LOG_LEVEL":"info"}}\n`)
-    createIfMissing(filepath.Join(afterDir, "app.json"), `{"name":"svc","replicas":2,"env":{"LOG_LEVEL":"debug"}}\n`)
+    // Only create or repair files if missing/invalid
+    writeValidJSON(filepath.Join(beforeDir, "app.json"), map[string]any{"name":"svc","replicas":1,"env":map[string]any{"LOG_LEVEL":"info"}})
+    writeValidJSON(filepath.Join(afterDir, "app.json"), map[string]any{"name":"svc","replicas":2,"env":map[string]any{"LOG_LEVEL":"debug"}})
     // Add a second sample file
-    createIfMissing(filepath.Join(beforeDir, "db.json"), `{"host":"db","port":5432}`)
-    createIfMissing(filepath.Join(afterDir, "db.json"), `{"host":"db","port":5432,"pool":{"size":10}}`)
+    writeValidJSON(filepath.Join(beforeDir, "db.json"), map[string]any{"host":"db","port":5432})
+    writeValidJSON(filepath.Join(afterDir, "db.json"), map[string]any{"host":"db","port":5432,"pool":map[string]any{"size":10}})
 }
 
 func createIfMissing(path, content string) {
@@ -119,6 +120,21 @@ func createIfMissing(path, content string) {
         return
     }
     if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+        _, _ = fmt.Fprintf(os.Stderr, "failed to write %s: %v\n", path, err)
+    }
+}
+
+func writeValidJSON(path string, obj any) {
+    // if file exists and valid JSON, leave it
+    if b, err := os.ReadFile(path); err == nil {
+        var tmp any
+        if json.Unmarshal(b, &tmp) == nil {
+            return
+        }
+    }
+    b, _ := json.Marshal(obj)
+    b = append(b, '\n')
+    if err := os.WriteFile(path, b, 0o644); err != nil {
         _, _ = fmt.Fprintf(os.Stderr, "failed to write %s: %v\n", path, err)
     }
 }

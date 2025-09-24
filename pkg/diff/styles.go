@@ -17,6 +17,11 @@ type Styles struct {
 	AddedLine        lipgloss.Style
 	UpdatedLine      lipgloss.Style
 	SensitiveValue   lipgloss.Style
+    BadgeAdded       lipgloss.Style
+    BadgeRemoved     lipgloss.Style
+    BadgeUpdated     lipgloss.Style
+    FilterOn         lipgloss.Style
+    FilterOff        lipgloss.Style
 }
 
 func defaultStyles() Styles {
@@ -53,6 +58,11 @@ func defaultStyles() Styles {
  		AddedLine:      lipgloss.NewStyle().Foreground(lipgloss.Color("#10B981")),
  		UpdatedLine:    lipgloss.NewStyle().Foreground(lipgloss.Color("#F59E0B")),
  		SensitiveValue: lipgloss.NewStyle().Faint(true),
+        BadgeAdded:     lipgloss.NewStyle().Foreground(lipgloss.Color("#10B981")).Bold(true),
+        BadgeRemoved:   lipgloss.NewStyle().Foreground(lipgloss.Color("#EF4444")).Bold(true),
+        BadgeUpdated:   lipgloss.NewStyle().Foreground(lipgloss.Color("#F59E0B")).Bold(true),
+        FilterOn:       lipgloss.NewStyle().Bold(true),
+        FilterOff:      lipgloss.NewStyle().Faint(true),
  	}
 }
 

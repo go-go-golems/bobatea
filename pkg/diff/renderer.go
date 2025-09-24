@@ -2,6 +2,7 @@ package diff
 
 import (
     "fmt"
+    "strconv"
     "strings"
 
     "github.com/charmbracelet/lipgloss"
@@ -13,7 +14,13 @@ func renderItemDetail(item DiffItem, redacted bool, styles Styles, searchQuery s
 		return ""
 	}
 
-	header := styles.Title.Render(item.Name())
+    a, r, u := countChanges(item)
+    badges := lipgloss.JoinHorizontal(lipgloss.Left,
+        styles.BadgeAdded.Render("+"+strconv.Itoa(a)), " ",
+        styles.BadgeRemoved.Render("-"+strconv.Itoa(r)), " ",
+        styles.BadgeUpdated.Render("~"+strconv.Itoa(u)),
+    )
+    header := lipgloss.JoinHorizontal(lipgloss.Left, styles.Title.Render(item.Name()), "  ", badges)
  	var sections []string
 
     for _, cat := range item.Categories() {
@@ -90,9 +97,16 @@ func renderItemDetail(item DiffItem, redacted bool, styles Styles, searchQuery s
  		sections = append(sections, section)
  	}
 
- 	return lipgloss.JoinVertical(
+    // Optional filter line
+    filterLine := ""
+    if filtersOn {
+        filterLine = renderFilterLine(statusFilter, styles)
+    }
+
+    return lipgloss.JoinVertical(
  		lipgloss.Left,
- 		header,
+        header,
+        filterLine,
  		strings.Join(sections, "\n\n"),
  	)
 }
@@ -105,6 +119,38 @@ func valueToString(v any, censored bool, styles Styles) string {
  		return styles.SensitiveValue.Render("[redacted]")
  	}
  	return fmt.Sprint(v)
+}
+
+// countChanges returns (added, removed, updated) counts
+func countChanges(item DiffItem) (int, int, int) {
+    var a, r, u int
+    for _, cat := range item.Categories() {
+        if cat == nil { continue }
+        for _, ch := range cat.Changes() {
+            if ch == nil { continue }
+            switch ch.Status() {
+            case ChangeStatusAdded:
+                a++
+            case ChangeStatusRemoved:
+                r++
+            default:
+                u++
+            }
+        }
+    }
+    return a, r, u
+}
+
+func renderFilterLine(f StatusFilter, styles Styles) string {
+    badge := func(label string, on bool, stOn, stOff lipgloss.Style) string {
+        if on { return stOn.Render(label+" ON") }
+        return stOff.Render(label+" OFF")
+    }
+    return lipgloss.JoinHorizontal(lipgloss.Left,
+        badge("+", f.ShowAdded, styles.BadgeAdded, styles.FilterOff), "   ",
+        badge("-", f.ShowRemoved, styles.BadgeRemoved, styles.FilterOff), "   ",
+        badge("~", f.ShowUpdated, styles.BadgeUpdated, styles.FilterOff),
+    )
 }
 
 // itemMatchesQuery returns true if the item matches the lowercased query.

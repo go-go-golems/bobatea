@@ -1,1 +1,1 @@
-{"name":"svc","replicas":2,"env":{"LOG_LEVEL":"debug"}}\n
+{"env":{"LOG_LEVEL":"debug"},"name":"svc","replicas":2}
