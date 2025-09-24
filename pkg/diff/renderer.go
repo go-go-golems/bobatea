@@ -37,8 +37,6 @@ func renderItemDetail(item DiffItem, redacted bool, styles Styles, searchQuery s
 			}
 
 			path := ch.Path()
-			before := valueToString(ch.Before(), redacted && ch.Sensitive(), styles)
-			after := valueToString(ch.After(), redacted && ch.Sensitive(), styles)
 
 			// Status filtering
 			if filtersOn {
@@ -67,18 +65,7 @@ func renderItemDetail(item DiffItem, redacted bool, styles Styles, searchQuery s
 				}
 			}
 
-			var left, right string
-			switch ch.Status() {
-			case ChangeStatusAdded:
-				left = ""
-				right = styles.AddedLine.Render(fmt.Sprintf("+ %s", after))
-			case ChangeStatusRemoved:
-				left = styles.RemovedLine.Render(fmt.Sprintf("- %s", before))
-				right = ""
-			case ChangeStatusUpdated:
-				left = styles.RemovedLine.Render(fmt.Sprintf("- %s", before))
-				right = styles.AddedLine.Render(fmt.Sprintf("+ %s", after))
-			}
+			left, right := renderChangeLines(ch, redacted, styles)
 
 			var pathLine string
 			if path != "" {
@@ -126,15 +113,6 @@ func renderItemDetail(item DiffItem, redacted bool, styles Styles, searchQuery s
 	)
 }
 
-func valueToString(v any, censored bool, styles Styles) string {
-	if v == nil {
-		return ""
-	}
-	if censored {
-		return styles.SensitiveValue.Render("[redacted]")
-	}
-	return fmt.Sprint(v)
-}
 
 // countChanges returns (added, removed, updated) counts
 // (removed) countChanges superseded by countChangesFiltered

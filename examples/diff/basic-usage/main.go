@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"log"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -46,6 +47,12 @@ func (c staticChange) After() any                { return c.afterVal }
 func (c staticChange) Sensitive() bool           { return c.sensitive }
 
 func main() {
+	var (
+		noSearch  = flag.Bool("no-search", false, "disable search functionality")
+		noFilters = flag.Bool("no-filters", false, "disable status filters")
+	)
+	flag.Parse()
+
 	items := []diff.DiffItem{
 		staticItem{
 			id:   "user.settings",
@@ -85,6 +92,14 @@ func main() {
 	provider := &staticProvider{items: items}
 	config := diff.DefaultConfig()
 	config.Title = "JSON Diff"
+
+	// Apply flags
+	if *noSearch {
+		config.EnableSearch = false
+	}
+	if *noFilters {
+		config.EnableStatusFilters = false
+	}
 
 	m := diff.NewModel(provider, config)
 	if _, err := tea.NewProgram(m, tea.WithContext(context.Background()), tea.WithAltScreen()).Run(); err != nil {

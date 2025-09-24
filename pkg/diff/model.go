@@ -4,9 +4,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
-	"github.com/charmbracelet/bubbles/textinput"
-	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -24,10 +23,11 @@ type Model struct {
 	provider DataProvider
 	config   Config
 	styles   Styles
+	keys     keyMap
 
-	list        list.Model
-	detail      viewport.Model
-	searchInput textinput.Model
+	list   list.Model
+	detail detailModel
+	search searchModel
 
 	width        int
 	height       int
@@ -45,8 +45,6 @@ type Model struct {
 
 	items        []DiffItem
 	visibleItems []DiffItem
-	searchQuery  string
-	showSearch   bool
 }
 
 // NewModel creates a new diff model with the given provider and configuration.
@@ -60,28 +58,21 @@ func NewModelWith(provider DataProvider, config Config, options ...Option) Model
 		opt(&config)
 	}
 	styles := defaultStyles()
+	keys := newKeyMap()
 
 	items := provider.Items()
-	wrapped := make([]list.Item, len(items))
-	for i := range items {
-		wrapped[i] = itemAdapter{item: items[i]}
-	}
-
 	l := newItemList(items, styles)
-
-	input := textinput.New()
-	input.Placeholder = "Search"
-	input.Prompt = ""
-	input.CharLimit = 0
-	input.Focus()
+	search := newSearchModel()
+	detail := newDetailModel()
 
 	m := Model{
 		provider:     provider,
 		config:       config,
 		styles:       styles,
+		keys:         keys,
 		list:         l,
-		detail:       viewport.New(0, 0),
-		searchInput:  input,
+		detail:       detail,
+		search:       search,
 		focus:        focusList,
 		redacted:     config.RedactSensitive,
 		splitRatio:   nonZeroOr(config.SplitPaneRatio, 0.35),
@@ -89,8 +80,6 @@ func NewModelWith(provider DataProvider, config Config, options ...Option) Model
 		filtersOn:    config.EnableStatusFilters,
 		items:        items,
 		visibleItems: filterItems(items, ""),
-		searchQuery:  "",
-		showSearch:   false,
 	}
 
 	// Initialize list content to visible items
@@ -115,53 +104,49 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.updateDetailContent()
 
 	case tea.KeyMsg:
-		//nolint:exhaustive
-		switch msg.String() {
-		case "ctrl+c", "q":
+		switch {
+		case key.Matches(msg, m.keys.Quit):
 			return m, tea.Quit
-		case "tab":
+		case key.Matches(msg, m.keys.Tab):
 			if m.focus == focusList {
 				m.focus = focusDetail
 			} else {
 				m.focus = focusList
 			}
-		case "/":
+		case key.Matches(msg, m.keys.Search):
 			if !m.config.EnableSearch {
 				break
 			}
-			m.showSearch = true
+			m.search.Show()
 			m.focus = focusSearch
-			m.searchInput.Focus()
-			m.searchInput.Reset()
 			// Recompute layout to account for search widget height
 			m.computeLayout()
 			m.applyContentSizes()
 			return m, tea.Batch(cmds...)
-		case "esc":
+		case key.Matches(msg, m.keys.Escape):
 			if m.focus == focusSearch {
 				m.focus = focusList
-				m.showSearch = false
-				m.searchQuery = ""
-				m.visibleItems = filterItems(m.items, m.searchQuery)
+				m.search.Hide()
+				m.visibleItems = filterItems(m.items, m.search.Query())
 				m.resetListItems()
 				// Recompute layout after hiding search
 				m.computeLayout()
 				m.applyContentSizes()
 			}
-		case "r":
+		case key.Matches(msg, m.keys.ToggleRedact):
 			m.redacted = !m.redacted
 			m.updateDetailContent()
-		case "1":
+		case key.Matches(msg, m.keys.FilterAdded):
 			if m.filtersOn {
 				m.statusFilter.ShowAdded = !m.statusFilter.ShowAdded
 				m.updateDetailContent()
 			}
-		case "2":
+		case key.Matches(msg, m.keys.FilterRemoved):
 			if m.filtersOn {
 				m.statusFilter.ShowRemoved = !m.statusFilter.ShowRemoved
 				m.updateDetailContent()
 			}
-		case "3":
+		case key.Matches(msg, m.keys.FilterUpdated):
 			if m.filtersOn {
 				m.statusFilter.ShowUpdated = !m.statusFilter.ShowUpdated
 				m.updateDetailContent()
@@ -169,16 +154,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		if m.focus == focusSearch {
-			var cmd tea.Cmd
-			m.searchInput, cmd = m.searchInput.Update(msg)
+			cmd := m.search.Update(msg)
 			cmds = append(cmds, cmd)
 
-			q := strings.TrimSpace(m.searchInput.Value())
-			if q != m.searchQuery {
-				m.searchQuery = q
-				m.visibleItems = filterItems(m.items, q)
-				m.resetListItems()
-			}
+			q := m.search.Query()
+			m.visibleItems = filterItems(m.items, q)
+			m.resetListItems()
+			m.updateDetailContent()
 		} else {
 			switch m.focus {
 			case focusList:
@@ -187,8 +169,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, cmd)
 				m.updateDetailContent()
 			case focusDetail:
-				var cmd tea.Cmd
-				m.detail, cmd = m.detail.Update(msg)
+				cmd := m.detail.Update(msg)
 				cmds = append(cmds, cmd)
 			case focusSearch:
 				// no-op: handled above
@@ -279,9 +260,9 @@ func (m *Model) renderHeader() string {
 	}
 
 	lines := []string{m.styles.Title.Render(" " + title + " ")}
-	if m.showSearch {
+	if m.search.Visible() {
 		// Show search input on its own line to ensure visibility
-		lines = append(lines, m.searchInput.View())
+		lines = append(lines, m.search.View())
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, lines...)
 }
@@ -292,7 +273,7 @@ func (m *Model) renderList() string {
 		style = m.styles.ListFocused
 	}
 	content := m.list.View()
-	return style.Width(m.leftWidth).Height(m.bodyHeight).Render(content)
+	return style.Render(content)
 }
 
 func (m *Model) renderDetail() string {
@@ -301,7 +282,7 @@ func (m *Model) renderDetail() string {
 		style = m.styles.DetailFocused
 	}
 	content := m.detail.View()
-	return style.Width(m.rightWidth).Height(m.bodyHeight).Render(content)
+	return style.Render(content)
 }
 
 func (m *Model) resetListItems() {
@@ -315,9 +296,8 @@ func (m *Model) updateDetailContent() {
 		return
 	}
 	item := m.visibleItems[idx]
-	content := renderItemDetail(item, m.redacted, m.styles, m.searchQuery, m.statusFilter, m.filtersOn)
+	content := renderItemDetail(item, m.redacted, m.styles, m.search.Query(), m.statusFilter, m.filtersOn)
 	m.detail.SetContent(content)
-	m.detail.GotoTop()
 }
 
 func filterItems(items []DiffItem, query string) []DiffItem {
@@ -373,14 +353,9 @@ func (m *Model) applyContentSizes() {
 	}
 
 	m.list.SetSize(leftContentW, leftContentH)
-	m.detail.Width = rightContentW
-	m.detail.Height = rightContentH
+	m.detail.SetSize(rightContentW, rightContentH)
 	// Ensure search input has reasonable width when visible
-	if m.width > 4 {
-		m.searchInput.Width = m.width - 4
-	} else {
-		m.searchInput.Width = m.width
-	}
+	m.search.SetWidth(m.width)
 }
 
 // renderFooter returns a simple help line footer.
