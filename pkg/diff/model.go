@@ -34,10 +34,15 @@ type Model struct {
  	height        int
  	leftWidth     int
  	rightWidth    int
+	bodyHeight    int
+	headerHeight  int
+	footerHeight  int
 
  	focus         focus
  	redacted      bool
  	splitRatio    float64
+	statusFilter  StatusFilter
+	filtersOn     bool
 
  	items         []DiffItem
  	visibleItems  []DiffItem
@@ -47,6 +52,12 @@ type Model struct {
 
 // NewModel creates a new diff model with the given provider and configuration.
 func NewModel(provider DataProvider, config Config) Model {
+    return NewModelWith(provider, config)
+}
+
+// NewModelWith creates a new diff model and applies optional Config options.
+func NewModelWith(provider DataProvider, config Config, options ...Option) Model {
+    for _, opt := range options { opt(&config) }
  	styles := defaultStyles()
 
  	items := provider.Items()
@@ -68,7 +79,7 @@ func NewModel(provider DataProvider, config Config) Model {
  	input.CharLimit = 0
  	input.Focus()
 
- 	m := Model{
+	m := Model{
  		provider:     provider,
  		config:       config,
  		styles:       styles,
@@ -78,10 +89,12 @@ func NewModel(provider DataProvider, config Config) Model {
  		focus:        focusList,
  		redacted:     config.RedactSensitive,
  		splitRatio:   nonZeroOr(config.SplitPaneRatio, 0.35),
+		statusFilter: config.InitialFilter,
+		filtersOn:    config.EnableStatusFilters,
  		items:        items,
  		visibleItems: filterItems(items, ""),
  		searchQuery:  "",
- 		showSearch:   false,
+		showSearch:   false,
  	}
 
  	// Initialize list content to visible items
@@ -101,10 +114,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
  	case tea.WindowSizeMsg:
  		m.width = msg.Width
  		m.height = msg.Height
- 		m.computeLayout()
- 		m.detail.Width = m.rightWidth - 2 // account for borders
- 		m.detail.Height = m.height - 4     // title + padding approx
- 		m.list.SetSize(m.leftWidth-2, m.height-4)
+		m.computeLayout()
+		m.applyContentSizes()
  		m.updateDetailContent()
 
  	case tea.KeyMsg:
@@ -118,7 +129,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
  			} else {
  				m.focus = focusList
  			}
- 		case "/":
+		case "/":
+            if !m.config.EnableSearch { break }
  			m.showSearch = true
  			m.focus = focusSearch
  			m.searchInput.Focus()
@@ -133,6 +145,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
  		case "r":
  			m.redacted = !m.redacted
  			m.updateDetailContent()
+		case "1":
+			if m.filtersOn { m.statusFilter.ShowAdded = !m.statusFilter.ShowAdded; m.updateDetailContent() }
+		case "2":
+			if m.filtersOn { m.statusFilter.ShowRemoved = !m.statusFilter.ShowRemoved; m.updateDetailContent() }
+		case "3":
+			if m.filtersOn { m.statusFilter.ShowUpdated = !m.statusFilter.ShowUpdated; m.updateDetailContent() }
  		}
 
  		if m.focus == focusSearch {
@@ -140,7 +158,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
  			m.searchInput, cmd = m.searchInput.Update(msg)
  			cmds = append(cmds, cmd)
 
- 			q := strings.TrimSpace(m.searchInput.Value())
+			q := strings.TrimSpace(m.searchInput.Value())
  			if q != m.searchQuery {
  				m.searchQuery = q
  				m.visibleItems = filterItems(m.items, q)
@@ -163,20 +181,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) View() string {
- 	left := m.renderList()
- 	right := m.renderDetail()
- 	head := m.renderHeader()
- 	row := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
- 	return lipgloss.JoinVertical(lipgloss.Left, head, row)
+	left := m.renderList()
+	right := m.renderDetail()
+	head := m.renderHeader()
+	foot := m.renderFooter()
+	row := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
+	return lipgloss.JoinVertical(lipgloss.Left, head, row, foot)
 }
 
 func (m *Model) SetSize(width, height int) {
  	m.width = width
  	m.height = height
- 	m.computeLayout()
- 	m.list.SetSize(m.leftWidth-2, m.height-4)
- 	m.detail.Width = m.rightWidth - 2
- 	m.detail.Height = m.height - 4
+	m.computeLayout()
+	m.applyContentSizes()
  	m.updateDetailContent()
 }
 
@@ -210,6 +227,26 @@ func (m *Model) computeLayout() {
  	if m.rightWidth < 20 {
  		m.rightWidth = 20
  	}
+
+	// Compute header/footer heights dynamically to avoid clipping content
+	head := m.renderHeader()
+	m.headerHeight = lipgloss.Height(head)
+	if m.headerHeight < 0 {
+		m.headerHeight = 0
+	}
+	foot := m.renderFooter()
+	m.footerHeight = lipgloss.Height(foot)
+	if m.footerHeight < 0 {
+		m.footerHeight = 0
+	}
+	m.bodyHeight = m.height - m.headerHeight - m.footerHeight
+	// Reserve an extra safety line to avoid top border clipping in tight layouts
+	if m.bodyHeight > 0 {
+		m.bodyHeight--
+	}
+	if m.bodyHeight < 0 {
+		m.bodyHeight = 0
+	}
 }
 
 func (m *Model) renderHeader() string {
@@ -243,8 +280,8 @@ func (m *Model) renderList() string {
  	if m.focus == focusList {
  		style = m.styles.ListFocused
  	}
- 	content := m.list.View()
- 	return style.Width(m.leftWidth).Height(m.height).Render(content)
+	content := m.list.View()
+	return style.Width(m.leftWidth).Height(m.bodyHeight).Render(content)
 }
 
 func (m *Model) renderDetail() string {
@@ -252,8 +289,8 @@ func (m *Model) renderDetail() string {
  	if m.focus == focusDetail {
  		style = m.styles.DetailFocused
  	}
- 	content := m.detail.View()
- 	return style.Width(m.rightWidth).Height(m.height).Render(content)
+	content := m.detail.View()
+	return style.Width(m.rightWidth).Height(m.bodyHeight).Render(content)
 }
 
 func (m *Model) resetListItems() {
@@ -272,7 +309,7 @@ func (m *Model) updateDetailContent() {
  		return
  	}
  	item := m.visibleItems[idx]
- 	content := renderItemDetail(item, m.redacted, m.styles, m.searchQuery)
+    content := renderItemDetail(item, m.redacted, m.styles, m.searchQuery, m.statusFilter, m.filtersOn)
  	m.detail.SetContent(content)
  	m.detail.GotoTop()
 }
@@ -310,6 +347,41 @@ func maxInt(a, b int) int {
  		return a
  	}
  	return b
+}
+
+// applyContentSizes computes content sizes for inner widgets accounting for borders/margins.
+func (m *Model) applyContentSizes() {
+	// Use base styles for frame sizes (focused/unfocused share same frame metrics)
+	leftFrameW, leftFrameH := m.styles.ListBase.GetFrameSize()
+	rightFrameW, rightFrameH := m.styles.DetailBase.GetFrameSize()
+
+	leftContentW := m.leftWidth - leftFrameW
+	if leftContentW < 0 {
+		leftContentW = 0
+	}
+	leftContentH := m.bodyHeight - leftFrameH
+	if leftContentH < 0 {
+		leftContentH = 0
+	}
+
+	rightContentW := m.rightWidth - rightFrameW
+	if rightContentW < 0 {
+		rightContentW = 0
+	}
+	rightContentH := m.bodyHeight - rightFrameH
+	if rightContentH < 0 {
+		rightContentH = 0
+	}
+
+	m.list.SetSize(leftContentW, leftContentH)
+	m.detail.Width = rightContentW
+	m.detail.Height = rightContentH
+}
+
+// renderFooter returns a simple help line footer.
+func (m *Model) renderFooter() string {
+    help := "↑/↓ move  tab switch  / search  r redact  1/2/3 filter +/−/~  q quit"
+	return lipgloss.NewStyle().Faint(true).Render(help)
 }
 
 // itemAdapter adapts DiffItem to bubbles/list.Item

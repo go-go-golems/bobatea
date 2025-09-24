@@ -1,14 +1,14 @@
 package diff
 
 import (
-	"fmt"
-	"strings"
+    "fmt"
+    "strings"
 
-	"github.com/charmbracelet/lipgloss"
+    "github.com/charmbracelet/lipgloss"
 )
 
 // renderItemDetail renders the right-hand detail pane for a given item.
-func renderItemDetail(item DiffItem, redacted bool, styles Styles, searchQuery string) string {
+func renderItemDetail(item DiffItem, redacted bool, styles Styles, searchQuery string, statusFilter StatusFilter, filtersOn bool) string {
 	if item == nil {
 		return ""
 	}
@@ -16,12 +16,12 @@ func renderItemDetail(item DiffItem, redacted bool, styles Styles, searchQuery s
 	header := styles.Title.Render(item.Name())
  	var sections []string
 
- 	for _, cat := range item.Categories() {
+    for _, cat := range item.Categories() {
  		if cat == nil {
  			continue
  		}
  		var lines []string
- 		for _, ch := range cat.Changes() {
+        for _, ch := range cat.Changes() {
  			if ch == nil {
  				continue
  			}
@@ -30,11 +30,23 @@ func renderItemDetail(item DiffItem, redacted bool, styles Styles, searchQuery s
  			before := valueToString(ch.Before(), redacted && ch.Sensitive(), styles)
  			after := valueToString(ch.After(), redacted && ch.Sensitive(), styles)
 
+            // Status filtering
+            if filtersOn {
+                switch ch.Status() {
+                case ChangeStatusAdded:
+                    if !statusFilter.ShowAdded { continue }
+                case ChangeStatusRemoved:
+                    if !statusFilter.ShowRemoved { continue }
+                default: // updated
+                    if !statusFilter.ShowUpdated { continue }
+                }
+            }
+
  			// Search filtering in-detail: if query doesn't match path or values, we still render
  			// the category but can dim non-matching lines in a future iteration. For MVP, show all.
 
  			var left, right string
- 			switch ch.Status() {
+            switch ch.Status() {
  			case ChangeStatusAdded:
  				left = ""
  				right = styles.AddedLine.Render(fmt.Sprintf("+ %s", after))
