@@ -1,0 +1,1 @@
+{"host":"db","port":5432,"pool":{"size":10}}
