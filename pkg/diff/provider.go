@@ -40,5 +40,3 @@ type Change interface {
 	After() any
 	Sensitive() bool
 }
-
-

@@ -1,184 +1,203 @@
 package diff
 
 import (
-    "fmt"
- 	"sort"
- 	"strings"
+	"sort"
+	"strings"
 
- 	"github.com/charmbracelet/bubbles/list"
- 	"github.com/charmbracelet/bubbles/textinput"
- 	"github.com/charmbracelet/bubbles/viewport"
- 	tea "github.com/charmbracelet/bubbletea"
- 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/bubbles/list"
+	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/viewport"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 type focus int
 
 const (
 	focusList focus = iota
- 	focusDetail
- 	focusSearch
+	focusDetail
+	focusSearch
 )
 
 // Model implements the Bubble Tea model for the diff component.
 type Model struct {
- 	provider      DataProvider
- 	config        Config
- 	styles        Styles
+	provider DataProvider
+	config   Config
+	styles   Styles
 
- 	list          list.Model
- 	detail        viewport.Model
- 	searchInput   textinput.Model
+	list        list.Model
+	detail      viewport.Model
+	searchInput textinput.Model
 
- 	width         int
- 	height        int
- 	leftWidth     int
- 	rightWidth    int
-	bodyHeight    int
-	headerHeight  int
-	footerHeight  int
+	width        int
+	height       int
+	leftWidth    int
+	rightWidth   int
+	bodyHeight   int
+	headerHeight int
+	footerHeight int
 
- 	focus         focus
- 	redacted      bool
- 	splitRatio    float64
-	statusFilter  StatusFilter
-	filtersOn     bool
+	focus        focus
+	redacted     bool
+	splitRatio   float64
+	statusFilter StatusFilter
+	filtersOn    bool
 
- 	items         []DiffItem
- 	visibleItems  []DiffItem
- 	searchQuery   string
- 	showSearch    bool
+	items        []DiffItem
+	visibleItems []DiffItem
+	searchQuery  string
+	showSearch   bool
 }
 
 // NewModel creates a new diff model with the given provider and configuration.
 func NewModel(provider DataProvider, config Config) Model {
-    return NewModelWith(provider, config)
+	return NewModelWith(provider, config)
 }
 
 // NewModelWith creates a new diff model and applies optional Config options.
 func NewModelWith(provider DataProvider, config Config, options ...Option) Model {
-    for _, opt := range options { opt(&config) }
- 	styles := defaultStyles()
+	for _, opt := range options {
+		opt(&config)
+	}
+	styles := defaultStyles()
 
- 	items := provider.Items()
- 	wrapped := make([]list.Item, len(items))
- 	for i := range items {
- 		wrapped[i] = itemAdapter{item: items[i]}
- 	}
+	items := provider.Items()
+	wrapped := make([]list.Item, len(items))
+	for i := range items {
+		wrapped[i] = itemAdapter{item: items[i]}
+	}
 
-    l := newItemList(items, styles)
+	l := newItemList(items, styles)
 
- 	input := textinput.New()
- 	input.Placeholder = "Search"
- 	input.Prompt = "/ "
- 	input.CharLimit = 0
- 	input.Focus()
+	input := textinput.New()
+	input.Placeholder = "Search"
+	input.Prompt = ""
+	input.CharLimit = 0
+	input.Focus()
 
 	m := Model{
- 		provider:     provider,
- 		config:       config,
- 		styles:       styles,
- 		list:         l,
- 		detail:       viewport.New(0, 0),
- 		searchInput:  input,
- 		focus:        focusList,
- 		redacted:     config.RedactSensitive,
- 		splitRatio:   nonZeroOr(config.SplitPaneRatio, 0.35),
+		provider:     provider,
+		config:       config,
+		styles:       styles,
+		list:         l,
+		detail:       viewport.New(0, 0),
+		searchInput:  input,
+		focus:        focusList,
+		redacted:     config.RedactSensitive,
+		splitRatio:   nonZeroOr(config.SplitPaneRatio, 0.35),
 		statusFilter: config.InitialFilter,
 		filtersOn:    config.EnableStatusFilters,
- 		items:        items,
- 		visibleItems: filterItems(items, ""),
- 		searchQuery:  "",
+		items:        items,
+		visibleItems: filterItems(items, ""),
+		searchQuery:  "",
 		showSearch:   false,
- 	}
+	}
 
- 	// Initialize list content to visible items
- 	m.resetListItems()
- 	m.updateDetailContent()
+	// Initialize list content to visible items
+	m.resetListItems()
+	m.updateDetailContent()
 
- 	return m
+	return m
 }
 
 func (m Model) Init() tea.Cmd {
- 	return nil
+	return nil
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
- 	var cmds []tea.Cmd
- 	switch msg := msg.(type) {
- 	case tea.WindowSizeMsg:
- 		m.width = msg.Width
- 		m.height = msg.Height
+	var cmds []tea.Cmd
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
 		m.computeLayout()
 		m.applyContentSizes()
- 		m.updateDetailContent()
+		m.updateDetailContent()
 
- 	case tea.KeyMsg:
- 		//nolint:exhaustive
- 		switch msg.String() {
- 		case "ctrl+c", "q":
- 			return m, tea.Quit
- 		case "tab":
- 			if m.focus == focusList {
- 				m.focus = focusDetail
- 			} else {
- 				m.focus = focusList
- 			}
+	case tea.KeyMsg:
+		//nolint:exhaustive
+		switch msg.String() {
+		case "ctrl+c", "q":
+			return m, tea.Quit
+		case "tab":
+			if m.focus == focusList {
+				m.focus = focusDetail
+			} else {
+				m.focus = focusList
+			}
 		case "/":
-            if !m.config.EnableSearch { break }
- 			m.showSearch = true
- 			m.focus = focusSearch
- 			m.searchInput.Focus()
+			if !m.config.EnableSearch {
+				break
+			}
+			m.showSearch = true
+			m.focus = focusSearch
+			m.searchInput.Focus()
+			m.searchInput.Reset()
 			// Recompute layout to account for search widget height
 			m.computeLayout()
 			m.applyContentSizes()
- 		case "esc":
- 			if m.focus == focusSearch {
- 				m.focus = focusList
- 				m.showSearch = false
- 				m.searchQuery = ""
- 				m.visibleItems = filterItems(m.items, m.searchQuery)
- 				m.resetListItems()
+			return m, tea.Batch(cmds...)
+		case "esc":
+			if m.focus == focusSearch {
+				m.focus = focusList
+				m.showSearch = false
+				m.searchQuery = ""
+				m.visibleItems = filterItems(m.items, m.searchQuery)
+				m.resetListItems()
 				// Recompute layout after hiding search
 				m.computeLayout()
 				m.applyContentSizes()
- 			}
- 		case "r":
- 			m.redacted = !m.redacted
- 			m.updateDetailContent()
+			}
+		case "r":
+			m.redacted = !m.redacted
+			m.updateDetailContent()
 		case "1":
-			if m.filtersOn { m.statusFilter.ShowAdded = !m.statusFilter.ShowAdded; m.updateDetailContent() }
+			if m.filtersOn {
+				m.statusFilter.ShowAdded = !m.statusFilter.ShowAdded
+				m.updateDetailContent()
+			}
 		case "2":
-			if m.filtersOn { m.statusFilter.ShowRemoved = !m.statusFilter.ShowRemoved; m.updateDetailContent() }
+			if m.filtersOn {
+				m.statusFilter.ShowRemoved = !m.statusFilter.ShowRemoved
+				m.updateDetailContent()
+			}
 		case "3":
-			if m.filtersOn { m.statusFilter.ShowUpdated = !m.statusFilter.ShowUpdated; m.updateDetailContent() }
- 		}
+			if m.filtersOn {
+				m.statusFilter.ShowUpdated = !m.statusFilter.ShowUpdated
+				m.updateDetailContent()
+			}
+		}
 
- 		if m.focus == focusSearch {
- 			var cmd tea.Cmd
- 			m.searchInput, cmd = m.searchInput.Update(msg)
- 			cmds = append(cmds, cmd)
+		if m.focus == focusSearch {
+			var cmd tea.Cmd
+			m.searchInput, cmd = m.searchInput.Update(msg)
+			cmds = append(cmds, cmd)
 
 			q := strings.TrimSpace(m.searchInput.Value())
- 			if q != m.searchQuery {
- 				m.searchQuery = q
- 				m.visibleItems = filterItems(m.items, q)
- 				m.resetListItems()
- 			}
- 		} else if m.focus == focusList {
- 			var cmd tea.Cmd
- 			m.list, cmd = m.list.Update(msg)
- 			cmds = append(cmds, cmd)
- 			m.updateDetailContent()
- 		} else if m.focus == focusDetail {
- 			var cmd tea.Cmd
- 			m.detail, cmd = m.detail.Update(msg)
- 			cmds = append(cmds, cmd)
- 		}
+			if q != m.searchQuery {
+				m.searchQuery = q
+				m.visibleItems = filterItems(m.items, q)
+				m.resetListItems()
+			}
+		} else {
+			switch m.focus {
+			case focusList:
+				var cmd tea.Cmd
+				m.list, cmd = m.list.Update(msg)
+				cmds = append(cmds, cmd)
+				m.updateDetailContent()
+			case focusDetail:
+				var cmd tea.Cmd
+				m.detail, cmd = m.detail.Update(msg)
+				cmds = append(cmds, cmd)
+			case focusSearch:
+				// no-op: handled above
+			}
+		}
 
- 	}
+	}
 
- 	return m, tea.Batch(cmds...)
+	return m, tea.Batch(cmds...)
 }
 
 func (m Model) View() string {
@@ -191,43 +210,43 @@ func (m Model) View() string {
 }
 
 func (m *Model) SetSize(width, height int) {
- 	m.width = width
- 	m.height = height
+	m.width = width
+	m.height = height
 	m.computeLayout()
 	m.applyContentSizes()
- 	m.updateDetailContent()
+	m.updateDetailContent()
 }
 
 func (m *Model) SetRedactSensitive(enabled bool) {
- 	m.redacted = enabled
- 	m.updateDetailContent()
+	m.redacted = enabled
+	m.updateDetailContent()
 }
 
 func (m *Model) SetSplitPaneRatio(ratio float64) {
- 	if ratio <= 0 {
- 		ratio = 0.35
- 	}
- 	m.splitRatio = ratio
- 	m.computeLayout()
+	if ratio <= 0 {
+		ratio = 0.35
+	}
+	m.splitRatio = ratio
+	m.computeLayout()
 }
 
 // Helpers
 
 func (m *Model) computeLayout() {
- 	if m.width < 0 {
- 		m.width = 0
- 	}
- 	if m.height < 0 {
- 		m.height = 0
- 	}
- 	m.leftWidth = int(float64(m.width) * m.splitRatio)
- 	if m.leftWidth < 20 {
- 		m.leftWidth = 20
- 	}
- 	m.rightWidth = m.width - m.leftWidth
- 	if m.rightWidth < 20 {
- 		m.rightWidth = 20
- 	}
+	if m.width < 0 {
+		m.width = 0
+	}
+	if m.height < 0 {
+		m.height = 0
+	}
+	m.leftWidth = int(float64(m.width) * m.splitRatio)
+	if m.leftWidth < 20 {
+		m.leftWidth = 20
+	}
+	m.rightWidth = m.width - m.leftWidth
+	if m.rightWidth < 20 {
+		m.rightWidth = 20
+	}
 
 	// Compute header/footer heights dynamically to avoid clipping content
 	head := m.renderHeader()
@@ -251,98 +270,82 @@ func (m *Model) computeLayout() {
 }
 
 func (m *Model) renderHeader() string {
- 	title := m.config.Title
- 	if title == "" && m.provider != nil {
- 		title = m.provider.Title()
- 	}
- 	if title == "" {
- 		title = "Diff"
- 	}
-
-	search := ""
-	if m.showSearch {
-		search = m.searchInput.View()
+	title := m.config.Title
+	if title == "" && m.provider != nil {
+		title = m.provider.Title()
+	}
+	if title == "" {
+		title = "Diff"
 	}
 
-	meta := fmt.Sprintf("  [tab] switch  [/] search  [r] redact  [q] quit")
-
-	return lipgloss.JoinHorizontal(
-		lipgloss.Top,
-		m.styles.Title.Render(" "+title+" "),
-		" ",
-		search,
-		" ",
-		meta,
-	)
+	lines := []string{m.styles.Title.Render(" " + title + " ")}
+	if m.showSearch {
+		// Show search input on its own line to ensure visibility
+		lines = append(lines, m.searchInput.View())
+	}
+	return lipgloss.JoinVertical(lipgloss.Left, lines...)
 }
 
 func (m *Model) renderList() string {
- 	style := m.styles.ListBase
- 	if m.focus == focusList {
- 		style = m.styles.ListFocused
- 	}
+	style := m.styles.ListBase
+	if m.focus == focusList {
+		style = m.styles.ListFocused
+	}
 	content := m.list.View()
 	return style.Width(m.leftWidth).Height(m.bodyHeight).Render(content)
 }
 
 func (m *Model) renderDetail() string {
- 	style := m.styles.DetailBase
- 	if m.focus == focusDetail {
- 		style = m.styles.DetailFocused
- 	}
-    content := m.detail.View()
+	style := m.styles.DetailBase
+	if m.focus == focusDetail {
+		style = m.styles.DetailFocused
+	}
+	content := m.detail.View()
 	return style.Width(m.rightWidth).Height(m.bodyHeight).Render(content)
 }
 
 func (m *Model) resetListItems() {
-    setListItems(&m.list, m.visibleItems)
+	setListItems(&m.list, m.visibleItems)
 }
 
 func (m *Model) updateDetailContent() {
- 	idx := m.list.Index()
- 	if idx < 0 || idx >= len(m.visibleItems) {
- 		m.detail.SetContent("")
- 		return
- 	}
- 	item := m.visibleItems[idx]
-    content := renderItemDetail(item, m.redacted, m.styles, m.searchQuery, m.statusFilter, m.filtersOn)
- 	m.detail.SetContent(content)
- 	m.detail.GotoTop()
+	idx := m.list.Index()
+	if idx < 0 || idx >= len(m.visibleItems) {
+		m.detail.SetContent("")
+		return
+	}
+	item := m.visibleItems[idx]
+	content := renderItemDetail(item, m.redacted, m.styles, m.searchQuery, m.statusFilter, m.filtersOn)
+	m.detail.SetContent(content)
+	m.detail.GotoTop()
 }
 
 func filterItems(items []DiffItem, query string) []DiffItem {
- 	lower := strings.ToLower(strings.TrimSpace(query))
- 	if lower == "" {
- 		out := append([]DiffItem(nil), items...)
- 		sort.SliceStable(out, func(i, j int) bool {
- 			return out[i].Name() < out[j].Name()
- 		})
- 		return out
- 	}
- 	var filtered []DiffItem
- 	for _, it := range items {
- 		if itemMatchesQuery(it, lower) {
- 			filtered = append(filtered, it)
- 		}
- 	}
- 	sort.SliceStable(filtered, func(i, j int) bool {
- 		return filtered[i].Name() < filtered[j].Name()
- 	})
- 	return filtered
+	lower := strings.ToLower(strings.TrimSpace(query))
+	if lower == "" {
+		out := append([]DiffItem(nil), items...)
+		sort.SliceStable(out, func(i, j int) bool {
+			return out[i].Name() < out[j].Name()
+		})
+		return out
+	}
+	var filtered []DiffItem
+	for _, it := range items {
+		if itemMatchesQuery(it, lower) {
+			filtered = append(filtered, it)
+		}
+	}
+	sort.SliceStable(filtered, func(i, j int) bool {
+		return filtered[i].Name() < filtered[j].Name()
+	})
+	return filtered
 }
 
 func nonZeroOr(v, fallback float64) float64 {
- 	if v <= 0 {
- 		return fallback
- 	}
- 	return v
-}
-
-func maxInt(a, b int) int {
- 	if a > b {
- 		return a
- 	}
- 	return b
+	if v <= 0 {
+		return fallback
+	}
+	return v
 }
 
 // applyContentSizes computes content sizes for inner widgets accounting for borders/margins.
@@ -372,14 +375,18 @@ func (m *Model) applyContentSizes() {
 	m.list.SetSize(leftContentW, leftContentH)
 	m.detail.Width = rightContentW
 	m.detail.Height = rightContentH
+	// Ensure search input has reasonable width when visible
+	if m.width > 4 {
+		m.searchInput.Width = m.width - 4
+	} else {
+		m.searchInput.Width = m.width
+	}
 }
 
 // renderFooter returns a simple help line footer.
 func (m *Model) renderFooter() string {
-    help := "↑/↓ move  tab switch  / search  r redact  1/2/3 filter +/−/~  q quit"
+	help := "↑/↓ move  tab switch  / search  r redact  1/2/3 filter +/−/~  q quit"
 	return lipgloss.NewStyle().Faint(true).Render(help)
 }
 
 // (moved to list.go)
-
-

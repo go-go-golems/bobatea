@@ -2,23 +2,23 @@ package diff
 
 // Config controls the diff model behavior.
 type Config struct {
-	Title           string
-	RedactSensitive bool
-	SplitPaneRatio  float64 // default 0.35
-    EnableSearch        bool
-    EnableStatusFilters bool
-    InitialFilter       StatusFilter
+	Title               string
+	RedactSensitive     bool
+	SplitPaneRatio      float64 // default 0.35
+	EnableSearch        bool
+	EnableStatusFilters bool
+	InitialFilter       StatusFilter
 }
 
 // DefaultConfig returns sensible defaults for the diff model.
 func DefaultConfig() Config {
 	return Config{
-		Title:           "Diff",
-		RedactSensitive: true,
-        SplitPaneRatio:  0.35,
-        EnableSearch:        true,
-        EnableStatusFilters: true,
-        InitialFilter: StatusFilter{ShowAdded: true, ShowRemoved: true, ShowUpdated: true},
+		Title:               "Diff",
+		RedactSensitive:     true,
+		SplitPaneRatio:      0.35,
+		EnableSearch:        true,
+		EnableStatusFilters: true,
+		InitialFilter:       StatusFilter{ShowAdded: true, ShowRemoved: true, ShowUpdated: true},
 	}
 }
 
@@ -30,17 +30,15 @@ func WithSearch(enabled bool) Option { return func(c *Config) { c.EnableSearch =
 
 // StatusFilter controls which change statuses are visible in detail view.
 type StatusFilter struct {
-    ShowAdded   bool
-    ShowRemoved bool
-    ShowUpdated bool
+	ShowAdded   bool
+	ShowRemoved bool
+	ShowUpdated bool
 }
 
 // WithStatusFilters enables status filters and sets an initial value.
 func WithStatusFilters(enabled bool, initial StatusFilter) Option {
-    return func(c *Config) {
-        c.EnableStatusFilters = enabled
-        c.InitialFilter = initial
-    }
+	return func(c *Config) {
+		c.EnableStatusFilters = enabled
+		c.InitialFilter = initial
+	}
 }
-
-

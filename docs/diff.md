@@ -57,7 +57,20 @@ type ChangeStatus string
      Title           string
      RedactSensitive bool
      SplitPaneRatio  float64 // default 0.35
+     EnableSearch        bool
+     EnableStatusFilters bool
+     InitialFilter       StatusFilter
  }
+
+ type StatusFilter struct {
+     ShowAdded   bool
+     ShowRemoved bool
+     ShowUpdated bool
+ }
+
+ // Functional options
+ func WithSearch(enabled bool) Option
+ func WithStatusFilters(enabled bool, initial StatusFilter) Option
 ```
 
 ### Quick Start
@@ -73,18 +86,52 @@ _ = tea.NewProgram(model, tea.WithAltScreen()).Run()
 ### UX and Keys
 - Up/Down: navigate list
 - Tab: switch pane
-- /: search
+- /: show search input (no leading slash in input)
 - r: toggle redaction
+- 1/2/3: toggle Added/Removed/Updated status filters
 - q: quit
 
 ### Search
 - Substring match over item name, change paths, and rendered values (lowercased).
+- Search input is shown on its own header line and resizes the body content when visible.
+- Filtering is applied at two levels:
+  - Left list: visible items are filtered by query
+  - Right detail: only matching change lines are rendered, and badges reflect filtered counts
 
 ### Rendering
 - Default renderer shows:
   - Item header (name)
-  - Categories with change lines (`- before`, `+ after`), status badges
+  - Badges with counts: `+A -R ~U` (added/removed/updated)
+  - Optional filter strip: `+ ON   - ON   ~ ON` (or OFF states)
+  - Categories with change lines (`- before`, `+ after`) filtered by status & search
   - Redaction applies to values when enabled
+
+### Architecture
+
+The component mirrors `tfplandiff` structure while remaining domain-agnostic:
+
+- `provider.go` — minimal interfaces: `DataProvider`, `DiffItem`, `Category`, `Change`
+- `model.go` — orchestrates layout, focus, search, and filters; computes sizes using `lipgloss.Height` and `GetFrameSize()`
+- `list.go` — wraps a `list.Model` with an item adapter; disables built-in filter/help
+- `detail.go` — viewport wrapper with `SetSize` and `SetContent`
+- `renderer.go` — composes detail view: header + badges, filter line, sections; applies search/status filtering and redaction
+- `styles.go` — baseline list/detail borders, plus `BadgeAdded/Removed/Updated`, `FilterOn/Off`
+- `keymap.go` — key bindings similar to tfplandiff
+
+Resizing rules:
+- Header height = title + (search line if visible)
+- Footer height = help text
+- Body height = window height - header - footer - safety line
+- Inner widths/heights = panel size - frame sizes from styles
+
+Search behavior:
+- Toggle `/` shows an empty input (no leading slash) and focuses it
+- ESC hides and clears input
+- As you type, list and detail outputs update live
+
+Status filters:
+- Toggle `1/2/3` to show/hide Added/Removed/Updated lines in detail
+- Filter line and badges update immediately
 
 ### Reference: tfplandiff TUI code inspiration (selected snippets)
 
@@ -346,7 +393,7 @@ See `ttmp/2025-09-23/01-advanced-diff-design-features-for-later.md` for deferred
 
 ### Project Layout and Starting Points
 
-Suggested MVP package scaffold:
+Package scaffold:
 
 ```
 pkg/diff/
@@ -356,6 +403,9 @@ pkg/diff/
   renderer.go      # default renderer + RenderOptions
   config.go        # Config + defaults
   styles.go        # minimal styles/theme
+  list.go          # list wrapper and item adapter
+  detail.go        # viewport wrapper
+  keymap.go        # key bindings
 examples/diff/basic-usage/main.go
 ```
 

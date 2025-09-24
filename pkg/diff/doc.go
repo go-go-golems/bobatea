@@ -7,13 +7,9 @@
 //
 // Quick start:
 //
-//
 //	provider := &StaticProvider{ /* implement DataProvider */ }
 //	config := DefaultConfig()
 //	config.Title = "My Diff"
 //	model := NewModel(provider, config)
 //	_ = tea.NewProgram(model, tea.WithAltScreen()).Run()
-//
 package diff
-
-

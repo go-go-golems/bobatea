@@ -12,42 +12,45 @@ import (
 	"github.com/go-go-golems/bobatea/pkg/diff"
 )
 
-type fileProvider struct{
+type fileProvider struct {
 	title string
 	items []diff.DiffItem
 }
 
-func (p *fileProvider) Title() string { return p.title }
+func (p *fileProvider) Title() string          { return p.title }
 func (p *fileProvider) Items() []diff.DiffItem { return p.items }
 
-type simpleItem struct{
-	id string
+type simpleItem struct {
+	id   string
 	name string
 	cats []diff.Category
 }
-func (i simpleItem) ID() string { return i.id }
-func (i simpleItem) Name() string { return i.name }
+
+func (i simpleItem) ID() string                  { return i.id }
+func (i simpleItem) Name() string                { return i.name }
 func (i simpleItem) Categories() []diff.Category { return i.cats }
 
-type simpleCat struct{
-	name string
+type simpleCat struct {
+	name    string
 	changes []diff.Change
 }
-func (c simpleCat) Name() string { return c.name }
+
+func (c simpleCat) Name() string           { return c.name }
 func (c simpleCat) Changes() []diff.Change { return c.changes }
 
-type simpleChange struct{
-	path string
-	status diff.ChangeStatus
-	before any
-	after any
+type simpleChange struct {
+	path      string
+	status    diff.ChangeStatus
+	before    any
+	after     any
 	sensitive bool
 }
-func (c simpleChange) Path() string { return c.path }
+
+func (c simpleChange) Path() string              { return c.path }
 func (c simpleChange) Status() diff.ChangeStatus { return c.status }
-func (c simpleChange) Before() any { return c.before }
-func (c simpleChange) After() any { return c.after }
-func (c simpleChange) Sensitive() bool { return c.sensitive }
+func (c simpleChange) Before() any               { return c.before }
+func (c simpleChange) After() any                { return c.after }
+func (c simpleChange) Sensitive() bool           { return c.sensitive }
 
 func buildItem(name string, before, after map[string]any, sensitivePaths map[string]struct{}) diff.DiffItem {
 	added, removed, updated := xdiff.MapDiff(before, after)
@@ -66,10 +69,10 @@ func buildItem(name string, before, after map[string]any, sensitivePaths map[str
 	}
 	// stable order by path
 	sort.SliceStable(changes, func(i, j int) bool { return changes[i].Path() < changes[j].Path() })
-	return simpleItem{id: name, name: name, cats: []diff.Category{ simpleCat{name: "json", changes: changes} }}
+	return simpleItem{id: name, name: name, cats: []diff.Category{simpleCat{name: "json", changes: changes}}}
 }
 
-func main(){
+func main() {
 	var beforePath string
 	var afterPath string
 	flag.StringVar(&beforePath, "before", "before.json", "Path to JSON before file")
@@ -77,21 +80,25 @@ func main(){
 	flag.Parse()
 
 	before, err := xdiff.LoadAndFlatten(beforePath)
-	if err != nil { log.Fatal(err) }
+	if err != nil {
+		log.Fatal(err)
+	}
 	after, err := xdiff.LoadAndFlatten(afterPath)
-	if err != nil { log.Fatal(err) }
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	sensitive := map[string]struct{}{ "password": {}, "api_key": {}, "secrets.token": {} }
+	sensitive := map[string]struct{}{"password": {}, "api_key": {}, "secrets.token": {}}
 	item := buildItem("json.diff", before, after, sensitive)
 
-	prov := &fileProvider{ title: "JSON File Diff", items: []diff.DiffItem{ item } }
+	prov := &fileProvider{title: "JSON File Diff", items: []diff.DiffItem{item}}
 	cfg := diff.DefaultConfig()
 	cfg.Title = "JSON File Diff"
 	cfg.RedactSensitive = true
 
 	m := diff.NewModel(prov, cfg)
 	if _, err := tea.NewProgram(m, tea.WithContext(context.Background()), tea.WithAltScreen()).Run(); err != nil {
-		_, _ = os.Stderr.WriteString(err.Error()+"\n")
+		_, _ = os.Stderr.WriteString(err.Error() + "\n")
 		os.Exit(1)
 	}
 }

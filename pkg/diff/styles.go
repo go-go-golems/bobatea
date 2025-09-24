@@ -6,22 +6,22 @@ import (
 
 // Styles contains style definitions used by the diff component.
 type Styles struct {
-	Title            lipgloss.Style
-	ListBase         lipgloss.Style
-	ListFocused      lipgloss.Style
-	DetailBase       lipgloss.Style
-	DetailFocused    lipgloss.Style
-	CategoryHeader   lipgloss.Style
-	Path             lipgloss.Style
-	RemovedLine      lipgloss.Style
-	AddedLine        lipgloss.Style
-	UpdatedLine      lipgloss.Style
-	SensitiveValue   lipgloss.Style
-    BadgeAdded       lipgloss.Style
-    BadgeRemoved     lipgloss.Style
-    BadgeUpdated     lipgloss.Style
-    FilterOn         lipgloss.Style
-    FilterOff        lipgloss.Style
+	Title          lipgloss.Style
+	ListBase       lipgloss.Style
+	ListFocused    lipgloss.Style
+	DetailBase     lipgloss.Style
+	DetailFocused  lipgloss.Style
+	CategoryHeader lipgloss.Style
+	Path           lipgloss.Style
+	RemovedLine    lipgloss.Style
+	AddedLine      lipgloss.Style
+	UpdatedLine    lipgloss.Style
+	SensitiveValue lipgloss.Style
+	BadgeAdded     lipgloss.Style
+	BadgeRemoved   lipgloss.Style
+	BadgeUpdated   lipgloss.Style
+	FilterOn       lipgloss.Style
+	FilterOff      lipgloss.Style
 }
 
 func defaultStyles() Styles {
@@ -53,17 +53,15 @@ func defaultStyles() Styles {
 			Padding(0, 1),
 
 		CategoryHeader: lipgloss.NewStyle().Bold(true),
- 		Path:           lipgloss.NewStyle().Faint(true),
- 		RemovedLine:    lipgloss.NewStyle().Foreground(lipgloss.Color("#EF4444")),
- 		AddedLine:      lipgloss.NewStyle().Foreground(lipgloss.Color("#10B981")),
- 		UpdatedLine:    lipgloss.NewStyle().Foreground(lipgloss.Color("#F59E0B")),
- 		SensitiveValue: lipgloss.NewStyle().Faint(true),
-        BadgeAdded:     lipgloss.NewStyle().Foreground(lipgloss.Color("#10B981")).Bold(true),
-        BadgeRemoved:   lipgloss.NewStyle().Foreground(lipgloss.Color("#EF4444")).Bold(true),
-        BadgeUpdated:   lipgloss.NewStyle().Foreground(lipgloss.Color("#F59E0B")).Bold(true),
-        FilterOn:       lipgloss.NewStyle().Bold(true),
-        FilterOff:      lipgloss.NewStyle().Faint(true),
- 	}
+		Path:           lipgloss.NewStyle().Faint(true),
+		RemovedLine:    lipgloss.NewStyle().Foreground(lipgloss.Color("#EF4444")),
+		AddedLine:      lipgloss.NewStyle().Foreground(lipgloss.Color("#10B981")),
+		UpdatedLine:    lipgloss.NewStyle().Foreground(lipgloss.Color("#F59E0B")),
+		SensitiveValue: lipgloss.NewStyle().Faint(true),
+		BadgeAdded:     lipgloss.NewStyle().Foreground(lipgloss.Color("#10B981")).Bold(true),
+		BadgeRemoved:   lipgloss.NewStyle().Foreground(lipgloss.Color("#EF4444")).Bold(true),
+		BadgeUpdated:   lipgloss.NewStyle().Foreground(lipgloss.Color("#F59E0B")).Bold(true),
+		FilterOn:       lipgloss.NewStyle().Bold(true),
+		FilterOff:      lipgloss.NewStyle().Faint(true),
+	}
 }
-
-

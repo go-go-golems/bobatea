@@ -1,8 +1,8 @@
 package xdiff
 
 import (
-    "fmt"
-    "sort"
+	"fmt"
+	"sort"
 )
 
 type PathChange struct {
@@ -13,7 +13,8 @@ type PathChange struct {
 
 // MapDiff computes added/removed/updated by comparing two flattened maps
 // (path → value). Returns three sorted slices.
-func MapDiff(before, after map[string]any) (added, removed, updated []PathChange) {
+func MapDiff(before, after map[string]any) ([]PathChange, []PathChange, []PathChange) {
+	var added, removed, updated []PathChange
 	seen := make(map[string]struct{})
 
 	for k, av := range after {
@@ -38,23 +39,21 @@ func MapDiff(before, after map[string]any) (added, removed, updated []PathChange
 	sort.Slice(added, func(i, j int) bool { return added[i].Path < added[j].Path })
 	sort.Slice(removed, func(i, j int) bool { return removed[i].Path < removed[j].Path })
 	sort.Slice(updated, func(i, j int) bool { return updated[i].Path < updated[j].Path })
-	return
+	return added, removed, updated
 }
 
 func equalAny(a, b any) bool {
-    // basic equality; fine for examples
-    return toString(a) == toString(b)
+	// basic equality; fine for examples
+	return toString(a) == toString(b)
 }
 
 func toString(v any) string {
-    switch t := v.(type) {
-    case string:
-        return t
-    case []byte:
-        return string(t)
-    default:
-        return fmt.Sprint(v)
-    }
+	switch t := v.(type) {
+	case string:
+		return t
+	case []byte:
+		return string(t)
+	default:
+		return fmt.Sprint(v)
+	}
 }
-
-
