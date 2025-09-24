@@ -24,23 +24,12 @@ func censorValue(value any) string {
 	return "[redacted]"
 }
 
-// valueToString formats a value with optional censoring
-func valueToString(v any, censored bool, styles Styles) string {
-	if v == nil {
-		return ""
-	}
-	if censored {
-		return styles.SensitiveValue.Render(censorValue(v))
-	}
-	return formatValue(v)
-}
-
 // renderChangeLine renders a single change line with prefix and styling
 func renderChangeLine(prefix string, value any, redacted bool, style lipgloss.Style) string {
 	if value == nil {
 		return ""
 	}
-	
+
 	// Handle empty strings with special labels
 	if str, ok := value.(string); ok && str == "" {
 		label := "EMPTY"
@@ -51,7 +40,7 @@ func renderChangeLine(prefix string, value any, redacted bool, style lipgloss.St
 		}
 		return style.Render(fmt.Sprintf("%s %s", prefix, label))
 	}
-	
+
 	display := formatValue(value)
 	if redacted {
 		display = censorValue(value)
@@ -62,7 +51,7 @@ func renderChangeLine(prefix string, value any, redacted bool, style lipgloss.St
 // renderChangeLines renders before/after values for a change
 func renderChangeLines(ch Change, redacted bool, styles Styles) (string, string) {
 	var left, right string
-	
+
 	switch ch.Status() {
 	case ChangeStatusAdded:
 		right = renderChangeLine("+", ch.After(), redacted && ch.Sensitive(), styles.AddedLine)
@@ -72,6 +61,6 @@ func renderChangeLines(ch Change, redacted bool, styles Styles) (string, string)
 		left = renderChangeLine("-", ch.Before(), redacted && ch.Sensitive(), styles.RemovedLine)
 		right = renderChangeLine("+", ch.After(), redacted && ch.Sensitive(), styles.AddedLine)
 	}
-	
+
 	return left, right
 }

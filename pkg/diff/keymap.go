@@ -6,20 +6,20 @@ import (
 
 // keyMap defines the key bindings for the diff component
 type keyMap struct {
-	Up           key.Binding
-	Down         key.Binding
-	Left         key.Binding
-	Right        key.Binding
-	PageUp       key.Binding
-	PageDown     key.Binding
-	Tab          key.Binding
-	Search       key.Binding
-	Escape       key.Binding
-	ToggleRedact key.Binding
-	FilterAdded  key.Binding
+	Up            key.Binding
+	Down          key.Binding
+	Left          key.Binding
+	Right         key.Binding
+	PageUp        key.Binding
+	PageDown      key.Binding
+	Tab           key.Binding
+	Search        key.Binding
+	Escape        key.Binding
+	ToggleRedact  key.Binding
+	FilterAdded   key.Binding
 	FilterRemoved key.Binding
 	FilterUpdated key.Binding
-	Quit         key.Binding
+	Quit          key.Binding
 }
 
 // newKeyMap returns a new keyMap with default bindings

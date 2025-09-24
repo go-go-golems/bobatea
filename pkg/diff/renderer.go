@@ -113,7 +113,6 @@ func renderItemDetail(item DiffItem, redacted bool, styles Styles, searchQuery s
 	)
 }
 
-
 // countChanges returns (added, removed, updated) counts
 // (removed) countChanges superseded by countChangesFiltered
 

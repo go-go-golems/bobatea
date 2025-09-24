@@ -1,3 +1,199 @@
+---
+Title: Diff Component
+Slug: diff-component
+Short: Reusable Bubble Tea diff viewer with two-pane layout, search, filters, and redaction.
+Topics:
+- tui
+- diff
+- bubbletea
+- lipgloss
+IsTemplate: false
+IsTopLevel: false
+ShowPerDefault: true
+SectionType: GeneralTopic
+---
+
+# Diff Component
+
+The Diff component is a reusable Bubble Tea view for exploring structured changes. It presents a two‑pane list/detail layout, a visible search box that filters both panels in real time, optional status filters (added/removed/updated), and sensitive value redaction. The goal is a polished, domain‑agnostic UX that you can plug into your own data sources.
+
+## Minimal API
+
+The component stays domain‑agnostic by relying on a small set of interfaces. Your code adapts any data into these shapes and the UI takes care of rendering, filtering, and navigation.
+
+```go
+// Data source
+type DataProvider interface {
+    Title() string
+    Items() []DiffItem
+}
+
+// Item with grouped changes
+type DiffItem interface {
+    ID() string
+    Name() string
+    Categories() []Category
+}
+
+type Category interface {
+    Name() string
+    Changes() []Change
+}
+
+type Change interface {
+    Path() string
+    Status() ChangeStatus // "added" | "updated" | "removed"
+    Before() any
+    After() any
+    Sensitive() bool
+}
+
+type ChangeStatus string
+```
+
+## Configuration
+
+Configuration focuses on UX toggles (search, filters, redaction) and layout. Defaults are sensible; override what you need or compose with functional options.
+
+```go
+type Config struct {
+    Title               string
+    RedactSensitive     bool
+    SplitPaneRatio      float64 // default 0.35
+    EnableSearch        bool
+    EnableStatusFilters bool
+    InitialFilter       StatusFilter
+}
+
+type StatusFilter struct {
+    ShowAdded   bool
+    ShowRemoved bool
+    ShowUpdated bool
+}
+
+// Functional options
+func WithSearch(enabled bool) Option
+func WithStatusFilters(enabled bool, initial StatusFilter) Option
+```
+
+## Quick Start
+
+This example wires a simple provider into the Diff component and runs it as a Bubble Tea program.
+
+```go
+provider := NewYourProvider()
+config := diff.DefaultConfig()
+config.Title = "My Diff"
+
+m := diff.NewModel(provider, config)
+_ = tea.NewProgram(m, tea.WithAltScreen()).Run()
+```
+
+Run the included examples to see it in action:
+
+```bash
+# Basic usage
+go run ./examples/diff/basic-usage
+
+# Disable search or status filters
+go run ./examples/diff/basic-usage --no-search
+go run ./examples/diff/basic-usage --no-filters
+
+# Advanced showcase and large dataset
+go run ./examples/diff/advanced-showcase
+go run ./examples/diff/advanced-showcase --large
+```
+
+## UX and Keys
+
+The UI is designed for speed: familiar navigation, a visible search bar, and immediate feedback when toggling redaction or filters.
+
+- Up/Down or j/k: navigate list
+- Tab: switch pane focus
+- /: show search input (no leading slash in input)
+- ESC: hide and clear search
+- r: toggle redaction
+- 1/2/3: toggle Added/Removed/Updated status filters
+- q or Ctrl+C: quit
+
+## Search
+
+Search filters both panels in real time so you can narrow context without leaving the keyboard.
+
+- Visible search input appears under the header when you press `/`.
+- As you type, the left list is filtered to matching items, and the right detail pane renders only matching change lines.
+- Matching is a case‑insensitive substring over item names, change paths, and stringified before/after values.
+- Press ESC to hide and clear the search input; sizes are recomputed automatically.
+
+## Status Filters
+
+Status filters control which change lines are visible in the detail pane.
+
+- Keys `1`, `2`, `3` toggle Added, Removed, and Updated lines respectively.
+- The filter strip shows current states (for example, `+ ON   - OFF   ~ ON`).
+- Badges next to the item title reflect counts after both search and status filtering.
+
+## Rendering
+
+Rendering aims to be readable and consistent across terminals.
+
+- Two‑pane layout with borders and padding for legibility.
+- Change lines use clear prefixes and colors:
+  - Removed: `- <before>` (red)
+  - Added: `+ <after>` (green)
+  - Updated: two lines (removed then added)
+- Path labels are right‑aligned/dimmed for scannability.
+- Redaction replaces sensitive values with `[redacted]` when enabled.
+
+## Architecture
+
+The package mirrors a modular structure so each concern stays small and testable.
+
+- `provider.go` — minimal interfaces: `DataProvider`, `DiffItem`, `Category`, `Change`
+- `model.go` — Bubble Tea model orchestration (focus, layout, search visibility, status toggles)
+- `list.go` — Bubbles `list.Model` adapter (no internal filter/help)
+- `detail.go` — viewport wrapper: `SetSize`, `SetContent`
+- `search.go` — visible search model and helpers
+- `renderer.go` — header with badges, filter strip, grouped sections, line rendering
+- `values.go` — value formatting and redaction helpers
+- `styles.go` — lipgloss styles (borders, headers, badges, filters, lines)
+- `keymap.go` — key bindings
+
+Resizing rules:
+
+- Header height = title + (search line if visible)
+- Footer height = help text
+- Body height = window height − header − footer − safety line
+- Inner sizes derive from panel sizes minus frame sizes from styles
+
+## Examples
+
+Two example programs demonstrate typical and advanced usage.
+
+- `examples/diff/basic-usage` — small, focused sample with flags:
+  - `--no-search` disables the search UI and matching
+  - `--no-filters` disables status filters
+- `examples/diff/advanced-showcase` — realistic configuration diffs:
+  - Pretty‑printed JSON values, size/duration/URL formatting, secret redaction
+  - Large dataset mode via `--large` to validate performance
+
+## Testing (Tmux)
+
+You can script regression tests that open the TUI, send keys, and capture the screen.
+
+```bash
+tmux new-session -d -s diff-test 'go run ./examples/diff/basic-usage' && sleep 2
+tmux send-keys -t diff-test '/' 'user' && sleep 1
+tmux capture-pane -t diff-test -p > /tmp/diff-output.txt
+tmux kill-session -t diff-test
+```
+
+Assert on `/tmp/diff-output.txt` to verify headers, filter line, badges, and filtered content.
+
+## Scope and Non‑Goals (v1)
+
+The MVP focuses on navigation, search, filters, and redaction. It intentionally excludes exporters, plugin systems, and complex theming. See the project notes for future enhancements.
+
 ## Diff Component (MVP)
 
 A minimal, reusable diff viewer for Bubble Tea apps. Focused on: two-pane list/detail, search, and redaction. Everything else is deferred to the advanced design doc.
