@@ -404,9 +404,18 @@ func generateLargeDataset() []diff.DiffItem {
 				// Environment Variables Category
 				var envChanges []diff.Change
 				for j := 0; j < 10; j++ {
+					var status diff.ChangeStatus
+					switch j % 3 {
+					case 0:
+						status = diff.ChangeStatusAdded
+					case 1:
+						status = diff.ChangeStatusRemoved
+					default:
+						status = diff.ChangeStatusUpdated
+					}
 					envChanges = append(envChanges, &ConfigChange{
 						path:        fmt.Sprintf("VAR_%d", j),
-						status:      []diff.ChangeStatus{diff.ChangeStatusAdded, diff.ChangeStatusRemoved, diff.ChangeStatusUpdated}[j%3],
+						status:      status,
 						beforeValue: fmt.Sprintf("old_value_%d", j),
 						afterValue:  fmt.Sprintf("new_value_%d", j),
 						dataType:    "string",
