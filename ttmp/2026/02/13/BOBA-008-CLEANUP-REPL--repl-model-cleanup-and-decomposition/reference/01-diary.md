@@ -170,3 +170,211 @@ This step intentionally avoided changing provider command behavior yet, to keep 
 
 - Task tracking:
   - BOBA-008 task 18 checked complete.
+
+## Step 3: Task 15 - Context Injection Constructor
+
+I added an optional constructor to let callers supply an external base context for the REPL model (`NewModelWithContext`). This makes it possible for app-level lifecycle context to flow into model-owned cancellation plumbing.
+
+This keeps the default constructor unchanged and preserves existing call sites while opening a clean path for context propagation in the provider command layer.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Continue task-by-task execution by implementing the context-injection helper before switching provider calls.
+
+**Inferred user intent:** Ensure provider-timeout logic can be rooted in UI/app lifecycle context when desired.
+
+**Commit (code):** 6439546 — "repl: add NewModelWithContext constructor"
+
+### What I did
+
+- Updated `pkg/repl/model.go`:
+  - added `NewModelWithContext(ctx, evaluator, config, pub)` constructor
+  - constructor now:
+    - builds via `NewModel(...)`
+    - cancels the initially-created model context
+    - derives a new model app context from supplied `ctx` (or `context.Background()` if nil)
+- Updated `pkg/repl/repl_test.go`:
+  - added `TestModelWithContext`
+  - verifies canceling parent context cancels `model.appCtx`
+
+### Why
+
+- Context injection is required so callers can tie model/provider activity to a parent app context.
+- This is prerequisite for replacing provider `context.Background()` calls in task 16.
+
+### What worked
+
+- Focused tests passed:
+  - `go test ./pkg/repl/... -count=1`
+- Pre-commit checks passed fully during commit.
+
+### What didn't work
+
+- N/A in this step.
+
+### What I learned
+
+- Introducing context injection as a constructor avoids polluting `Config` with non-configuration concerns.
+
+### What was tricky to build
+
+- Avoiding context leaks while layering constructors required explicitly canceling the initial default app context inside `NewModelWithContext`.
+
+### What warrants a second pair of eyes
+
+- Constructor layering (`NewModelWithContext` wrapping `NewModel`) is simple but should be reviewed for lifecycle clarity.
+
+### What should be done in the future
+
+- Complete task 16 by switching all provider commands to derive timeout contexts from `m.appCtx`.
+
+### Code review instructions
+
+- Review:
+  - `pkg/repl/model.go`
+  - `pkg/repl/repl_test.go`
+- Validate:
+  - `go test ./pkg/repl/... -count=1`
+
+### Technical details
+
+- Task tracking:
+  - BOBA-008 task 15 checked complete.
+
+## Step 4: Task 16 - Provider Commands Use App Context
+
+I switched all provider timeout contexts from `context.Background()` to the model app context, preserving existing timeout behavior while enabling app-level cancellation to interrupt provider work.
+
+This was the core behavior change requested in the thread and is now centralized by using `m.appContext()` in each provider command path.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Continue execution with the actual context propagation change in completion/help-bar/help-drawer provider command code.
+
+**Inferred user intent:** Make provider work stop when UI/app context is canceled, not only on timeout.
+
+**Commit (code):** 2a75285 — "repl: derive provider timeouts from model app context"
+
+### What I did
+
+- Updated `pkg/repl/model.go`:
+  - `completionCmd`: `context.WithTimeout(m.appContext(), m.completionReqTimeout)`
+  - `helpBarCmd`: `context.WithTimeout(m.appContext(), m.helpBarReqTimeout)`
+  - `helpDrawerCmd`: `context.WithTimeout(m.appContext(), m.helpDrawerReqTimeout)`
+  - added helper `appContext()` with safe fallback to `context.Background()`
+
+### Why
+
+- The previous behavior ignored model/app shutdown and waited only for timeout.
+- Context chaining is required so app lifecycle can preempt provider calls.
+
+### What worked
+
+- Focused tests passed:
+  - `go test ./pkg/repl/... -count=1`
+- Pre-commit checks passed.
+
+### What didn't work
+
+- N/A in this step.
+
+### What I learned
+
+- A small accessor (`appContext()`) keeps command callsites readable and resilient.
+
+### What was tricky to build
+
+- Ensuring behavior remains deterministic even if `appCtx` is unset required a fallback path.
+
+### What warrants a second pair of eyes
+
+- Confirm that fallback-to-background semantics are acceptable versus failing hard when `appCtx` is unexpectedly nil.
+
+### What should be done in the future
+
+- Keep app-context wiring in mind during BOBA-008 big-bang model extraction so this behavior does not regress.
+
+### Code review instructions
+
+- Review `pkg/repl/model.go` at command builders.
+- Validate:
+  - `go test ./pkg/repl/... -count=1`
+
+### Technical details
+
+- Task tracking:
+  - BOBA-008 task 16 checked complete.
+
+## Step 5: Tasks 19 and 17 - Cancellation Tests and Validation
+
+I added explicit tests proving provider command calls return `context.Canceled` when app context is canceled, and that pressing quit cancels the model app context. This closes the loop on behavior, not just implementation.
+
+I also completed the required validation step (`go test` + `golangci-lint`) while continuing task-by-task commits.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 1)
+
+**Assistant interpretation:** Finish implementation tasks with concrete regression tests and run the validation gates.
+
+**Inferred user intent:** Ensure the context propagation change is objectively verified and maintain commit discipline.
+
+**Commit (code):** 2f0ccf1 — "repl: test provider cancellation via app context"
+
+### What I did
+
+- Updated `pkg/repl/repl_test.go`:
+  - added `cancellableProviderEvaluator` fake implementing completion/help-bar/help-drawer providers
+  - added `TestProviderCommandsUseAppContextCancellation`
+  - added `TestQuitCancelsModelAppContext`
+- Ran validation:
+  - `go test ./pkg/repl/... -count=1`
+  - `golangci-lint run -v --max-same-issues=100 ./pkg/repl/...`
+
+### Why
+
+- We needed direct evidence that app-context cancellation reaches provider command execution.
+- Quit-path cancellation also needed explicit coverage.
+
+### What worked
+
+- New tests passed and correctly asserted `context.Canceled`.
+- Validation gates passed cleanly.
+
+### What didn't work
+
+- N/A in this step.
+
+### What I learned
+
+- Having a single cancellable fake that implements all provider interfaces keeps cross-feature cancellation tests concise.
+
+### What was tricky to build
+
+- Ensuring cancellation tests asserted the right failure mode (`context.Canceled`, not timeout) required using longer request timeouts in test config.
+
+### What warrants a second pair of eyes
+
+- Test design uses internal command methods directly (`completionCmd`, `helpBarCmd`, `helpDrawerCmd`); confirm this testing style aligns with team preference.
+
+### What should be done in the future
+
+- As BOBA-008 big-bang rewrite progresses, carry forward these cancellation tests (or equivalent) as non-regression gates.
+
+### Code review instructions
+
+- Review:
+  - `pkg/repl/repl_test.go`
+- Validate:
+  - `go test ./pkg/repl/... -count=1`
+  - `golangci-lint run -v --max-same-issues=100 ./pkg/repl/...`
+
+### Technical details
+
+- Task tracking:
+  - BOBA-008 task 19 checked complete.
+  - BOBA-008 task 17 checked complete.

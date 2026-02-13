@@ -36,3 +36,25 @@ Uploaded revised BOBA-008 guide with app-context cancellation guidance to reMark
 - /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-008-CLEANUP-REPL--repl-model-cleanup-and-decomposition/reference/01-diary.md — Added diary step records for guide upload and Task 18 implementation
 - /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-008-CLEANUP-REPL--repl-model-cleanup-and-decomposition/tasks.md — Added context-propagation implementation tasks 15-19
 
+
+## 2026-02-13
+
+Completed task 15: added NewModelWithContext constructor so model app context can derive from external parent lifecycle context. (commit 6439546)
+
+### Related Files
+
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/model.go — Added context-injection constructor and lifecycle handoff
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/repl_test.go — Added TestModelWithContext parent-cancellation propagation check
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-008-CLEANUP-REPL--repl-model-cleanup-and-decomposition/reference/01-diary.md — Recorded task 15 implementation notes
+
+
+## 2026-02-13
+
+Completed context propagation implementation: provider commands now derive timeout contexts from model app context (task 16), added cancellation regression tests (task 19), and ran required pkg/repl validation (task 17). (commits 2a75285, 2f0ccf1)
+
+### Related Files
+
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/model.go — Switched provider context roots to app context and added appContext helper
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/repl_test.go — Added app-context cancellation tests for provider commands and quit behavior
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-008-CLEANUP-REPL--repl-model-cleanup-and-decomposition/reference/01-diary.md — Recorded tasks 16/19/17 implementation diary entries
+

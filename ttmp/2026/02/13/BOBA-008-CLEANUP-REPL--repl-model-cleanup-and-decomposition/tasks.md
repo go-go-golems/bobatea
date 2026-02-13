@@ -25,8 +25,8 @@
 
 - [ ] Update BOBA-008 changelog with rewrite summary and commit hashes
 - [ ] Update BOBA-008 diary/analysis notes with migration details and known follow-ups
-- [ ] Add optional constructor/helper to inject external base context into repl.Model
-- [ ] Switch completion/helpBar/helpDrawer provider command contexts from Background to app context + timeout
-- [ ] Run validation (go test ./pkg/repl/... and golangci-lint ./pkg/repl/...) and commit task-by-task
+- [x] Add optional constructor/helper to inject external base context into repl.Model
+- [x] Switch completion/helpBar/helpDrawer provider command contexts from Background to app context + timeout
+- [x] Run validation (go test ./pkg/repl/... and golangci-lint ./pkg/repl/...) and commit task-by-task
 - [x] Add model app context fields/cancel lifecycle and cancel on quit path
-- [ ] Add tests for app-context cancellation propagation to provider commands
+- [x] Add tests for app-context cancellation propagation to provider commands
