@@ -1,7 +1,7 @@
 ---
 Title: REPL Help Drawer Design and Implementation
 Ticket: BOBA-004-HELP-DRAWER-REPL-IMPLEMENTATION
-Status: active
+Status: complete
 Topics:
     - repl
     - help-drawer
@@ -11,18 +11,27 @@ DocType: index
 Intent: long-term
 Owners: []
 RelatedFiles:
-    - Path: bobatea/pkg/overlay/overlay.go
-      Note: Initial overlay rendering mechanism for drawer
-    - Path: bobatea/pkg/repl/model.go
-      Note: Main code integration point for drawer lifecycle and updates
-    - Path: bobatea/ttmp/2026/02/13/BOBA-004-HELP-DRAWER-REPL-IMPLEMENTATION--repl-help-drawer-design-and-implementation/design-doc/01-help-drawer-analysis-and-implementation-guide.md
+    - Path: pkg/repl/help_drawer_types.go
+      Note: Help drawer provider contracts
+    - Path: pkg/repl/config.go
+      Note: Drawer config defaults and tuning
+    - Path: pkg/repl/keymap.go
+      Note: Drawer key bindings
+    - Path: pkg/repl/model.go
+      Note: Drawer lifecycle, debounce, and overlay rendering integration
+    - Path: pkg/repl/help_drawer_model_test.go
+      Note: Coverage for toggle, adaptive updates, and stale filtering
+    - Path: examples/repl/autocomplete-generic/main.go
+      Note: Manual demo provider for drawer behavior
+    - Path: ttmp/2026/02/13/BOBA-004-HELP-DRAWER-REPL-IMPLEMENTATION--repl-help-drawer-design-and-implementation/design-doc/01-help-drawer-analysis-and-implementation-guide.md
       Note: Detailed help drawer analysis and implementation plan
 ExternalSources: []
 Summary: ""
-LastUpdated: 2026-02-13T09:59:55.40956153-05:00
+LastUpdated: 2026-02-13T18:01:21.146375918-05:00
 WhatFor: ""
 WhenToUse: ""
 ---
+
 
 
 # REPL Help Drawer Design and Implementation
@@ -40,7 +49,7 @@ The design is overlay-layer friendly and remains compatible with replacing/rebui
 
 ## Status
 
-Current status: **active**
+Current status: **complete**
 
 ## Topics
 
