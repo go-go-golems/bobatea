@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -146,7 +147,11 @@ func main() {
 	repl.RegisterReplToTimelineTransformer(bus)
 
 	model := repl.NewModel(evaluator, config, bus.Publisher)
-	p := tea.NewProgram(model, tea.WithAltScreen())
+	programOptions := make([]tea.ProgramOption, 0, 1)
+	if os.Getenv("BOBATEA_NO_ALT_SCREEN") != "1" {
+		programOptions = append(programOptions, tea.WithAltScreen())
+	}
+	p := tea.NewProgram(model, programOptions...)
 	timeline.RegisterUIForwarder(bus, p)
 
 	ctx, cancel := context.WithCancel(context.Background())
