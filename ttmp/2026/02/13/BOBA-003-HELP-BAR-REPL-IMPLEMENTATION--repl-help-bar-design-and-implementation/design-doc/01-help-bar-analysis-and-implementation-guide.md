@@ -45,6 +45,23 @@ The help bar should:
 > [!NOTE]
 > Trigger policy remains provider-owned. The REPL schedules update opportunities; providers decide whether to show data.
 
+## BOBA-002 Learnings Applied
+
+The autocomplete implementation (BOBA-002) introduced patterns we should reuse directly for help bar work:
+
+- **Request ID stale-drop is mandatory** for async UI safety.
+- **Debounce scheduling should not eagerly hide visible UI** (prevents flicker under continuous typing).
+- **Config normalization guards invalid values and keeps defaults stable**.
+- **`key.Binding` and `help.Model` remain source-of-truth for key help output**.
+- **View composition should keep dynamic contextual rows explicit** so overlays and bars do not fight for layout ownership.
+
+Implementation decisions for BOBA-003 therefore follow the same structure used successfully in `pkg/repl/model.go` for completion:
+
+- dedicated message types,
+- dedicated request sequence counter,
+- stale response drop by `RequestID`,
+- timeout-bounded provider calls with panic-safe command wrapper.
+
 ## Problem Statement
 
 The current REPL in `bobatea/pkg/repl/model.go` renders:
@@ -175,6 +192,9 @@ On input mutation:
 - schedule `helpBarTickMsg` after debounce,
 - on tick, drop stale IDs and request provider asynchronously.
 
+> [!IMPORTANT]
+> Match BOBA-002 stability behavior: do not clear a currently visible help bar merely because a new debounced request was scheduled. Clear only on explicit result policy (`Show=false`, empty payload, or errors depending on config policy).
+
 ### Stale-drop rule
 
 If `msg.RequestID != helpBarReqSeq`, ignore.
@@ -243,6 +263,7 @@ Rationale:
 
 - shared mental model for stale handling,
 - independent iteration speed and testing.
+- easier side-by-side operation with autocomplete without tight coupling.
 
 ### Decision 3: Provider decides whether context is display-worthy
 

@@ -37,6 +37,7 @@ The architecture is intentionally compatible with replacing or rewriting the cur
 - **Related Files**: See frontmatter RelatedFiles field
 - **External Sources**: See frontmatter ExternalSources field
 - **Primary Design Doc**: [design-doc/01-help-bar-analysis-and-implementation-guide.md](./design-doc/01-help-bar-analysis-and-implementation-guide.md)
+- **Implementation Diary**: [reference/01-diary.md](./reference/01-diary.md)
 
 ## Status
 
