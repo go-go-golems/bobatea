@@ -6,7 +6,7 @@
 - [x] Add completion paging key bindings (page up/down) and help integration
 - [x] Add REPL completion viewport state (scroll offset / visible rows) and selection-visibility helpers
 - [x] Add lipgloss v2 dependency and implement overlay renderer in `Model.View` (non-inline popup)
-- [ ] Implement placement/sizing logic with terminal clamping and above/below fallback
+- [x] Implement placement/sizing logic with terminal clamping and above/below fallback
 - [ ] Implement scrolling/paging behavior for long suggestion lists
 - [ ] Add/adjust tests for viewport and overlay behavior
 - [ ] Run focused validation (`go test`, lint on changed packages, manual `examples/js-repl` run)

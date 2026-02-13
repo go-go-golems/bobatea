@@ -62,3 +62,14 @@ Task 4 complete: introduced lipgloss v2 dependency and switched REPL completion 
 - /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-006-COMPLETION-OVERLAY-LIPGLOSS-V2--repl-completion-overlay-with-lipgloss-v2-canvas-layers/reference/01-diary.md — Added Step 8 diary entry
 - /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-006-COMPLETION-OVERLAY-LIPGLOSS-V2--repl-completion-overlay-with-lipgloss-v2-canvas-layers/tasks.md — Checked off Task 4
 
+
+## 2026-02-13
+
+Task 5 complete: added geometry-based overlay placement/sizing clamps and width-aware popup rendering pipeline.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/model.go — Added overlay layout computation and bounded popup rendering
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-006-COMPLETION-OVERLAY-LIPGLOSS-V2--repl-completion-overlay-with-lipgloss-v2-canvas-layers/reference/01-diary.md — Added Step 9 diary entry
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-006-COMPLETION-OVERLAY-LIPGLOSS-V2--repl-completion-overlay-with-lipgloss-v2-canvas-layers/tasks.md — Checked off Task 5
+

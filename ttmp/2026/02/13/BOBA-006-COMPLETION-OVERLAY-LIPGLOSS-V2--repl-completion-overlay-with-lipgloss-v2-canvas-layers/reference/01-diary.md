@@ -583,7 +583,7 @@ The first overlay pass uses straightforward placement (near input row with above
 
 **Inferred user intent:** Get a real overlay architecture in place as soon as possible, then iterate on geometry details.
 
-**Commit (code):** (recorded in the commit created for this step)
+**Commit (code):** `8d816d7` — "repl: render completion popup as v2 overlay layer"
 
 ### What I did
 
@@ -649,3 +649,84 @@ The first overlay pass uses straightforward placement (near input row with above
 - Overlay z-order currently uses:
   - base: `Z(0)`
   - completion: `Z(20)`
+
+## Step 9: Task 5 Implementation — Placement/Sizing Clamping Logic
+
+After introducing the overlay renderer, I implemented deterministic geometry logic so popup width/height and position are constrained by terminal dimensions and overlay config values.
+
+This step adds dedicated layout computation (`computeCompletionOverlayLayout`) and updates popup rendering to honor computed content width and visible row count.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 5)
+
+**Assistant interpretation:** Continue with next task and keep implementation incremental with test-verified commits.
+
+**Inferred user intent:** Make overlay behavior production-safe for small terminals and long suggestions.
+
+**Commit (code):** (recorded in the commit created for this step)
+
+### What I did
+
+- Updated `pkg/repl/model.go`:
+  - added `completionOverlayLayout` struct
+  - added `computeCompletionOverlayLayout(header, timelineView)`:
+    - computes popup width from content + border/padding frame
+    - applies `OverlayMinWidth` / `OverlayMaxWidth` clamps
+    - computes desired rows with `MaxSuggestions` + `OverlayMaxHeight`
+    - chooses below vs above placement based on available rows
+    - clamps `x/y` to terminal bounds
+  - updated `View()` to use computed layout and keep `completionVisibleRows` synchronized
+  - updated `renderCompletionPopup(...)` to:
+    - render only visible row window
+    - truncate/pad each item to computed content width
+  - added `completionAnchorColumn()` using prompt + cursor prefix width
+- Added `go-runewidth` usage in model for accurate truncation/padding width math
+- Checked off Task 5 in:
+  - `ttmp/.../BOBA-006.../tasks.md`
+- Ran:
+  - `go test ./pkg/repl/... -count=1`
+
+### Why
+
+- Overlay renderer alone is insufficient without strict size/placement rules.
+- Geometry clamping is required before enabling full paging behavior.
+
+### What worked
+
+- REPL tests remain green.
+- Overlay now computes bounded dimensions and fallback placement instead of hardcoded coordinates.
+
+### What didn't work
+
+- N/A for this step.
+
+### What I learned
+
+- The popup frame size from style (`GetHorizontalFrameSize` / `GetVerticalFrameSize`) is essential to avoid off-by-one clipping when borders/padding are enabled.
+
+### What was tricky to build
+
+- Balancing three height constraints simultaneously:
+  - suggestion count limit,
+  - overlay max height config,
+  - actual available rows above/below input.
+
+### What warrants a second pair of eyes
+
+- Anchor strategy currently uses prompt + typed prefix; if textarea-style wrapping is introduced later, anchor computation should evolve to wrapped-line coordinates.
+
+### What should be done in the future
+
+- Next step wires page key behavior (`pgup/pgdown`) and row-window scrolling to `completionScrollTop`.
+
+### Code review instructions
+
+- Review:
+  - `pkg/repl/model.go` (`computeCompletionOverlayLayout`, `renderCompletionPopup`, `completionAnchorColumn`, `View`)
+- Re-run:
+  - `go test ./pkg/repl/... -count=1`
+
+### Technical details
+
+- Placement heuristic currently prefers below-input when it can satisfy desired rows or when below has at least as many rows as above.

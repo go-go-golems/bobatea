@@ -21,6 +21,7 @@ import (
 	mode_keymap "github.com/go-go-golems/bobatea/pkg/mode-keymap"
 	"github.com/go-go-golems/bobatea/pkg/timeline"
 	renderers "github.com/go-go-golems/bobatea/pkg/timeline/renderers"
+	"github.com/mattn/go-runewidth"
 	"github.com/rs/zerolog/log"
 )
 
@@ -332,23 +333,22 @@ func (m *Model) View() string {
 	}
 	base := lipgloss.JoinVertical(lipgloss.Left, baseSections...)
 
-	popup := m.renderCompletionPopup()
-	if popup == "" || m.width <= 0 || m.height <= 0 {
+	layout, ok := m.computeCompletionOverlayLayout(header, timelineView)
+	if !ok || m.width <= 0 || m.height <= 0 {
+		m.completionVisibleRows = 0
 		return base
 	}
-
-	inputY := lipgloss.Height(header) + 1 + lipgloss.Height(timelineView)
-	popupHeight := lipgloss.Height(popup)
-	overlayX := 0
-	overlayY := inputY + 1 + m.completionMargin
-	if overlayY+popupHeight > m.height {
-		overlayY = inputY - popupHeight - m.completionMargin
+	popup := m.renderCompletionPopup(layout)
+	if popup == "" {
+		m.completionVisibleRows = 0
+		return base
 	}
-	overlayY = clampInt(overlayY, 0, max(0, m.height-1))
+	m.completionVisibleRows = layout.VisibleRows
+	m.ensureCompletionSelectionVisible()
 
 	comp := lipglossv2.NewCompositor(
 		lipglossv2.NewLayer(base).X(0).Y(0).Z(0).ID("repl-base"),
-		lipglossv2.NewLayer(popup).X(overlayX).Y(overlayY).Z(20).ID("completion-overlay"),
+		lipglossv2.NewLayer(popup).X(layout.PopupX).Y(layout.PopupY).Z(20).ID("completion-overlay"),
 	)
 	canvas := lipglossv2.NewCanvas(max(1, m.width), max(1, m.height))
 	canvas.Compose(comp)
@@ -415,6 +415,14 @@ type completionResultMsg struct {
 	RequestID uint64
 	Result    CompletionResult
 	Err       error
+}
+
+type completionOverlayLayout struct {
+	PopupX       int
+	PopupY       int
+	PopupWidth   int
+	VisibleRows  int
+	ContentWidth int
 }
 
 func (m *Model) scheduleRefresh() tea.Cmd {
@@ -606,8 +614,89 @@ func (m *Model) hideCompletionPopup() {
 	m.completionVisibleRows = 0
 }
 
-func (m *Model) renderCompletionPopup() string {
-	if !m.completionVisible {
+func (m *Model) computeCompletionOverlayLayout(header, timelineView string) (completionOverlayLayout, bool) {
+	if !m.completionVisible || m.width <= 0 || m.height <= 0 {
+		return completionOverlayLayout{}, false
+	}
+	suggestions := m.completionLastResult.Suggestions
+	if len(suggestions) == 0 {
+		return completionOverlayLayout{}, false
+	}
+
+	inputY := lipgloss.Height(header) + 1 + lipgloss.Height(timelineView)
+	frameWidth := m.styles.CompletionPopup.GetHorizontalFrameSize()
+	frameHeight := m.styles.CompletionPopup.GetVerticalFrameSize()
+
+	contentWidth := 1
+	for _, suggestion := range suggestions {
+		w := runewidth.StringWidth("  " + suggestion.DisplayText)
+		if w > contentWidth {
+			contentWidth = w
+		}
+	}
+
+	popupWidth := contentWidth + frameWidth
+	if m.completionMinWidth > 0 {
+		popupWidth = max(popupWidth, m.completionMinWidth)
+	}
+	if m.completionMaxWidth > 0 {
+		popupWidth = min(popupWidth, m.completionMaxWidth)
+	}
+	popupWidth = min(popupWidth, m.width)
+	contentWidth = max(1, popupWidth-frameWidth)
+
+	desiredRows := len(suggestions)
+	if m.completionMaxVisible > 0 {
+		desiredRows = min(desiredRows, m.completionMaxVisible)
+	}
+	maxHeight := m.completionMaxHeight
+	if maxHeight <= 0 {
+		maxHeight = m.height
+	}
+	maxHeight = min(maxHeight, m.height)
+	maxRowsByConfig := max(1, maxHeight-frameHeight)
+	desiredRows = min(desiredRows, maxRowsByConfig)
+	if desiredRows <= 0 {
+		return completionOverlayLayout{}, false
+	}
+
+	margin := max(0, m.completionMargin)
+	availableBelow := max(0, m.height-(inputY+1+margin))
+	availableAbove := max(0, inputY-margin)
+	belowRows := max(0, min(availableBelow, maxHeight)-frameHeight)
+	aboveRows := max(0, min(availableAbove, maxHeight)-frameHeight)
+	if belowRows == 0 && aboveRows == 0 {
+		return completionOverlayLayout{}, false
+	}
+
+	placeBelow := belowRows >= desiredRows || belowRows >= aboveRows
+	visibleRows := desiredRows
+	popupY := inputY + 1 + margin
+	if placeBelow {
+		visibleRows = min(visibleRows, belowRows)
+	} else {
+		visibleRows = min(visibleRows, aboveRows)
+		popupY = inputY - margin - (visibleRows + frameHeight)
+	}
+	if visibleRows <= 0 {
+		return completionOverlayLayout{}, false
+	}
+
+	anchorX := m.completionAnchorColumn()
+	popupX := clampInt(anchorX, 0, max(0, m.width-popupWidth))
+	popupY = clampInt(popupY, 0, max(0, m.height-1))
+
+	return completionOverlayLayout{
+		PopupX:       popupX,
+		PopupY:       popupY,
+		PopupWidth:   popupWidth,
+		VisibleRows:  visibleRows,
+		ContentWidth: contentWidth,
+	}, true
+}
+
+func (m *Model) renderCompletionPopup(layout completionOverlayLayout) string {
+	if layout.VisibleRows <= 0 || layout.ContentWidth <= 0 {
 		return ""
 	}
 	suggestions := m.completionLastResult.Suggestions
@@ -615,20 +704,30 @@ func (m *Model) renderCompletionPopup() string {
 		return ""
 	}
 
-	var lines []string
-	limit := min(len(suggestions), m.completionMaxVisible)
-	for i := 0; i < limit; i++ {
-		itemText := suggestions[i].DisplayText
+	start := clampInt(m.completionScrollTop, 0, max(0, len(suggestions)-1))
+	end := min(len(suggestions), start+layout.VisibleRows)
+	lines := make([]string, 0, layout.VisibleRows)
+	for i := start; i < end; i++ {
+		itemText := "  " + suggestions[i].DisplayText
 		itemStyle := m.styles.CompletionItem
 		if i == m.completionSelection {
 			itemStyle = m.styles.CompletionSelected
-			itemText = "› " + itemText
-		} else {
-			itemText = "  " + itemText
+			itemText = "› " + suggestions[i].DisplayText
+		}
+		itemText = runewidth.Truncate(itemText, layout.ContentWidth, "")
+		if delta := layout.ContentWidth - runewidth.StringWidth(itemText); delta > 0 {
+			itemText += strings.Repeat(" ", delta)
 		}
 		lines = append(lines, itemStyle.Render(itemText))
 	}
-	return m.styles.CompletionPopup.Render(strings.Join(lines, "\n"))
+	return m.styles.CompletionPopup.Width(layout.PopupWidth).Render(strings.Join(lines, "\n"))
+}
+
+func (m *Model) completionAnchorColumn() int {
+	runes := []rune(m.textInput.Value())
+	cursor := clampInt(m.textInput.Position(), 0, len(runes))
+	prefix := string(runes[:cursor])
+	return runewidth.StringWidth(m.textInput.Prompt + prefix)
 }
 
 func clampInt(v, low, high int) int {
