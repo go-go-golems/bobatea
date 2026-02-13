@@ -3,6 +3,7 @@ package repl
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/go-go-golems/bobatea/pkg/eventbus"
 	"github.com/stretchr/testify/assert"
@@ -100,6 +101,12 @@ func TestConfig(t *testing.T) {
 	assert.False(t, config.EnableExternalEditor)
 	assert.True(t, config.EnableHistory)
 	assert.Equal(t, 1000, config.MaxHistorySize)
+	assert.True(t, config.Autocomplete.Enabled)
+	assert.Equal(t, 120*time.Millisecond, config.Autocomplete.Debounce)
+	assert.Equal(t, 400*time.Millisecond, config.Autocomplete.RequestTimeout)
+	assert.Equal(t, []string{"tab"}, config.Autocomplete.TriggerKeys)
+	assert.Equal(t, []string{"enter", "tab"}, config.Autocomplete.AcceptKeys)
+	assert.Equal(t, 8, config.Autocomplete.MaxSuggestions)
 }
 
 func TestStyles(t *testing.T) {

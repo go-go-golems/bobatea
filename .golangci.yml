@@ -16,6 +16,8 @@ linters:
     - nonamedreturns
     - predeclared
   exclusions:
+    paths:
+      - ttmp/
     rules:
       - linters:
           - staticcheck

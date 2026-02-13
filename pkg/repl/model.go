@@ -10,9 +10,13 @@ import (
 	"github.com/ThreeDotsLabs/watermill"
 	"github.com/ThreeDotsLabs/watermill/message"
 	"github.com/charmbracelet/bubbles/cursor"
+	"github.com/charmbracelet/bubbles/help"
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/go-go-golems/bobatea/pkg/eventbus"
+	mode_keymap "github.com/go-go-golems/bobatea/pkg/mode-keymap"
 	"github.com/go-go-golems/bobatea/pkg/timeline"
 	renderers "github.com/go-go-golems/bobatea/pkg/timeline/renderers"
 	"github.com/rs/zerolog/log"
@@ -34,11 +38,11 @@ type Model struct {
 	width, height int
 
 	// timeline shell (viewport + controller)
-	reg   *timeline.Registry
-	sh    *timeline.Shell
-	focus string // "input" or "timeline"
-	// configurable key for switching input/timeline focus
-	focusToggleKey string
+	reg    *timeline.Registry
+	sh     *timeline.Shell
+	focus  string // "input" or "timeline"
+	help   help.Model
+	keyMap KeyMap
 
 	// bus publisher
 	pub     message.Publisher
@@ -53,7 +57,6 @@ type Model struct {
 	completionReqSeq      uint64
 	completionDebounce    time.Duration
 	completionReqTimeout  time.Duration
-	completionTriggerKeys map[string]struct{}
 	completionVisible     bool
 	completionSelection   int
 	completionReplaceFrom int
@@ -90,7 +93,12 @@ func NewModel(evaluator Evaluator, config Config, pub message.Publisher) *Model 
 	if c, ok := evaluator.(InputCompleter); ok {
 		completer = c
 	}
-	focusToggleKey := config.FocusToggleKey
+	autocompleteCfg := normalizeAutocompleteConfig(config.Autocomplete)
+	if !autocompleteCfg.Enabled {
+		completer = nil
+	}
+
+	focusToggleKey := autocompleteCfg.FocusToggleKey
 	if focusToggleKey == "" {
 		if completer != nil {
 			focusToggleKey = "ctrl+t"
@@ -99,30 +107,29 @@ func NewModel(evaluator Evaluator, config Config, pub message.Publisher) *Model 
 		}
 	}
 
-	return &Model{
-		evaluator:      evaluator,
-		config:         config,
-		styles:         DefaultStyles(),
-		history:        NewHistory(config.MaxHistorySize),
-		textInput:      ti,
-		multiline:      config.StartMultiline,
-		lines:          []string{},
-		width:          config.Width,
-		reg:            reg,
-		sh:             sh,
-		focus:          "input",
-		focusToggleKey: focusToggleKey,
-		pub:            pub,
-		completer:      completer,
+	ret := &Model{
+		evaluator: evaluator,
+		config:    config,
+		styles:    DefaultStyles(),
+		history:   NewHistory(config.MaxHistorySize),
+		textInput: ti,
+		multiline: config.StartMultiline,
+		lines:     []string{},
+		width:     config.Width,
+		reg:       reg,
+		sh:        sh,
+		focus:     "input",
+		help:      help.New(),
+		keyMap:    NewKeyMap(autocompleteCfg, focusToggleKey),
+		pub:       pub,
+		completer: completer,
 
-		// These become configurable in a later task.
-		completionDebounce:   120 * time.Millisecond,
-		completionReqTimeout: 400 * time.Millisecond,
-		completionTriggerKeys: map[string]struct{}{
-			"tab": {},
-		},
-		completionMaxVisible: 8,
+		completionDebounce:   autocompleteCfg.Debounce,
+		completionReqTimeout: autocompleteCfg.RequestTimeout,
+		completionMaxVisible: autocompleteCfg.MaxSuggestions,
 	}
+	ret.updateKeyBindings()
+	return ret
 }
 
 // Init subscribes to evaluator events.
@@ -138,8 +145,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = v.Width, v.Height
 		m.textInput.Width = max(10, v.Width-10)
-		// give most of the space to timeline shell viewport
-		tlHeight := max(0, v.Height-4)
+		helpHeight := lipgloss.Height(m.help.View(m.keyMap))
+		// reserve room for title, input, and help rows
+		tlHeight := max(0, v.Height-helpHeight-4)
 		m.sh.SetSize(v.Width, tlHeight)
 		// initial refresh to fit new size
 		m.sh.RefreshView(false)
@@ -148,6 +156,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 
 	case tea.KeyMsg:
+		switch {
+		case key.Matches(v, m.keyMap.Quit):
+			return m, tea.Quit
+		case key.Matches(v, m.keyMap.ToggleHelp):
+			m.help.ShowAll = !m.help.ShowAll
+			return m, nil
+		}
+
 		switch m.focus {
 		case "input":
 			return m.updateInput(v)
@@ -202,27 +218,22 @@ func (m *Model) updateInput(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	prevValue := m.textInput.Value()
 	prevCursor := m.textInput.Position()
 
-	//nolint:exhaustive
-	switch k.Type {
-	case tea.KeyCtrlC:
-		return m, tea.Quit
-	}
-
 	if handled, cmd := m.handleCompletionNavigation(k); handled {
 		return m, cmd
 	}
 
-	if cmd := m.triggerCompletionFromShortcut(k.String()); cmd != nil {
+	if cmd := m.triggerCompletionFromShortcut(k); cmd != nil {
 		return m, cmd
 	}
 
-	switch k.String() {
-	case m.focusToggleKey:
+	switch {
+	case key.Matches(k, m.keyMap.ToggleFocus):
 		m.focus = "timeline"
 		m.textInput.Blur()
 		m.sh.SetSelectionVisible(true)
+		m.updateKeyBindings()
 		return m, nil
-	case "enter":
+	case key.Matches(k, m.keyMap.Submit):
 		input := m.textInput.Value()
 		if strings.TrimSpace(input) == "" {
 			return m, nil
@@ -233,14 +244,14 @@ func (m *Model) updateInput(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.history.ResetNavigation()
 		}
 		return m, m.submit(input)
-	case "up":
+	case key.Matches(k, m.keyMap.HistoryPrev):
 		if m.config.EnableHistory {
 			if entry := m.history.NavigateUp(); entry != "" {
 				m.textInput.SetValue(entry)
 			}
 		}
 		return m, m.scheduleDebouncedCompletionIfNeeded(prevValue, prevCursor)
-	case "down":
+	case key.Matches(k, m.keyMap.HistoryNext):
 		if m.config.EnableHistory {
 			entry := m.history.NavigateDown()
 			m.textInput.SetValue(entry)
@@ -253,28 +264,29 @@ func (m *Model) updateInput(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) updateTimeline(k tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch k.String() {
-	case m.focusToggleKey:
+	switch {
+	case key.Matches(k, m.keyMap.ToggleFocus):
 		m.focus = "input"
 		m.textInput.Focus()
 		m.sh.SetSelectionVisible(false)
+		m.updateKeyBindings()
 		return m, nil
-	case "up":
+	case key.Matches(k, m.keyMap.TimelinePrev):
 		m.sh.SelectPrev()
 		return m, nil
-	case "down":
+	case key.Matches(k, m.keyMap.TimelineNext):
 		m.sh.SelectNext()
 		return m, nil
-	case "enter":
+	case key.Matches(k, m.keyMap.TimelineEnterExit):
 		if m.sh.IsEntering() {
 			m.sh.ExitSelection()
 		} else {
 			m.sh.EnterSelection()
 		}
 		return m, nil
-	case "c":
+	case key.Matches(k, m.keyMap.CopyCode):
 		return m, m.sh.SendToSelected(timeline.EntityCopyCodeMsg{})
-	case "y":
+	case key.Matches(k, m.keyMap.CopyText):
 		return m, m.sh.SendToSelected(timeline.EntityCopyTextMsg{})
 	}
 	// route keys to shell/controller (e.g., Tab cycles inside entity)
@@ -283,34 +295,34 @@ func (m *Model) updateTimeline(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) View() string {
-	var b strings.Builder
 	title := m.config.Title
 	if title == "" {
 		title = fmt.Sprintf("%s REPL", m.evaluator.GetName())
 	}
-	b.WriteString(m.styles.Title.Render(" " + title + " "))
-	b.WriteString("\n\n")
-	// timeline view (viewport-wrapped)
-	b.WriteString(m.sh.View())
-	b.WriteString("\n")
-	// input (dim when in selection mode)
+
+	header := m.styles.Title.Render(" " + title + " ")
+	timelineView := m.sh.View()
+
 	inputView := m.textInput.View()
 	if m.focus == "timeline" {
 		inputView = m.styles.HelpText.Render(inputView)
 	}
-	b.WriteString(inputView)
-	b.WriteString("\n")
+
+	inputBlock := inputView
 	if popup := m.renderCompletionPopup(); popup != "" {
-		b.WriteString(popup)
-		b.WriteString("\n")
+		inputBlock = lipgloss.JoinVertical(lipgloss.Left, inputView, popup)
 	}
-	// help
-	help := fmt.Sprintf("%s: switch focus | Enter: submit | Up/Down: history/selection | c: copy code | y: copy text | Ctrl+C: quit",
-		strings.ToUpper(m.focusToggleKey),
-	)
-	b.WriteString(m.styles.HelpText.Render(help))
-	b.WriteString("\n")
-	return b.String()
+
+	helpView := m.help.View(m.keyMap)
+
+	sections := []string{
+		header,
+		"",
+		timelineView,
+		inputBlock,
+		helpView,
+	}
+	return lipgloss.JoinVertical(lipgloss.Left, sections...)
 }
 
 // submit runs evaluation and streams events to m.events
@@ -418,20 +430,21 @@ func (m *Model) handleDebouncedCompletion(msg completionDebounceMsg) tea.Cmd {
 	return m.completionCmd(req)
 }
 
-func (m *Model) triggerCompletionFromShortcut(key string) tea.Cmd {
+func (m *Model) triggerCompletionFromShortcut(k tea.KeyMsg) tea.Cmd {
 	if m.completer == nil {
 		return nil
 	}
-	if _, ok := m.completionTriggerKeys[key]; !ok {
+	if !key.Matches(k, m.keyMap.CompletionTrigger) {
 		return nil
 	}
+	keyStr := k.String()
 
 	m.completionReqSeq++
 	req := CompletionRequest{
 		Input:      m.textInput.Value(),
 		CursorByte: m.textInput.Position(),
 		Reason:     CompletionReasonShortcut,
-		Shortcut:   key,
+		Shortcut:   keyStr,
 		RequestID:  m.completionReqSeq,
 	}
 	m.completionLastReqID = req.RequestID
@@ -483,26 +496,25 @@ func (m *Model) handleCompletionNavigation(k tea.KeyMsg) (bool, tea.Cmd) {
 		return false, nil
 	}
 
-	switch k.String() {
-	case "esc":
+	switch {
+	case key.Matches(k, m.keyMap.CompletionCancel):
 		m.hideCompletionPopup()
 		return true, nil
-	case "up", "ctrl+p":
+	case key.Matches(k, m.keyMap.CompletionPrev):
 		if m.completionSelection > 0 {
 			m.completionSelection--
 		}
 		return true, nil
-	case "down", "ctrl+n":
+	case key.Matches(k, m.keyMap.CompletionNext):
 		if m.completionSelection < len(suggestions)-1 {
 			m.completionSelection++
 		}
 		return true, nil
-	case "enter", "tab":
+	case key.Matches(k, m.keyMap.CompletionAccept):
 		m.applySelectedCompletion()
 		return true, nil
-	default:
-		return false, nil
 	}
+	return false, nil
 }
 
 func (m *Model) applySelectedCompletion() {
@@ -542,13 +554,17 @@ func (m *Model) renderCompletionPopup() string {
 	var lines []string
 	limit := min(len(suggestions), m.completionMaxVisible)
 	for i := 0; i < limit; i++ {
-		prefix := "  "
+		itemText := suggestions[i].DisplayText
+		itemStyle := m.styles.CompletionItem
 		if i == m.completionSelection {
-			prefix = "› "
+			itemStyle = m.styles.CompletionSelected
+			itemText = "› " + itemText
+		} else {
+			itemText = "  " + itemText
 		}
-		lines = append(lines, m.styles.Info.Render(prefix+suggestions[i].DisplayText))
+		lines = append(lines, itemStyle.Render(itemText))
 	}
-	return strings.Join(lines, "\n")
+	return m.styles.CompletionPopup.Render(strings.Join(lines, "\n"))
 }
 
 func clampInt(v, low, high int) int {
@@ -559,6 +575,42 @@ func clampInt(v, low, high int) int {
 		return high
 	}
 	return v
+}
+
+func (m *Model) updateKeyBindings() { mode_keymap.EnableMode(&m.keyMap, m.focus) }
+
+func normalizeAutocompleteConfig(cfg AutocompleteConfig) AutocompleteConfig {
+	if cfg.Debounce == 0 &&
+		cfg.RequestTimeout == 0 &&
+		len(cfg.TriggerKeys) == 0 &&
+		len(cfg.AcceptKeys) == 0 &&
+		cfg.FocusToggleKey == "" &&
+		cfg.MaxSuggestions == 0 &&
+		!cfg.Enabled {
+		return DefaultAutocompleteConfig()
+	}
+
+	merged := DefaultAutocompleteConfig()
+	merged.Enabled = cfg.Enabled
+	if cfg.Debounce > 0 {
+		merged.Debounce = cfg.Debounce
+	}
+	if cfg.RequestTimeout > 0 {
+		merged.RequestTimeout = cfg.RequestTimeout
+	}
+	if len(cfg.TriggerKeys) > 0 {
+		merged.TriggerKeys = cfg.TriggerKeys
+	}
+	if len(cfg.AcceptKeys) > 0 {
+		merged.AcceptKeys = cfg.AcceptKeys
+	}
+	if cfg.FocusToggleKey != "" {
+		merged.FocusToggleKey = cfg.FocusToggleKey
+	}
+	if cfg.MaxSuggestions > 0 {
+		merged.MaxSuggestions = cfg.MaxSuggestions
+	}
+	return merged
 }
 
 func (m *Model) ctrl() *timeline.Controller { return m.sh.Controller() }
