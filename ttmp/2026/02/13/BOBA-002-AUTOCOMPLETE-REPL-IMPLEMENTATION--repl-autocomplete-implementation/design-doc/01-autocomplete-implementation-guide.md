@@ -310,8 +310,20 @@ type AutocompleteConfig struct {
     AcceptKeys          []string // e.g. []{"enter", "tab"}
     FocusToggleKey      string   // e.g. "ctrl+t"
     MaxSuggestions      int
+    OverlayMaxWidth     int
+    OverlayMaxHeight    int
+    OverlayMinWidth     int
+    OverlayMargin       int
+    OverlayPageSize     int
+    OverlayOffsetX      int
+    OverlayOffsetY      int
+    OverlayNoBorder     bool
+    OverlayPlacement    CompletionOverlayPlacement      // auto|above|below|bottom
+    OverlayHorizontalGrow CompletionOverlayHorizontalGrow // right|left
 }
 ```
+
+The latest overlay tuning additions (`OverlayPlacement`, `OverlayHorizontalGrow`) let operators choose whether the popup prefers auto above/below behavior, is pinned low (`bottom`), or grows left from the cursor anchor for tighter layouts.
 
 ## Idiomatic Bobatea Integration (Implemented)
 

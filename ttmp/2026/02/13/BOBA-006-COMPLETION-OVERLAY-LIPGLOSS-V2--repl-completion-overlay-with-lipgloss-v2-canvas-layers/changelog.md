@@ -7,6 +7,19 @@
 
 ## 2026-02-13
 
+Directional overlay follow-up completed (commit `2b04556`): added vertical placement policy (`auto|above|below|bottom`) and horizontal growth direction (`right|left`) for REPL completion overlays, plus validation tests and config defaults.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/config.go — Added overlay placement and horizontal growth enums/defaults
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/model.go — Added directional layout logic for placement and left-growth anchor behavior
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/autocomplete_model_test.go — Added bottom-placement and left-growth assertions
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/repl_test.go — Added default config assertions
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-006-COMPLETION-OVERLAY-LIPGLOSS-V2--repl-completion-overlay-with-lipgloss-v2-canvas-layers/tasks.md — Marked directional placement task complete
+
+
+## 2026-02-13
+
 Added detailed lipgloss v2 completion overlay analysis with sizing/paging architecture, pseudocode, and risk matrix; added step-by-step research diary and uploaded bundle to reMarkable.
 
 ### Related Files
@@ -106,4 +119,3 @@ Task 8 complete: validated overlay implementation with focused tests, repl lint 
 - /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/model.go — Validated runtime overlay behavior
 - /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-006-COMPLETION-OVERLAY-LIPGLOSS-V2--repl-completion-overlay-with-lipgloss-v2-canvas-layers/reference/01-diary.md — Added Step 12 validation diary entry
 - /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-006-COMPLETION-OVERLAY-LIPGLOSS-V2--repl-completion-overlay-with-lipgloss-v2-canvas-layers/tasks.md — Checked off Task 8
-

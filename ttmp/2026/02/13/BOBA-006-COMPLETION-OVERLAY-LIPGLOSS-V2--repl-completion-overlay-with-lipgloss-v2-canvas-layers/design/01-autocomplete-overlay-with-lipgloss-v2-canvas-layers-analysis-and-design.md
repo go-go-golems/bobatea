@@ -230,13 +230,16 @@ Extend `AutocompleteConfig` in `pkg/repl/config.go`:
 
 ```go
 type AutocompleteConfig struct {
-    // existing fields...
-    OverlayEnabled   bool // default true when v2 available
-    OverlayMaxWidth  int  // absolute cap, e.g. 56
-    OverlayMaxHeight int  // absolute cap, e.g. 12
-    OverlayMinWidth  int  // keep readable, e.g. 24
-    OverlayPadding   int  // gap from anchor, e.g. 1
-    PageSize         int  // optional explicit paging size; default = visible rows
+    OverlayMaxWidth       int
+    OverlayMaxHeight      int
+    OverlayMinWidth       int
+    OverlayMargin         int
+    OverlayPageSize       int
+    OverlayOffsetX        int
+    OverlayOffsetY        int
+    OverlayNoBorder       bool
+    OverlayPlacement      CompletionOverlayPlacement      // auto|above|below|bottom
+    OverlayHorizontalGrow CompletionOverlayHorizontalGrow // right|left
 }
 ```
 
@@ -267,7 +270,7 @@ Algorithm:
 1. Compute `desiredWidth` from longest rendered item + padding + border.
 2. Clamp width to `[OverlayMinWidth, OverlayMaxWidth]` and available space.
 3. Compute `desiredHeight` from rows needed (`items + chrome`), clamp to max and available vertical space.
-4. Prefer below-input placement if space available; otherwise place above.
+4. Resolve vertical strategy (`auto|above|below|bottom`).
 5. Clamp `x/y` into screen bounds.
 
 Pseudo:

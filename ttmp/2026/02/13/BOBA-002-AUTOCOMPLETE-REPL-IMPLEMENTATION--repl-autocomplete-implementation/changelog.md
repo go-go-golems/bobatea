@@ -7,6 +7,18 @@
 
 ## 2026-02-13
 
+Overlay direction follow-up completed (commit `2b04556`): added explicit vertical placement controls (`auto`, `above`, `below`, `bottom`) and horizontal growth direction (`right`, `left`) so completion popup placement can be tuned without code edits.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/config.go — Added `OverlayPlacement` and `OverlayHorizontalGrow` config enums and defaults
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/model.go — Added vertical placement strategy selection and left/right horizontal growth logic
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/autocomplete_model_test.go — Added bottom placement and left growth layout tests
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/repl_test.go — Added default assertions for placement/growth config
+
+
+## 2026-02-13
+
 Post-validation UX follow-up completed (commit `23095dc`): fixed debounce-time popup flicker by keeping the completion overlay visible while new debounced requests are pending, and added overlay positioning/appearance controls for minimal popup layouts.
 
 ### Related Files

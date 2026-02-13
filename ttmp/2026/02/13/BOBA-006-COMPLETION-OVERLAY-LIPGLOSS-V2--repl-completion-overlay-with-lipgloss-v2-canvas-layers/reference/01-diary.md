@@ -950,3 +950,91 @@ I used an interactive TTY session, typed `.co<Tab>`, and observed the suggestion
   - `╭────────────────────────╮`
   - `│ › ◆ console - global   │`
   - `╰────────────────────────╯`
+
+## Step 13: Directional Placement Follow-Up (`bottom` and `left`)
+
+After the initial overlay rollout, a follow-up requirement requested more directional control: allow explicit bottom-oriented positioning and leftward growth. This is a geometry policy change, not a trigger/semantic autocomplete change.
+
+I extended overlay config and layout policy so operators can choose vertical placement (`auto|above|below|bottom`) and horizontal growth (`right|left`) without patching view code.
+
+### Prompt Context
+
+**User prompt (verbatim):** "allow positioning the widget \"to the bottom\" as well, if desired.
+
+Then update / create all the necessary documentation, matching the existing one. Then tell me what's next, in this ticket or in other tickets."
+
+**Additional user prompt (verbatim):** "oh, also position/grow towards bottom or towards left"
+
+**Assistant interpretation:** Add directional placement controls (including leftward growth) and update both implementation docs and diary/changelog artifacts.
+
+**Inferred user intent:** Make overlay behavior adaptable to different REPL layouts and keep ticket records complete.
+
+**Commit (code):** `2b04556` — "repl: add directional completion overlay placement controls"
+
+### What I did
+
+- Added config enums in `pkg/repl/config.go`:
+- `CompletionOverlayPlacement` (`auto`, `above`, `below`, `bottom`)
+- `CompletionOverlayHorizontalGrow` (`right`, `left`)
+- Wired new fields through model state and normalization in `pkg/repl/model.go`.
+- Updated placement algorithm:
+- vertical policy now selected by `OverlayPlacement`
+- horizontal anchor can shift left by popup width when `OverlayHorizontalGrow=left`
+- existing clamping and margin behavior retained.
+- Added tests:
+- `TestCompletionOverlayLayoutBottomPlacementAnchorsToBottom`
+- `TestCompletionOverlayLayoutGrowsLeftFromAnchor`
+- `TestNormalizeAutocompleteConfigSanitizesOverlayPlacementAndGrow`
+- Updated docs (`tasks.md`, `changelog.md`, design doc config section) to reflect new directional controls.
+- Verified with:
+- `go test ./pkg/repl/... -count=1`
+- `golangci-lint run -v --max-same-issues=100 ./pkg/repl/...`
+
+### Why
+
+- Overlay layout needs policy-level controls for diverse terminal geometries and visual preferences.
+
+### What worked
+
+- New controls integrate cleanly with existing max-size/paging/offset logic.
+- Defaults preserve previous behavior.
+- Focused tests and lint pass.
+
+### What didn't work
+
+- Initial left-growth test used absolute anchor math and failed under clamping; rewritten to compare right-vs-left baseline with clamped expected value.
+
+### What I learned
+
+- Directional layout tests should model clamped geometry explicitly rather than assert idealized unclamped coordinates.
+
+### What was tricky to build
+
+- The subtle part was ensuring forced placement modes (`above`, `below`, `bottom`) still respect bounded visible rows while sharing the same clamping path.
+
+### What warrants a second pair of eyes
+
+- Product-level guidance for when to choose `below` vs `bottom` in shipped examples/themes.
+
+### What should be done in the future
+
+- Add a small operator-facing config snippet in example docs showing recommended mode combinations (`bottom+left`, `auto+right`).
+
+### Code review instructions
+
+- Start at:
+- `pkg/repl/config.go`
+- Then:
+- `pkg/repl/model.go`
+- `pkg/repl/autocomplete_model_test.go`
+- Validate:
+- `go test ./pkg/repl/... -count=1`
+- `golangci-lint run -v --max-same-issues=100 ./pkg/repl/...`
+
+### Technical details
+
+```go
+if m.completionHorizontal == CompletionOverlayHorizontalGrowLeft {
+    popupX -= popupWidth
+}
+```

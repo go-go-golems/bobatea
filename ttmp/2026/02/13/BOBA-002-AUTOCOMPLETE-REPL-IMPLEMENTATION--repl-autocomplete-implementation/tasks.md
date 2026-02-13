@@ -15,6 +15,7 @@
 - [x] Implement generic suggestion popup rendering, selection navigation, and apply/replace-range behavior
 - [x] Resolve `tab` conflict with timeline focus toggle by introducing explicit configurable focus key
 - [x] Add config defaults and docs for debounce, timeout, trigger keys, accept keys, max suggestions, and focus toggle
+- [x] Add overlay direction controls for popup geometry (`OverlayPlacement` with bottom option and `OverlayHorizontalGrow` with left option)
 - [x] Add unit tests for generic mechanism: debounce coalescing, stale drop, shortcut reason tagging, key routing, and apply behavior
 - [x] Add integration-style REPL model test that exercises typing -> completion request -> popup -> selection apply end-to-end with a fake completer
 

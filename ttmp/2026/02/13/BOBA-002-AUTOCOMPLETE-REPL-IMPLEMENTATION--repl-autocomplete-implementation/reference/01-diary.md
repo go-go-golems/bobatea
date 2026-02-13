@@ -1264,3 +1264,101 @@ func (m *Model) scheduleDebouncedCompletionIfNeeded(prevValue string, prevCursor
     })
 }
 ```
+
+## Step 15: Add Directional Overlay Placement (`bottom` and `left`)
+
+After stabilizing debounce behavior, the next UX request was directional popup control: allow bottom-oriented placement and leftward growth when desired. This enables tighter layouts where a right-growing cursor-anchored popup is visually noisy or clipped.
+
+I added explicit placement/growth enums to config and wired them into overlay layout selection, while keeping current defaults (`auto` + `right`) unchanged for existing behavior.
+
+### Prompt Context
+
+**User prompt (verbatim):** "allow positioning the widget \"to the bottom\" as well, if desired.
+
+Then update / create all the necessary documentation, matching the existing one. Then tell me what's next, in this ticket or in other tickets."
+
+**Additional user prompt (verbatim):** "oh, also position/grow towards bottom or towards left"
+
+**Assistant interpretation:** Add configurable bottom/left directional placement for completion overlay and update ticket documentation in the same style.
+
+**Inferred user intent:** Make popup geometry operator-configurable without further code edits.
+
+**Commit (code):** `2b04556` — "repl: add directional completion overlay placement controls"
+
+### What I did
+
+- Added config enums and fields:
+- `CompletionOverlayPlacement`: `auto|above|below|bottom`
+- `CompletionOverlayHorizontalGrow`: `right|left`
+- Updated defaults:
+- `OverlayPlacement = auto`
+- `OverlayHorizontalGrow = right`
+- Updated model layout logic:
+- vertical placement switch now handles `above`, `below`, `bottom`, `auto`
+- horizontal anchor can grow left (`anchorX - popupWidth`) or right (`anchorX`)
+- Added normalization/sanitization helpers for invalid enum values.
+- Added tests:
+- bottom placement anchors popup to bottom margin
+- left growth adjusts popup X relative to right-growth baseline and clamping
+- normalization falls back to default enum values on invalid input
+- Verified with:
+- `go test ./pkg/repl/... -count=1`
+- `golangci-lint run -v --max-same-issues=100 ./pkg/repl/...`
+
+### Why
+
+- Some terminal layouts need the popup to sit lower and/or expand leftward to avoid stealing central space.
+- Direction should be policy/config, not hardcoded geometry.
+
+### What worked
+
+- New placement and growth controls behave deterministically with clamping.
+- Defaults preserve prior behavior for unchanged config.
+- Focused tests/lint pass.
+
+### What didn't work
+
+- Initial left-growth test assumed unclamped X and failed when anchor-width math produced negative coordinates; test was rewritten to assert clamped relative movement.
+
+### What I learned
+
+- Layout-direction tests should compare relative positioning against a baseline (`right`) instead of raw anchor math when clamping is in play.
+
+### What was tricky to build
+
+- The tricky part was separating vertical policy (`auto` vs forced modes) from geometry limits (`availableAbove`, `availableBelow`, `maxHeight`) without duplicating branch logic.
+
+### What warrants a second pair of eyes
+
+- UX semantics between `below` and `bottom`: both are useful, but product guidance should define which one should be used in default themed examples.
+
+### What should be done in the future
+
+- Add user-facing examples showing each placement mode in `examples/js-repl` or a dedicated overlay demo.
+
+### Code review instructions
+
+- Start at:
+- `pkg/repl/config.go`
+- Then review:
+- `pkg/repl/model.go`
+- `pkg/repl/autocomplete_model_test.go`
+- `pkg/repl/repl_test.go`
+- Validate with:
+- `go test ./pkg/repl/... -count=1`
+- `golangci-lint run -v --max-same-issues=100 ./pkg/repl/...`
+
+### Technical details
+
+```go
+switch m.completionPlacement {
+case CompletionOverlayPlacementAbove:
+    // grow upward from input
+case CompletionOverlayPlacementBelow:
+    // grow downward from input
+case CompletionOverlayPlacementBottom:
+    // pin near terminal bottom
+case CompletionOverlayPlacementAuto:
+    // choose below or above by available space
+}
+```
