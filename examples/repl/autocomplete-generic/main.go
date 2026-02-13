@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"sort"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -19,6 +20,7 @@ import (
 
 type GenericEvaluator struct {
 	symbols []string
+	help    map[string]string
 }
 
 func newGenericEvaluator() *GenericEvaluator {
@@ -32,6 +34,15 @@ func newGenericEvaluator() *GenericEvaluator {
 			"contains",
 			"concat",
 		},
+		help: map[string]string{
+			"console":  "console: object (logging namespace)",
+			"const":    "const: keyword (immutable binding)",
+			"context":  "context: symbol (execution context placeholder)",
+			"continue": "continue: keyword (loop control)",
+			"count":    "count: symbol (numeric value)",
+			"contains": "contains(value, query) -> bool",
+			"concat":   "concat(a, b) -> string",
+		},
 	}
 }
 
@@ -40,7 +51,7 @@ func (e *GenericEvaluator) EvaluateStream(_ context.Context, code string, emit f
 	if code == "" {
 		emit(repl.Event{
 			Kind:  repl.EventResultMarkdown,
-			Props: map[string]any{"markdown": "Type a symbol prefix (for example `co`) and wait for debounce, or press `tab` to trigger completion immediately."},
+			Props: map[string]any{"markdown": "Type a symbol prefix (for example `co`) and wait for debounce. Use `tab` for explicit completion and watch the help bar for contextual symbol info."},
 		})
 		return nil
 	}
@@ -95,6 +106,62 @@ func (e *GenericEvaluator) CompleteInput(_ context.Context, req repl.CompletionR
 	}, nil
 }
 
+func (e *GenericEvaluator) GetHelpBar(_ context.Context, req repl.HelpBarRequest) (repl.HelpBarPayload, error) {
+	token, _, _ := currentToken(req.Input, req.CursorByte)
+	token = strings.ToLower(strings.TrimSpace(token))
+	if token == "" {
+		return repl.HelpBarPayload{Show: false}, nil
+	}
+
+	// Keep debounce behavior quiet for single-letter prefixes; still allow explicit/manual requests.
+	switch req.Reason {
+	case repl.HelpBarReasonDebounce:
+		if len(token) < 2 {
+			return repl.HelpBarPayload{Show: false}, nil
+		}
+	}
+
+	// Exact match gets canonical symbol help.
+	if h, ok := e.help[token]; ok {
+		return repl.HelpBarPayload{
+			Show:     true,
+			Text:     h,
+			Kind:     "signature",
+			Severity: "info",
+		}, nil
+	}
+
+	// Prefix match provides a lightweight exploration hint.
+	matches := make([]string, 0, len(e.symbols))
+	for _, symbol := range e.symbols {
+		if strings.HasPrefix(strings.ToLower(symbol), token) {
+			matches = append(matches, symbol)
+		}
+	}
+	if len(matches) == 0 {
+		return repl.HelpBarPayload{Show: false}, nil
+	}
+	sort.Strings(matches)
+	if len(matches) == 1 {
+		s := strings.ToLower(matches[0])
+		if h, ok := e.help[s]; ok {
+			return repl.HelpBarPayload{
+				Show:     true,
+				Text:     h,
+				Kind:     "signature",
+				Severity: "info",
+			}, nil
+		}
+	}
+
+	return repl.HelpBarPayload{
+		Show:     true,
+		Text:     fmt.Sprintf("%d symbol matches: %s", len(matches), strings.Join(matches, ", ")),
+		Kind:     "info",
+		Severity: "info",
+	}, nil
+}
+
 func currentToken(input string, cursor int) (string, int, int) {
 	if cursor < 0 {
 		cursor = 0
@@ -134,11 +201,12 @@ func main() {
 	evaluator := newGenericEvaluator()
 	config := repl.DefaultConfig()
 	config.Title = "Generic Autocomplete REPL"
-	config.Placeholder = "Type 'co' and wait, or press Tab for explicit trigger"
+	config.Placeholder = "Type 'co' and wait for completion + help bar, or press Tab for explicit trigger"
 	config.Autocomplete.Enabled = true
 	config.Autocomplete.TriggerKeys = []string{"tab"}
 	config.Autocomplete.AcceptKeys = []string{"enter", "tab"}
 	config.Autocomplete.FocusToggleKey = "ctrl+t"
+	config.HelpBar.Enabled = true
 
 	bus, err := eventbus.NewInMemoryBus()
 	if err != nil {
