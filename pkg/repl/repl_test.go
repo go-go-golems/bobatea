@@ -89,6 +89,23 @@ func TestModel(t *testing.T) {
 	assert.Equal(t, config.StartMultiline, model.multiline)
 }
 
+func TestModelWithContext(t *testing.T) {
+	evaluator := NewExampleEvaluator()
+	config := DefaultConfig()
+	bus, err := eventbus.NewInMemoryBus()
+	assert.NoError(t, err)
+
+	parentCtx, cancel := context.WithCancel(context.Background())
+	model := NewModelWithContext(parentCtx, evaluator, config, bus.Publisher)
+
+	cancel()
+	select {
+	case <-model.appCtx.Done():
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("model app context should be canceled when parent context is canceled")
+	}
+}
+
 func TestConfig(t *testing.T) {
 	config := DefaultConfig()
 

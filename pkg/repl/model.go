@@ -221,6 +221,18 @@ func NewModel(evaluator Evaluator, config Config, pub message.Publisher) *Model 
 	return ret
 }
 
+// NewModelWithContext constructs a REPL model whose internal app context derives from ctx.
+// Passing nil uses context.Background().
+func NewModelWithContext(ctx context.Context, evaluator Evaluator, config Config, pub message.Publisher) *Model {
+	ret := NewModel(evaluator, config, pub)
+	ret.cancelAppContext()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ret.appCtx, ret.appStop = context.WithCancel(ctx)
+	return ret
+}
+
 // Init subscribes to evaluator events.
 func (m *Model) Init() tea.Cmd {
 	// no blinking on text input, because it makes copy paste impossible
