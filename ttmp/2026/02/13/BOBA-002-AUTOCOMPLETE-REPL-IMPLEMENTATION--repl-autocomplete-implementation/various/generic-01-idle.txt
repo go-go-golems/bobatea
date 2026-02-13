@@ -1,0 +1,24 @@
+cd /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea && BOBAT
+EA_NO_ALT_SCREEN=1 go run ./examples/repl/autocomplete-generic
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

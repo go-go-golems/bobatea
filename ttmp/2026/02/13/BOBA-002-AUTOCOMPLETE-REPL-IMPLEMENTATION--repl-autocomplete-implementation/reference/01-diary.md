@@ -32,6 +32,8 @@ RelatedFiles:
       Note: Phase 2 minimal non-JS autocomplete example
     - Path: ttmp/2026/02/13/BOBA-002-AUTOCOMPLETE-REPL-IMPLEMENTATION--repl-autocomplete-implementation/reference/02-generic-example-playbook.md
       Note: Phase 2 runbook and success criteria
+    - Path: ttmp/2026/02/13/BOBA-002-AUTOCOMPLETE-REPL-IMPLEMENTATION--repl-autocomplete-implementation/various/generic-phase3-validation.md
+      Note: Phase 3 tmux validation checklist and findings
     - Path: pkg/repl/styles.go
       Note: Step 7 completion popup lipgloss styling
     - Path: ttmp/2026/02/13/BOBA-002-AUTOCOMPLETE-REPL-IMPLEMENTATION--repl-autocomplete-implementation/design-doc/01-autocomplete-implementation-guide.md
@@ -40,7 +42,7 @@ RelatedFiles:
       Note: Checklist state tracked per implementation task
 ExternalSources: []
 Summary: Implementation diary for BOBA-002 task-by-task execution with tests, commits, and validation artifacts
-LastUpdated: 2026-02-13T11:49:00-05:00
+LastUpdated: 2026-02-13T12:02:00-05:00
 WhatFor: Record task-by-task implementation progress, including tests, commits, failures, and validation instructions.
 WhenToUse: Use while implementing, reviewing, or continuing BOBA-002 work.
 ---
@@ -891,5 +893,103 @@ case repl.CompletionReasonShortcut:
     show = true
 case repl.CompletionReasonManual:
     show = len(token) > 0
+}
+```
+
+## Step 11: Execute Phase 3 tmux Validation and Capture State Artifacts (Tasks 15-19)
+
+This step executed the generic example in `tmux`, captured state transitions, and recorded a pass/fail validation report under `various/`. The validation confirms the popup lifecycle and focus behavior in an operator-like terminal flow.
+
+Because detached tmux pane capture and Bubble Tea alt-screen conflicted, a small example-level runtime toggle was added so validation runs can disable alt-screen rendering without changing default behavior.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 1)
+
+**Assistant interpretation:** Continue BOBA-002 by running the generic example in tmux, collecting screenshots/captures, and recording validation outcomes in ticket artifacts and changelog.
+
+**Inferred user intent:** Produce concrete evidence that the implemented autocomplete behavior works interactively, not only in unit tests.
+
+**Commit (code):** `f59efb7` — "feat(repl): add no-alt-screen mode for tmux validation"
+
+### What I did
+
+- Added an env-gated alt-screen toggle in:
+- `examples/repl/autocomplete-generic/main.go`
+- Behavior:
+- default remains alt-screen
+- `BOBATEA_NO_ALT_SCREEN=1` disables alt-screen for deterministic `tmux capture-pane` artifacts
+- Ran tmux validation sequence:
+- start example in tmux
+- capture idle state
+- type `co` and wait for debounce popup
+- move selection with `down`
+- apply selection with `enter`
+- toggle focus with `ctrl+t`
+- Captured artifacts:
+- `various/generic-01-idle.txt`
+- `various/generic-02-popup-open.txt`
+- `various/generic-03-selection-moved.txt`
+- `various/generic-04-accepted.txt`
+- `various/generic-05-focus-timeline.txt`
+- Recorded checklist and findings in:
+- `various/generic-phase3-validation.md`
+- Checked tasks:
+- `docmgr task check --ticket BOBA-002-AUTOCOMPLETE-REPL-IMPLEMENTATION --id 15,16,17,18,19`
+
+### Why
+
+- Tasks 15-19 require manual tmux execution, captures, storage in `various/`, and result logging.
+- The no-alt-screen toggle keeps runtime behavior unchanged while making pane capture reproducible in CI-like/headless terminal workflows.
+
+### What worked
+
+- All required state captures were produced and saved.
+- Captures show expected transitions:
+- popup appears on debounce
+- selection changes on `down`
+- input changes to accepted suggestion on `enter`
+- help keys change after focus toggle (`ctrl+t`)
+- Validation report marks generic phase as PASS.
+
+### What didn't work
+
+- Initial detached tmux runs with alt-screen enabled produced unusable/blank pane captures.
+- Resolution: add `BOBATEA_NO_ALT_SCREEN=1` for capture mode.
+
+### What I learned
+
+- For Bubble Tea apps, a small runtime rendering toggle is useful for non-interactive validation tooling while preserving normal alt-screen UX for regular users.
+
+### What was tricky to build
+
+- The tricky part was distinguishing between app failure and pane-capture limitations. The app was running, but alt-screen content was not reliably captured in detached mode; adding an opt-out path made captures reliable and reviewable.
+
+### What warrants a second pair of eyes
+
+- Confirm that ANSI pane captures (`tmux capture-pane -e -p`) are acceptable as “screenshots” for this ticket, or whether PNG captures are required in later phases.
+
+### What should be done in the future
+
+- Proceed to Phase 4 (JS completer integration with `go-go-goja/pkg/jsparse`) and then Phase 5 tmux validation for JS flows.
+
+### Code review instructions
+
+- Start at:
+- `examples/repl/autocomplete-generic/main.go`
+- `ttmp/2026/02/13/BOBA-002-AUTOCOMPLETE-REPL-IMPLEMENTATION--repl-autocomplete-implementation/various/generic-phase3-validation.md`
+- Then inspect captures:
+- `ttmp/2026/02/13/BOBA-002-AUTOCOMPLETE-REPL-IMPLEMENTATION--repl-autocomplete-implementation/various/generic-02-popup-open.txt`
+- `ttmp/2026/02/13/BOBA-002-AUTOCOMPLETE-REPL-IMPLEMENTATION--repl-autocomplete-implementation/various/generic-03-selection-moved.txt`
+- `ttmp/2026/02/13/BOBA-002-AUTOCOMPLETE-REPL-IMPLEMENTATION--repl-autocomplete-implementation/various/generic-04-accepted.txt`
+- Validate by replaying:
+- `BOBATEA_NO_ALT_SCREEN=1 go run ./examples/repl/autocomplete-generic`
+
+### Technical details
+
+```go
+programOptions := make([]tea.ProgramOption, 0, 1)
+if os.Getenv("BOBATEA_NO_ALT_SCREEN") != "1" {
+    programOptions = append(programOptions, tea.WithAltScreen())
 }
 ```

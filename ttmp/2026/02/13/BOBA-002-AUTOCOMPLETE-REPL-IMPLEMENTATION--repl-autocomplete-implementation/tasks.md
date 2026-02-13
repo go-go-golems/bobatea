@@ -27,11 +27,11 @@
 
 ### Phase 3: Manual Validation in tmux (Generic Example)
 
-- [ ] Run the minimal generic example in `tmux`
-- [ ] Execute a manual validation script/checklist (typing flow, debounce behavior, shortcut behavior, accept/cancel behavior, focus switching)
-- [ ] Take screenshots for each key state transition in tmux (idle input, popup open, selection moved, accepted completion)
-- [ ] Store screenshots in ticket workspace under `various/` with clear names and short notes
-- [ ] Record validation findings and pass/fail outcomes in the ticket changelog
+- [x] Run the minimal generic example in `tmux`
+- [x] Execute a manual validation script/checklist (typing flow, debounce behavior, shortcut behavior, accept/cancel behavior, focus switching)
+- [x] Take screenshots for each key state transition in tmux (idle input, popup open, selection moved, accepted completion)
+- [x] Store screenshots in ticket workspace under `various/` with clear names and short notes
+- [x] Record validation findings and pass/fail outcomes in the ticket changelog
 
 ### Phase 4: JavaScript Integration with jsparse
 

@@ -58,6 +58,12 @@ Run the example:
 go run ./examples/repl/autocomplete-generic
 ```
 
+Run in tmux capture mode (no alt-screen):
+
+```bash
+BOBATEA_NO_ALT_SCREEN=1 go run ./examples/repl/autocomplete-generic
+```
+
 Expected key bindings in the example:
 
 - `tab`: trigger completion explicitly and also accept when popup is open.
