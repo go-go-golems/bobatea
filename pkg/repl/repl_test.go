@@ -107,6 +107,11 @@ func TestConfig(t *testing.T) {
 	assert.Equal(t, []string{"tab"}, config.Autocomplete.TriggerKeys)
 	assert.Equal(t, []string{"enter", "tab"}, config.Autocomplete.AcceptKeys)
 	assert.Equal(t, 8, config.Autocomplete.MaxSuggestions)
+	assert.Equal(t, 56, config.Autocomplete.OverlayMaxWidth)
+	assert.Equal(t, 12, config.Autocomplete.OverlayMaxHeight)
+	assert.Equal(t, 24, config.Autocomplete.OverlayMinWidth)
+	assert.Equal(t, 1, config.Autocomplete.OverlayMargin)
+	assert.Equal(t, 0, config.Autocomplete.OverlayPageSize)
 }
 
 func TestStyles(t *testing.T) {

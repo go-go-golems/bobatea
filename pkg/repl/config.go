@@ -18,18 +18,33 @@ type AutocompleteConfig struct {
 	FocusToggleKey string
 	// MaxSuggestions limits the number of rendered popup items.
 	MaxSuggestions int
+	// OverlayMaxWidth limits popup width in terminal cells.
+	OverlayMaxWidth int
+	// OverlayMaxHeight limits popup height in terminal rows.
+	OverlayMaxHeight int
+	// OverlayMinWidth keeps the popup readable when suggestions are short.
+	OverlayMinWidth int
+	// OverlayMargin leaves a gap between input anchor and popup.
+	OverlayMargin int
+	// OverlayPageSize controls page up/down steps; 0 means visible rows.
+	OverlayPageSize int
 }
 
 // DefaultAutocompleteConfig returns default autocomplete settings.
 func DefaultAutocompleteConfig() AutocompleteConfig {
 	return AutocompleteConfig{
-		Enabled:        true,
-		Debounce:       120 * time.Millisecond,
-		RequestTimeout: 400 * time.Millisecond,
-		TriggerKeys:    []string{"tab"},
-		AcceptKeys:     []string{"enter", "tab"},
-		FocusToggleKey: "",
-		MaxSuggestions: 8,
+		Enabled:          true,
+		Debounce:         120 * time.Millisecond,
+		RequestTimeout:   400 * time.Millisecond,
+		TriggerKeys:      []string{"tab"},
+		AcceptKeys:       []string{"enter", "tab"},
+		FocusToggleKey:   "",
+		MaxSuggestions:   8,
+		OverlayMaxWidth:  56,
+		OverlayMaxHeight: 12,
+		OverlayMinWidth:  24,
+		OverlayMargin:    1,
+		OverlayPageSize:  0,
 	}
 }
 

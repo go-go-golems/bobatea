@@ -616,6 +616,11 @@ func normalizeAutocompleteConfig(cfg AutocompleteConfig) AutocompleteConfig {
 		len(cfg.AcceptKeys) == 0 &&
 		cfg.FocusToggleKey == "" &&
 		cfg.MaxSuggestions == 0 &&
+		cfg.OverlayMaxWidth == 0 &&
+		cfg.OverlayMaxHeight == 0 &&
+		cfg.OverlayMinWidth == 0 &&
+		cfg.OverlayMargin == 0 &&
+		cfg.OverlayPageSize == 0 &&
 		!cfg.Enabled {
 		return DefaultAutocompleteConfig()
 	}
@@ -639,6 +644,21 @@ func normalizeAutocompleteConfig(cfg AutocompleteConfig) AutocompleteConfig {
 	}
 	if cfg.MaxSuggestions > 0 {
 		merged.MaxSuggestions = cfg.MaxSuggestions
+	}
+	if cfg.OverlayMaxWidth > 0 {
+		merged.OverlayMaxWidth = cfg.OverlayMaxWidth
+	}
+	if cfg.OverlayMaxHeight > 0 {
+		merged.OverlayMaxHeight = cfg.OverlayMaxHeight
+	}
+	if cfg.OverlayMinWidth > 0 {
+		merged.OverlayMinWidth = cfg.OverlayMinWidth
+	}
+	if cfg.OverlayMargin > 0 {
+		merged.OverlayMargin = cfg.OverlayMargin
+	}
+	if cfg.OverlayPageSize > 0 {
+		merged.OverlayPageSize = cfg.OverlayPageSize
 	}
 	return merged
 }
