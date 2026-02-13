@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/go-go-golems/bobatea/pkg/repl"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -346,4 +347,72 @@ func TestConfig_DefaultConfig(t *testing.T) {
 	assert.True(t, config.EnableNodeModules)
 	assert.NotNil(t, config.CustomModules)
 	assert.Len(t, config.CustomModules, 0)
+}
+
+func TestEvaluator_CompleteInput(t *testing.T) {
+	evaluator, err := NewWithDefaults()
+	require.NoError(t, err)
+
+	ctx := context.Background()
+
+	t.Run("property access completion on obj dot", func(t *testing.T) {
+		result, err := evaluator.CompleteInput(ctx, repl.CompletionRequest{
+			Input:      "console.lo",
+			CursorByte: len("console.lo"),
+			Reason:     repl.CompletionReasonShortcut,
+		})
+		require.NoError(t, err)
+		assert.True(t, result.Show)
+		assert.True(t, hasSuggestion(result, "log"))
+		assert.Equal(t, len("console."), result.ReplaceFrom)
+		assert.Equal(t, len("console.lo"), result.ReplaceTo)
+	})
+
+	t.Run("identifier completion for partial symbol", func(t *testing.T) {
+		result, err := evaluator.CompleteInput(ctx, repl.CompletionRequest{
+			Input:      "cons",
+			CursorByte: len("cons"),
+			Reason:     repl.CompletionReasonDebounce,
+		})
+		require.NoError(t, err)
+		assert.True(t, result.Show)
+		assert.True(t, hasSuggestion(result, "console"))
+		assert.Equal(t, 0, result.ReplaceFrom)
+		assert.Equal(t, len("cons"), result.ReplaceTo)
+	})
+
+	t.Run("module binding completion from require declaration", func(t *testing.T) {
+		input := "const fs = require(\"fs\");\nfs.re"
+		result, err := evaluator.CompleteInput(ctx, repl.CompletionRequest{
+			Input:      input,
+			CursorByte: len(input),
+			Reason:     repl.CompletionReasonShortcut,
+		})
+		require.NoError(t, err)
+		assert.True(t, result.Show)
+		assert.True(t, hasSuggestion(result, "readFile"))
+	})
+
+	t.Run("incomplete input after dot still yields candidates", func(t *testing.T) {
+		input := "console."
+		result, err := evaluator.CompleteInput(ctx, repl.CompletionRequest{
+			Input:      input,
+			CursorByte: len(input),
+			Reason:     repl.CompletionReasonShortcut,
+		})
+		require.NoError(t, err)
+		assert.True(t, result.Show)
+		assert.True(t, hasSuggestion(result, "log"))
+		assert.Equal(t, len(input), result.ReplaceFrom)
+		assert.Equal(t, len(input), result.ReplaceTo)
+	})
+}
+
+func hasSuggestion(result repl.CompletionResult, label string) bool {
+	for _, suggestion := range result.Suggestions {
+		if suggestion.Value == label {
+			return true
+		}
+	}
+	return false
 }

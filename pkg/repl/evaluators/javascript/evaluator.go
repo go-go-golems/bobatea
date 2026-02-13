@@ -3,18 +3,48 @@ package javascript
 import (
 	"context"
 	"fmt"
+	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/dop251/goja"
+	"github.com/go-go-golems/bobatea/pkg/autocomplete"
 	"github.com/go-go-golems/bobatea/pkg/repl"
 	ggjengine "github.com/go-go-golems/go-go-goja/engine"
+	"github.com/go-go-golems/go-go-goja/pkg/jsparse"
 	"github.com/pkg/errors"
+)
+
+var (
+	requireAliasPattern = regexp.MustCompile(`(?m)\b(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*require\(\s*['"]([^'"]+)['"]\s*\)`)
+
+	nodeModuleCandidates = map[string][]jsparse.CompletionCandidate{
+		"fs": {
+			{Label: "readFile", Kind: jsparse.CandidateMethod, Detail: "fs method"},
+			{Label: "writeFile", Kind: jsparse.CandidateMethod, Detail: "fs method"},
+			{Label: "existsSync", Kind: jsparse.CandidateMethod, Detail: "fs method"},
+			{Label: "mkdirSync", Kind: jsparse.CandidateMethod, Detail: "fs method"},
+		},
+		"path": {
+			{Label: "join", Kind: jsparse.CandidateMethod, Detail: "path method"},
+			{Label: "resolve", Kind: jsparse.CandidateMethod, Detail: "path method"},
+			{Label: "dirname", Kind: jsparse.CandidateMethod, Detail: "path method"},
+			{Label: "basename", Kind: jsparse.CandidateMethod, Detail: "path method"},
+			{Label: "extname", Kind: jsparse.CandidateMethod, Detail: "path method"},
+		},
+		"url": {
+			{Label: "URL", Kind: jsparse.CandidateFunction, Detail: "constructor"},
+			{Label: "URLSearchParams", Kind: jsparse.CandidateFunction, Detail: "constructor"},
+			{Label: "parse", Kind: jsparse.CandidateMethod, Detail: "url method"},
+		},
+	}
 )
 
 // Evaluator implements the REPL evaluator interface for JavaScript
 type Evaluator struct {
-	runtime *goja.Runtime
-	config  Config
+	runtime  *goja.Runtime
+	tsParser *jsparse.TSParser
+	config   Config
 }
 
 // Config holds configuration for the JavaScript evaluator
@@ -50,6 +80,9 @@ func New(config Config) (*Evaluator, error) {
 	evaluator := &Evaluator{
 		runtime: runtime,
 		config:  config,
+	}
+	if parser, parserErr := jsparse.NewTSParser(); parserErr == nil {
+		evaluator.tsParser = parser
 	}
 
 	// Set up console.log override if enabled
@@ -161,6 +194,96 @@ func (e *Evaluator) EvaluateStream(ctx context.Context, code string, emit func(r
 	return nil
 }
 
+// CompleteInput resolves JavaScript completions using jsparse CST + resolver primitives.
+func (e *Evaluator) CompleteInput(_ context.Context, req repl.CompletionRequest) (repl.CompletionResult, error) {
+	if e.tsParser == nil {
+		return repl.CompletionResult{Show: false}, nil
+	}
+
+	input := req.Input
+	cursor := clampCursor(req.CursorByte, len(input))
+
+	root := e.tsParser.Parse([]byte(input))
+	if root == nil {
+		return repl.CompletionResult{Show: false}, nil
+	}
+
+	analysis := jsparse.Analyze("repl-input.js", input, nil)
+	row, col := byteOffsetToRowCol(input, cursor)
+	ctx := analysis.CompletionContextAt(root, row, col)
+	if ctx.Kind == jsparse.CompletionNone {
+		return repl.CompletionResult{Show: false}, nil
+	}
+
+	candidates := jsparse.ResolveCandidates(ctx, analysis.Index, root)
+	if ctx.Kind == jsparse.CompletionProperty {
+		aliases := extractRequireAliases(input)
+		if moduleName, ok := aliases[ctx.BaseExpr]; ok {
+			if moduleCandidates, ok := nodeModuleCandidates[moduleName]; ok {
+				candidates = append(candidates, moduleCandidates...)
+			}
+		}
+	}
+	if len(candidates) == 0 {
+		return repl.CompletionResult{
+			Show:        false,
+			ReplaceFrom: cursor,
+			ReplaceTo:   cursor,
+		}, nil
+	}
+
+	replaceFrom := clampCursor(cursor-len(ctx.PartialText), len(input))
+	replaceTo := cursor
+	if replaceFrom > replaceTo {
+		replaceFrom = replaceTo
+	}
+
+	suggestions := make([]autocomplete.Suggestion, 0, len(candidates))
+	seen := make(map[string]struct{}, len(candidates))
+	for _, candidate := range candidates {
+		if candidate.Label == "" {
+			continue
+		}
+		if _, ok := seen[candidate.Label]; ok {
+			continue
+		}
+		seen[candidate.Label] = struct{}{}
+
+		display := candidate.Label
+		icon := candidate.Kind.Icon()
+		if icon != "" {
+			display = icon + " " + display
+		}
+		if candidate.Detail != "" {
+			display += " - " + candidate.Detail
+		}
+
+		suggestions = append(suggestions, autocomplete.Suggestion{
+			Id:          candidate.Label,
+			Value:       candidate.Label,
+			DisplayText: display,
+		})
+	}
+
+	sort.SliceStable(suggestions, func(i, j int) bool {
+		return suggestions[i].Value < suggestions[j].Value
+	})
+
+	show := len(suggestions) > 0
+	if req.Reason == repl.CompletionReasonDebounce {
+		if ctx.Kind == jsparse.CompletionIdentifier && len(ctx.PartialText) == 0 {
+			show = false
+		}
+	}
+
+	return repl.CompletionResult{
+		Show:        show,
+		Suggestions: suggestions,
+		ReplaceFrom: replaceFrom,
+		ReplaceTo:   replaceTo,
+	}, nil
+}
+
 // GetPrompt returns the prompt string for JavaScript evaluation
 func (e *Evaluator) GetPrompt() string {
 	return "js>"
@@ -225,6 +348,7 @@ func (e *Evaluator) Reset() error {
 	}
 
 	e.runtime = newEvaluator.runtime
+	e.tsParser = newEvaluator.tsParser
 	return nil
 }
 
@@ -252,6 +376,44 @@ func (e *Evaluator) UpdateConfig(config Config) error {
 	}
 
 	return nil
+}
+
+func clampCursor(cursor, upperBound int) int {
+	if cursor < 0 {
+		return 0
+	}
+	if cursor > upperBound {
+		return upperBound
+	}
+	return cursor
+}
+
+func byteOffsetToRowCol(input string, cursor int) (int, int) {
+	cursor = clampCursor(cursor, len(input))
+	row, col := 0, 0
+	for i := 0; i < cursor; i++ {
+		if input[i] == '\n' {
+			row++
+			col = 0
+			continue
+		}
+		col++
+	}
+	return row, col
+}
+
+func extractRequireAliases(input string) map[string]string {
+	aliases := make(map[string]string)
+	matches := requireAliasPattern.FindAllStringSubmatch(input, -1)
+	for _, match := range matches {
+		if len(match) != 3 {
+			continue
+		}
+		alias := match[1]
+		moduleName := match[2]
+		aliases[alias] = moduleName
+	}
+	return aliases
 }
 
 // IsValidCode checks if the given code is syntactically valid JavaScript
