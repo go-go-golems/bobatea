@@ -91,3 +91,19 @@ Task 7 completed: resolved tab/focus conflict by introducing configurable focus 
 - /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-002-AUTOCOMPLETE-REPL-IMPLEMENTATION--repl-autocomplete-implementation/reference/01-diary.md — Added Step 6 execution notes
 - /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-002-AUTOCOMPLETE-REPL-IMPLEMENTATION--repl-autocomplete-implementation/tasks.md — Task 7 checked
 
+
+## 2026-02-13
+
+Task 8 completed and idiomatic REPL integration added (commit `d2056ba`): migrated REPL key handling to `key.Binding`/`key.Matches`, integrated `bubbles/help` model with mode-aware bindings, switched View composition to lipgloss section joins, added dedicated completion popup styles, and excluded `ttmp/` from golangci-lint path scanning.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/keymap.go — New mode-tagged REPL key map with ShortHelp/FullHelp
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/model.go — Key routing refactor, help model integration, lipgloss-composed view
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/styles.go — Completion popup and selected-row styles
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/config.go — Autocomplete config field docs
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/repl_test.go — Default autocomplete config assertions
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/.golangci.yml — Exclude `ttmp/` for lint
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-002-AUTOCOMPLETE-REPL-IMPLEMENTATION--repl-autocomplete-implementation/design-doc/01-autocomplete-implementation-guide.md — Added idiomatic-integration section
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-002-AUTOCOMPLETE-REPL-IMPLEMENTATION--repl-autocomplete-implementation/reference/01-diary.md — Added Step 7 diary entry
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-002-AUTOCOMPLETE-REPL-IMPLEMENTATION--repl-autocomplete-implementation/tasks.md — Checked Task 8 and recorded idiomatic integration task

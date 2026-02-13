@@ -10,20 +10,35 @@ DocType: reference
 Intent: long-term
 Owners: []
 RelatedFiles:
-    - Path: bobatea/pkg/repl/autocomplete_types.go
+    - Path: .golangci.yml
+      Note: |-
+        Step 7 lint exclusion for ttmp/
+        Exclude ttmp path from lint scan
+    - Path: pkg/repl/autocomplete_types.go
       Note: Task 3 implementation artifact documented in Step 2
-    - Path: bobatea/pkg/repl/model.go
+    - Path: pkg/repl/config.go
+      Note: Task 8 config defaults/docs updates
+    - Path: pkg/repl/keymap.go
+      Note: Step 7 key.Binding migration and help map
+    - Path: pkg/repl/model.go
       Note: Task 4 debounce scheduling and stale-result handling implementation
-    - Path: bobatea/ttmp/2026/02/13/BOBA-002-AUTOCOMPLETE-REPL-IMPLEMENTATION--repl-autocomplete-implementation/design-doc/01-autocomplete-implementation-guide.md
+    - Path: pkg/repl/repl_test.go
+      Note: |-
+        Task 8 default-config assertions
+        Task 8 default config assertions
+    - Path: pkg/repl/styles.go
+      Note: Step 7 completion popup lipgloss styling
+    - Path: ttmp/2026/02/13/BOBA-002-AUTOCOMPLETE-REPL-IMPLEMENTATION--repl-autocomplete-implementation/design-doc/01-autocomplete-implementation-guide.md
       Note: Design decisions and implementation plan referenced by diary steps
-    - Path: bobatea/ttmp/2026/02/13/BOBA-002-AUTOCOMPLETE-REPL-IMPLEMENTATION--repl-autocomplete-implementation/tasks.md
+    - Path: ttmp/2026/02/13/BOBA-002-AUTOCOMPLETE-REPL-IMPLEMENTATION--repl-autocomplete-implementation/tasks.md
       Note: Checklist state tracked per implementation task
 ExternalSources: []
 Summary: Implementation diary for BOBA-002 task-by-task execution with tests, commits, and validation artifacts
-LastUpdated: 2026-02-13T10:46:00-05:00
+LastUpdated: 2026-02-13T11:24:00-05:00
 WhatFor: Record task-by-task implementation progress, including tests, commits, failures, and validation instructions.
 WhenToUse: Use while implementing, reviewing, or continuing BOBA-002 work.
 ---
+
 
 
 
@@ -454,7 +469,7 @@ The default behavior is now context-aware: when autocomplete is available, focus
 
 **Inferred user intent:** Prevent `tab` ambiguity so completion shortcuts and focus navigation can coexist predictably.
 
-**Commit (code):** pending
+**Commit (code):** `882a3e9` — "feat(repl): make focus toggle key configurable (task 7)"
 
 ### What I did
 
@@ -526,5 +541,103 @@ if focusToggleKey == "" {
     } else {
         focusToggleKey = "tab"
     }
+}
+```
+
+## Step 7: Adopt Bobatea Keymap + Help Model + Lipgloss Layout, and Complete Task 8
+
+This step integrated REPL key handling with the same idioms used elsewhere in bobatea: `key.Binding`, mode-aware enabling, and `bubbles/help` rendering. It also completed Task 8 by documenting autocomplete config defaults and validating them in tests.
+
+In addition, lint configuration was updated to ignore `ttmp/` so ticket scripts no longer break normal lint runs.
+
+### Prompt Context
+
+**User prompt (verbatim):** "can you use bobatea key bindings for the repl? to make it more idiomatic? we want to do layout with lipgloss and also use the existing bobatea help model"
+
+**Assistant interpretation:** Refactor REPL input/timeline key routing to use bobatea-style key maps and help rendering, and render layout sections with lipgloss composition instead of ad-hoc string assembly.
+
+**Inferred user intent:** Align REPL UX and code style with existing project conventions so bindings/help are coherent and easier to evolve.
+
+**Commit (code):** `d2056ba` — "feat(repl): adopt key bindings/help model and lipgloss layout"
+
+### What I did
+
+- Added `pkg/repl/keymap.go`:
+- Introduced a REPL `KeyMap` with `key.Binding` fields, mode tags, and `ShortHelp` / `FullHelp`.
+- Derived trigger/accept/focus keys from `AutocompleteConfig`.
+- Updated `pkg/repl/model.go`:
+- Embedded `help.Model` and REPL keymap in `Model`.
+- Switched key routing to `key.Matches(...)` in `Update`, `updateInput`, and `updateTimeline`.
+- Added mode-aware key enablement with `mode-keymap.EnableMode`.
+- Replaced hardcoded help line with `m.help.View(m.keyMap)`.
+- Switched View assembly to `lipgloss.JoinVertical(...)`.
+- Updated completion popup rendering to use dedicated lipgloss styles.
+- Updated `pkg/repl/styles.go` with popup and selected-item styles.
+- Completed Task 8:
+- Added field-level config docs in `pkg/repl/config.go`.
+- Added default autocomplete assertions in `pkg/repl/repl_test.go`.
+- Updated lint config in `.golangci.yml` to exclude `ttmp/`.
+- Validation commands run:
+- `gofmt -w pkg/repl/model.go pkg/repl/keymap.go pkg/repl/styles.go pkg/repl/config.go pkg/repl/repl_test.go`
+- `go test ./pkg/repl/...`
+- `golangci-lint run -v --max-same-issues=100`
+
+### Why
+
+- The user explicitly requested idiomatic bobatea key/help integration.
+- Mode-aware bindings remove key drift and centralize behavior/help in one map.
+- Lipgloss composition gives clearer layout structure and easier extension for upcoming help bar/drawer/palette work.
+
+### What worked
+
+- REPL package tests pass with the new keymap/help integration.
+- Lint now runs cleanly and no longer fails on `ttmp` script duplicate mains.
+- Focus toggling, submit/history, timeline selection, completion trigger/accept/cancel, and quit/help are all routed through bindings.
+
+### What didn't work
+
+- N/A in this step.
+
+### What I learned
+
+- REPL can share the same `mode-keymap` helper pattern as chat with minimal friction; once adopted, help output updates automatically with focus mode.
+
+### What was tricky to build
+
+- Key precedence had to remain explicit: popup navigation/accept must run before generic submit or focus-switch logic, otherwise `enter`/`tab` would perform the wrong action while popup is open.
+
+### What warrants a second pair of eyes
+
+- Confirm the selected default binding set is the final UX (for example `ctrl+?` for help and `ctrl+t` focus toggle with completer).
+- Confirm completion popup spacing/border styling in narrow terminal widths.
+
+### What should be done in the future
+
+- Implement Task 9 unit tests covering debounce coalescing, stale drop, and key routing edge cases.
+- Implement Task 10 integration-style fake completer flow test.
+
+### Code review instructions
+
+- Start at:
+- `pkg/repl/keymap.go`
+- `pkg/repl/model.go`
+- Then review:
+- `pkg/repl/styles.go`
+- `pkg/repl/config.go`
+- `pkg/repl/repl_test.go`
+- `.golangci.yml`
+- Validate with:
+- `go test ./pkg/repl/...`
+- `golangci-lint run -v --max-same-issues=100`
+
+### Technical details
+
+```go
+switch {
+case key.Matches(v, m.keyMap.Quit):
+    return m, tea.Quit
+case key.Matches(v, m.keyMap.ToggleHelp):
+    m.help.ShowAll = !m.help.ShowAll
+    return m, nil
 }
 ```

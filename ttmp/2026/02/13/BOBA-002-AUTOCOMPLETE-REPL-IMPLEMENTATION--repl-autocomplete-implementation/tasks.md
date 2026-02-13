@@ -14,7 +14,7 @@
 - [x] Implement generic shortcut-trigger path (`Tab` or configurable key) without REPL trigger heuristics
 - [x] Implement generic suggestion popup rendering, selection navigation, and apply/replace-range behavior
 - [x] Resolve `tab` conflict with timeline focus toggle by introducing explicit configurable focus key
-- [ ] Add config defaults and docs for debounce, timeout, trigger keys, accept keys, max suggestions, and focus toggle
+- [x] Add config defaults and docs for debounce, timeout, trigger keys, accept keys, max suggestions, and focus toggle
 - [ ] Add unit tests for generic mechanism: debounce coalescing, stale drop, shortcut reason tagging, key routing, and apply behavior
 - [ ] Add integration-style REPL model test that exercises typing -> completion request -> popup -> selection apply end-to-end with a fake completer
 
@@ -48,3 +48,4 @@
 - [ ] Validate explicit shortcut trigger (`Tab`) and conflict-free focus behavior
 - [ ] Take and store tmux screenshots for JS flows (before trigger, popup candidates, accept result, no-suggestion case)
 - [ ] Record JS validation notes, edge cases, and final readiness status in ticket changelog
+- [x] Adopt idiomatic bobatea REPL key bindings (key.Binding), bubbles help model rendering, and lipgloss-composed REPL layout

@@ -10,26 +10,39 @@ DocType: design-doc
 Intent: long-term
 Owners: []
 RelatedFiles:
-    - Path: bobatea/pkg/autocomplete/autocomplete.go
+    - Path: pkg/autocomplete/autocomplete.go
       Note: Existing autocomplete model analyzed for refactor vs reuse
-    - Path: bobatea/pkg/listbox/listbox.go
+    - Path: pkg/listbox/listbox.go
       Note: Candidate list rendering/navigation primitive for popup UI
-    - Path: bobatea/pkg/repl/autocomplete_types.go
+    - Path: pkg/repl/autocomplete_types.go
       Note: Canonical generic request/result/completer contracts added for Task 3
-    - Path: bobatea/pkg/repl/config.go
+    - Path: pkg/repl/config.go
       Note: Add autocomplete configuration and key binding defaults
-    - Path: bobatea/pkg/repl/evaluator.go
+    - Path: pkg/repl/evaluator.go
       Note: Introduce optional input completer capability contract
-    - Path: bobatea/pkg/repl/model.go
-      Note: Primary integration point for input key routing
-    - Path: bobatea/pkg/repl/repl_test.go
+    - Path: pkg/repl/keymap.go
+      Note: |-
+        Idiomatic key.Binding map and help groups for REPL modes
+        New REPL key.Binding map and help group contract
+    - Path: pkg/repl/model.go
+      Note: |-
+        Primary integration point for input key routing
+        Task 5 shortcut-trigger request path implementation
+        Mode-aware key routing and help.Model integration
+    - Path: pkg/repl/repl_test.go
       Note: Test surface for new debounce
+    - Path: pkg/repl/styles.go
+      Note: |-
+        Lipgloss styles for completion popup and selected items
+        Lipgloss popup style additions
 ExternalSources: []
 Summary: Detailed design and implementation plan for REPL autocomplete with debounce scheduling and optional keyboard-shortcut trigger
-LastUpdated: 2026-02-13T10:08:00-05:00
+LastUpdated: 2026-02-13T11:18:00-05:00
 WhatFor: Implement robust REPL autocomplete with debounced scheduling while delegating trigger decisions to the input completer.
 WhenToUse: Use when implementing or reviewing REPL autocomplete behavior and key routing.
 ---
+
+
 
 
 
@@ -299,6 +312,18 @@ type AutocompleteConfig struct {
     MaxSuggestions      int
 }
 ```
+
+## Idiomatic Bobatea Integration (Implemented)
+
+To align REPL behavior with existing bobatea conventions, the implementation now follows the same interaction pattern used by chat:
+
+- Key routing now uses `key.Binding` and `key.Matches` (no ad-hoc string switch tables for primary actions).
+- REPL has a dedicated `pkg/repl/keymap.go` with `ShortHelp()` / `FullHelp()` and mode tags.
+- `mode-keymap.EnableMode` is used to toggle available bindings between `input` and `timeline`.
+- `bubbles/help.Model` is embedded in REPL and rendered in `View()` for dynamic, mode-aware key help.
+- View composition uses `lipgloss.JoinVertical(...)` sections (`title`, `timeline`, `input`, `completion popup`, `help`) instead of manual string concatenation.
+
+This keeps REPL interaction semantics consistent with the rest of bobatea and gives us a single keymap source of truth for behavior + help output.
 
 ## Message Flow Diagram
 
