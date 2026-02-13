@@ -118,3 +118,14 @@ Task 9 completed (commit `650ea1e`): added focused unit tests for debounce coale
 - /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/autocomplete_model_test.go — New Task 9 unit test suite
 - /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-002-AUTOCOMPLETE-REPL-IMPLEMENTATION--repl-autocomplete-implementation/tasks.md — Task 9 checked
 - /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-002-AUTOCOMPLETE-REPL-IMPLEMENTATION--repl-autocomplete-implementation/reference/01-diary.md — Added Step 8 diary entry
+
+
+## 2026-02-13
+
+Task 10 completed (commit `49c6a9a`): added an integration-style autocomplete model test that drives `Update` from typing through debounce/result handling, popup navigation, and completion apply.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/autocomplete_model_test.go — Added end-to-end model flow test and command-drain helper
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-002-AUTOCOMPLETE-REPL-IMPLEMENTATION--repl-autocomplete-implementation/tasks.md — Task 10 checked
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-002-AUTOCOMPLETE-REPL-IMPLEMENTATION--repl-autocomplete-implementation/reference/01-diary.md — Added Step 9 diary entry

@@ -36,7 +36,7 @@ RelatedFiles:
       Note: Checklist state tracked per implementation task
 ExternalSources: []
 Summary: Implementation diary for BOBA-002 task-by-task execution with tests, commits, and validation artifacts
-LastUpdated: 2026-02-13T11:34:00-05:00
+LastUpdated: 2026-02-13T11:42:00-05:00
 WhatFor: Record task-by-task implementation progress, including tests, commits, failures, and validation instructions.
 WhenToUse: Use while implementing, reviewing, or continuing BOBA-002 work.
 ---
@@ -718,4 +718,83 @@ The scope is intentionally model-level and deterministic, so we can validate beh
 ```go
 staleCmd := m.handleDebouncedCompletion(msg1)
 assert.Nil(t, staleCmd, "outdated debounce request must be dropped")
+```
+
+## Step 9: Add Task 10 Integration-Style Model Flow Test
+
+This step implemented Task 10 by extending the autocomplete test suite with a single integration-style model test that drives the real `Update` loop. The test covers typing a rune, processing debounce and completion result messages, showing the popup, navigating selection, and applying the selected completion.
+
+The test intentionally uses a command-draining helper to execute nested Bubble Tea `Batch` commands so behavior is validated closer to runtime flow.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 1)
+
+**Assistant interpretation:** Continue sequential task execution by adding the end-to-end model-level test before moving into example/tmux phases.
+
+**Inferred user intent:** Validate the full key/message flow in code to reduce risk before manual interaction testing.
+
+**Commit (code):** `49c6a9a` — "test(repl): add end-to-end autocomplete model flow test"
+
+### What I did
+
+- Extended `pkg/repl/autocomplete_model_test.go`:
+- Added `drainModelCmds` helper to process nested `tea.BatchMsg` commands and feed produced messages back into `Model.Update`.
+- Added `TestAutocompleteEndToEndTypingToApplyFlow` validating:
+- typing input (`KeyRunes`)
+- debounce-triggered completion request
+- popup visibility and suggestion selection movement
+- apply behavior on `enter`
+- Verified with:
+- `gofmt -w pkg/repl/autocomplete_model_test.go`
+- `go test ./pkg/repl/...`
+- `golangci-lint run -v --max-same-issues=100`
+- Checked task status:
+- `docmgr task check --ticket BOBA-002-AUTOCOMPLETE-REPL-IMPLEMENTATION --id 10`
+
+### Why
+
+- Task 10 asks for an integration-style test that exercises the real model update flow instead of only direct helper calls.
+- This catches command/message orchestration issues that unit tests on isolated methods can miss.
+
+### What worked
+
+- End-to-end model flow test passes.
+- Existing Task 9 unit tests remain green.
+- Lint remains clean.
+
+### What didn't work
+
+- N/A in this step.
+
+### What I learned
+
+- Bubble Tea `Batch` command handling is straightforward to test once commands are drained recursively and fed through `Update`.
+
+### What was tricky to build
+
+- The main tricky point was preserving deterministic ordering in tests while still respecting Bubble Tea’s batched command model. A queue-based command drain solved this without introducing sleeps or flaky polling.
+
+### What warrants a second pair of eyes
+
+- Confirm that this integration-style test is sufficient for Task 10 coverage expectations, or whether a second scenario (for example explicit shortcut-trigger path) should also be included.
+
+### What should be done in the future
+
+- Move to Phase 2 tasks: add minimal non-JS example and playbook/run instructions.
+
+### Code review instructions
+
+- Start at: `pkg/repl/autocomplete_model_test.go`
+- Focus symbols:
+- `drainModelCmds`
+- `TestAutocompleteEndToEndTypingToApplyFlow`
+- Validate with:
+- `go test ./pkg/repl/...`
+
+### Technical details
+
+```go
+_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
+drainModelCmds(m, cmd)
 ```
