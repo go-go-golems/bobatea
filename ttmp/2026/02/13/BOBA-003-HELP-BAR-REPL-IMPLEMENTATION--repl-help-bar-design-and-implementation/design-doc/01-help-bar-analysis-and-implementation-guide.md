@@ -11,22 +11,29 @@ DocType: design-doc
 Intent: long-term
 Owners: []
 RelatedFiles:
-    - Path: bobatea/pkg/autocomplete/autocomplete.go
+    - Path: pkg/autocomplete/autocomplete.go
       Note: Current autocomplete model used for interoperability analysis
-    - Path: bobatea/pkg/repl/config.go
+    - Path: pkg/repl/config.go
       Note: Help bar configuration defaults and feature switches
-    - Path: bobatea/pkg/repl/evaluator.go
+    - Path: pkg/repl/evaluator.go
       Note: Optional provider capability extension point
-    - Path: bobatea/pkg/repl/model.go
+    - Path: pkg/repl/help_bar_model_test.go
+      Note: Validation coverage for the implemented design
+    - Path: pkg/repl/help_bar_types.go
+      Note: Concrete help bar contract implementation
+    - Path: pkg/repl/model.go
       Note: Primary integration surface for input-driven help bar scheduling and rendering
-    - Path: bobatea/pkg/repl/styles.go
+    - Path: pkg/repl/styles.go
       Note: Style extensions for contextual help bar severity states
+    - Path: ttmp/go.mod
+      Note: Nested module isolation for lint/typecheck stability
 ExternalSources: []
 Summary: Detailed analysis and implementation plan for a typing-triggered REPL help bar with completer/evaluator-backed symbol metadata.
-LastUpdated: 2026-02-13T10:31:00-05:00
+LastUpdated: 2026-02-13T15:52:00-05:00
 WhatFor: Build a fast contextual help bar that updates while typing and remains compatible with evolving autocomplete implementations.
 WhenToUse: Use while implementing or reviewing REPL input-context UX features.
 ---
+
 
 
 # Help Bar Analysis and Implementation Guide
@@ -324,10 +331,9 @@ Status: recommended medium-term architecture.
 
 ```go
 type HelpBarConfig struct {
-    Enabled        bool
-    Debounce       time.Duration
+    Enabled bool
+    Debounce time.Duration
     RequestTimeout time.Duration
-    ShowLoading    bool
 }
 ```
 
@@ -345,7 +351,7 @@ type HelpBarConfig struct {
 ### Phase 4: Rendering and Styling
 
 - Add `renderHelpBar()` helper.
-- Extend `Styles` in `bobatea/pkg/repl/styles.go` if needed for `HelpBarInfo`, `HelpBarWarn`, `HelpBarError`.
+- Map `help bar severity` to existing style tokens (`Info`, `HelpText`, `Error`) to avoid style surface growth.
 
 ### Phase 5: Tests
 
@@ -437,14 +443,48 @@ Risk: inconsistent semantics across languages.
 - Stale async responses are ignored.
 - Feature is safe when autocomplete widget is replaced or rewritten.
 
+## Implementation Status (2026-02-13)
+
+This design is now implemented in BOBA-003 code commit `76feb91`.
+
+- Added contracts in `pkg/repl/help_bar_types.go`:
+  - `HelpBarProvider`
+  - `HelpBarRequest` (includes `reason`, `request_id`, `cursor`, `shortcut`)
+  - `HelpBarPayload`
+- Added config in `pkg/repl/config.go`:
+  - `HelpBarConfig`
+  - `DefaultHelpBarConfig()`
+  - `Config.HelpBar`
+- Integrated model scheduling and async flow in `pkg/repl/model.go`:
+  - provider discovery in `NewModel`
+  - debounce tick/result messages
+  - stale-drop by `RequestID`
+  - timeout-bounded provider call with panic recovery
+  - no-flicker behavior while debounce is pending
+  - rendering between input line and static key help
+  - severity mapping (`error -> Error`, `warning -> HelpText`, default `Info`)
+- Added coverage in `pkg/repl/help_bar_model_test.go` and `pkg/repl/repl_test.go`:
+  - debounce coalescing
+  - stale result drop
+  - hide/show policy
+  - timeout and panic handling
+  - typing-flow integration
+  - no-provider inert behavior
+- Validation:
+  - `go test ./pkg/repl/... -count=1`
+  - `golangci-lint run -v --max-same-issues=100`
+
+> [!NOTE]
+> To keep root lint/test runs from typechecking ticket scripts under `ttmp/`, a nested module marker was added at `ttmp/go.mod`.
+
 ## Checklist
 
-- [ ] Add provider interface/types.
-- [ ] Add `HelpBarConfig` defaults.
-- [ ] Wire model state and messages.
-- [ ] Implement scheduling and async handling.
-- [ ] Implement dynamic render line and styles.
-- [ ] Add tests for debounce/stale/view behavior.
+- [x] Add provider interface/types.
+- [x] Add `HelpBarConfig` defaults.
+- [x] Wire model state and messages.
+- [x] Implement scheduling and async handling.
+- [x] Implement dynamic render line and styles.
+- [x] Add tests for debounce/stale/view behavior.
 
 ## References
 

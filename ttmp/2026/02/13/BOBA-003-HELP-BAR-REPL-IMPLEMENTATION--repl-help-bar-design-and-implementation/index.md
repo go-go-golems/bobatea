@@ -11,15 +11,21 @@ DocType: index
 Intent: long-term
 Owners: []
 RelatedFiles:
-    - Path: bobatea/pkg/repl/config.go
+    - Path: pkg/repl/config.go
       Note: Configuration surface for new help bar feature flags
-    - Path: bobatea/pkg/repl/model.go
+    - Path: pkg/repl/help_bar_types.go
+      Note: Contract layer for provider-driven help bar updates
+    - Path: pkg/repl/model.go
       Note: Main code integration point for input scheduling and rendering
-    - Path: bobatea/ttmp/2026/02/13/BOBA-003-HELP-BAR-REPL-IMPLEMENTATION--repl-help-bar-design-and-implementation/design-doc/01-help-bar-analysis-and-implementation-guide.md
+    - Path: pkg/repl/help_bar_model_test.go
+      Note: Behavioral test coverage for debounce, stale-drop, timeout, and visibility policies
+    - Path: ttmp/go.mod
+      Note: Nested module marker to keep root lint/test runs isolated from ticket scripts
+    - Path: ttmp/2026/02/13/BOBA-003-HELP-BAR-REPL-IMPLEMENTATION--repl-help-bar-design-and-implementation/design-doc/01-help-bar-analysis-and-implementation-guide.md
       Note: Detailed help bar analysis and implementation plan
 ExternalSources: []
 Summary: ""
-LastUpdated: 2026-02-13T09:59:55.419361042-05:00
+LastUpdated: 2026-02-13T15:54:00-05:00
 WhatFor: ""
 WhenToUse: ""
 ---
