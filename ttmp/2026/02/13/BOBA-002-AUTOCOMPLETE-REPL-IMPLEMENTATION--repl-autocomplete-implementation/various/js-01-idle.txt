@@ -1,0 +1,24 @@
+cd /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea && BOBAT
+EA_NO_ALT_SCREEN=1 go run ./examples/js-repl
+[1m[36m2026-02-13/integrate-ast-parser-repl/bobatea[0m on [1m[35m task/integrate-ast-parser-repl
+[0m via [1m[36m🐹 v1.25.7 [0mon [1m[33m☁️[0m [1m[33m  ttc (us-east-1) [0m
+[1m[31m❯[0m cd /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea && BOB
+ATEA_NO_ALT_SCREEN=1 go run ./examples/js-repl
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

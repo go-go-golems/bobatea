@@ -35,17 +35,17 @@
 
 ### Phase 4: JavaScript Integration with jsparse
 
-- [ ] Implement JS completer using `go-go-goja/pkg/jsparse` completion primitives (cursor context + candidates)
-- [ ] Wire JS evaluator to expose/use the new generic `InputCompleter` contract
-- [ ] Ensure JS completer honors REPL request reasons (`debounce`, `shortcut`) and decides when to show suggestions
-- [ ] Add/extend JS-focused tests for representative cases (`obj.`, module symbols, partial identifiers, incomplete input)
-- [ ] Update JS REPL example to use jsparse-backed autocomplete end-to-end
+- [x] Implement JS completer using `go-go-goja/pkg/jsparse` completion primitives (cursor context + candidates)
+- [x] Wire JS evaluator to expose/use the new generic `InputCompleter` contract
+- [x] Ensure JS completer honors REPL request reasons (`debounce`, `shortcut`) and decides when to show suggestions
+- [x] Add/extend JS-focused tests for representative cases (`obj.`, module symbols, partial identifiers, incomplete input)
+- [x] Update JS REPL example to use jsparse-backed autocomplete end-to-end
 
 ### Phase 5: Manual Validation in tmux (JS Example)
 
-- [ ] Run the JS example in `tmux` with jsparse autocomplete enabled
-- [ ] Validate completion behavior for representative JS contexts (property access, identifiers, module requires)
-- [ ] Validate explicit shortcut trigger (`Tab`) and conflict-free focus behavior
-- [ ] Take and store tmux screenshots for JS flows (before trigger, popup candidates, accept result, no-suggestion case)
-- [ ] Record JS validation notes, edge cases, and final readiness status in ticket changelog
+- [x] Run the JS example in `tmux` with jsparse autocomplete enabled
+- [x] Validate completion behavior for representative JS contexts (property access, identifiers, module requires)
+- [x] Validate explicit shortcut trigger (`Tab`) and conflict-free focus behavior
+- [x] Take and store tmux screenshots for JS flows (before trigger, popup candidates, accept result, no-suggestion case)
+- [x] Record JS validation notes, edge cases, and final readiness status in ticket changelog
 - [x] Adopt idiomatic bobatea REPL key bindings (key.Binding), bubbles help model rendering, and lipgloss-composed REPL layout

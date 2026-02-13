@@ -34,6 +34,14 @@ RelatedFiles:
       Note: Phase 2 runbook and success criteria
     - Path: ttmp/2026/02/13/BOBA-002-AUTOCOMPLETE-REPL-IMPLEMENTATION--repl-autocomplete-implementation/various/generic-phase3-validation.md
       Note: Phase 3 tmux validation checklist and findings
+    - Path: pkg/repl/evaluators/javascript/evaluator.go
+      Note: Phase 4 jsparse-backed JS completer implementation
+    - Path: pkg/repl/evaluators/javascript/evaluator_test.go
+      Note: Phase 4 JS completer test coverage
+    - Path: examples/js-repl/main.go
+      Note: Phase 4/5 JS example wiring for jsparse autocomplete and tmux mode
+    - Path: ttmp/2026/02/13/BOBA-002-AUTOCOMPLETE-REPL-IMPLEMENTATION--repl-autocomplete-implementation/various/js-phase5-validation.md
+      Note: Phase 5 tmux validation checklist and findings
     - Path: pkg/repl/styles.go
       Note: Step 7 completion popup lipgloss styling
     - Path: ttmp/2026/02/13/BOBA-002-AUTOCOMPLETE-REPL-IMPLEMENTATION--repl-autocomplete-implementation/design-doc/01-autocomplete-implementation-guide.md
@@ -42,7 +50,7 @@ RelatedFiles:
       Note: Checklist state tracked per implementation task
 ExternalSources: []
 Summary: Implementation diary for BOBA-002 task-by-task execution with tests, commits, and validation artifacts
-LastUpdated: 2026-02-13T12:02:00-05:00
+LastUpdated: 2026-02-13T12:19:00-05:00
 WhatFor: Record task-by-task implementation progress, including tests, commits, failures, and validation instructions.
 WhenToUse: Use while implementing, reviewing, or continuing BOBA-002 work.
 ---
@@ -992,4 +1000,170 @@ programOptions := make([]tea.ProgramOption, 0, 1)
 if os.Getenv("BOBATEA_NO_ALT_SCREEN") != "1" {
     programOptions = append(programOptions, tea.WithAltScreen())
 }
+```
+
+## Step 12: Implement JS jsparse Completer + Wire JS Example (Tasks 20-24)
+
+This step implemented the JS integration phase by making the JavaScript evaluator implement `repl.InputCompleter` with `go-go-goja/pkg/jsparse` primitives. Completion context/candidates are now derived from parsed input and transformed into REPL suggestions with replace ranges.
+
+The JS example was simplified to use the package evaluator directly so jsparse autocomplete behavior is exercised end-to-end from `examples/js-repl`.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 1)
+
+**Assistant interpretation:** Continue BOBA-002 by integrating JS completer support and wiring the JS example to the generic REPL autocomplete contract.
+
+**Inferred user intent:** Ensure autocomplete architecture works for the real JS target with parser-backed context, not only generic demo behavior.
+
+**Commit (code):** `cabcadf` — "feat(repl): add jsparse-backed JS autocomplete completer"
+
+### What I did
+
+- Updated `pkg/repl/evaluators/javascript/evaluator.go`:
+- Added `CompleteInput(ctx, req)` implementation.
+- Uses `jsparse.NewTSParser`, `jsparse.Analyze`, `CompletionContextAt`, and `ResolveCandidates`.
+- Maps `jsparse.CompletionCandidate` -> `repl.CompletionResult` suggestions with replace range.
+- Added require-alias extraction for module-aware candidates (for example `const fs = require("fs"); fs.re`).
+- Added reason-aware show behavior (debounce vs shortcut).
+- Updated `Reset()` to carry parser state reset.
+- Added tests in `pkg/repl/evaluators/javascript/evaluator_test.go`:
+- property completion (`console.lo`)
+- partial identifier completion (`cons`)
+- module binding completion (`fs.re` includes `readFile`)
+- incomplete input after dot (`console.`)
+- Reworked `examples/js-repl/main.go`:
+- switched to `pkg/repl/evaluators/javascript` evaluator
+- set autocomplete-focused config defaults
+- added `BOBATEA_NO_ALT_SCREEN` mode for tmux capture
+- Validation commands:
+- `go test ./examples/js-repl ./pkg/repl/evaluators/javascript ./pkg/repl/...`
+- `golangci-lint run -v --max-same-issues=100`
+- Checked tasks:
+- `docmgr task check --ticket BOBA-002-AUTOCOMPLETE-REPL-IMPLEMENTATION --id 20,21,22,23,24`
+
+### Why
+
+- Tasks 20-24 require real jsparse-backed completion and an updated JS example using the new generic autocomplete path.
+- Keeping logic in evaluator-level completer preserves the REPL’s “no trigger detection” contract.
+
+### What worked
+
+- JS evaluator now satisfies `repl.InputCompleter`.
+- Test coverage confirms representative contexts and replace-range behavior.
+- Example wiring compiles and runs with autocomplete enabled.
+
+### What didn't work
+
+- N/A after initial lint fixes.
+
+### What I learned
+
+- jsparse resolver output can be combined with lightweight require-alias mapping to provide practical module completions without embedding Node runtime reflection in the REPL.
+
+### What was tricky to build
+
+- The sharp edge was translating cursor byte offsets to row/col for tree-sitter context and then back to byte replace ranges for REPL insertion. The implementation uses cursor-local partial text spans to keep replacement deterministic.
+
+### What warrants a second pair of eyes
+
+- Confirm the module-alias heuristic scope (`const|let|var x = require("...")`) is sufficient for this ticket phase.
+
+### What should be done in the future
+
+- Execute Phase 5 tmux/manual validation for JS contexts and capture all required artifacts.
+
+### Code review instructions
+
+- Start at: `pkg/repl/evaluators/javascript/evaluator.go`
+- Then review:
+- `pkg/repl/evaluators/javascript/evaluator_test.go`
+- `examples/js-repl/main.go`
+- Validate with:
+- `go test ./examples/js-repl ./pkg/repl/evaluators/javascript ./pkg/repl/...`
+
+### Technical details
+
+```go
+ctx := analysis.CompletionContextAt(root, row, col)
+candidates := jsparse.ResolveCandidates(ctx, analysis.Index, root)
+```
+
+## Step 13: Execute JS tmux Validation and Capture Artifacts (Tasks 25-29)
+
+This step completed the JS manual-validation phase by running `examples/js-repl` in tmux, driving representative completion flows, and storing captures plus a validation report in `various/`.
+
+The resulting artifacts validate property access completion, module-symbol completion, shortcut/no-suggestion behavior, and focus-toggle conflict-free operation.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 1)
+
+**Assistant interpretation:** Finish the ticket by validating JS behavior interactively in tmux and storing screenshots/findings.
+
+**Inferred user intent:** Obtain concrete operator-visible proof that JS integration behaves correctly in the real TUI loop.
+
+**Commit (code):** (see Step 12 for JS integration code commit; this step is artifact generation + docs)
+
+### What I did
+
+- Ran JS example in tmux:
+- `BOBATEA_NO_ALT_SCREEN=1 go run ./examples/js-repl`
+- Captured states:
+- `various/js-01-idle.txt`
+- `various/js-02-property-popup.txt`
+- `various/js-03-accept-result.txt`
+- `various/js-04-module-popup.txt`
+- `various/js-05-no-suggestion.txt`
+- `various/js-06-focus-timeline.txt`
+- Added validation report:
+- `various/js-phase5-validation.md`
+- Checked tasks:
+- `docmgr task check --ticket BOBA-002-AUTOCOMPLETE-REPL-IMPLEMENTATION --id 25,26,27,28,29`
+
+### Why
+
+- Tasks 25-29 explicitly require tmux run, representative JS context validation, shortcut/focus checks, capture storage, and final findings.
+
+### What worked
+
+- Property completion works (`console.lo` -> `log`).
+- Module completion works (`fs.re` includes `readFile` and related methods).
+- No-suggestion flow works (`zzz` + `tab` shows no popup).
+- Focus switching remains conflict-free (`ctrl+t` updates help bindings).
+- Captures and validation report are stored under `various/`.
+
+### What didn't work
+
+- N/A in this step.
+
+### What I learned
+
+- The same capture strategy used in Phase 3 scales to JS validation and keeps evidence reproducible.
+
+### What was tricky to build
+
+- The main challenge was ensuring each capture represented a distinct required state while keeping pane output stable enough for review. Explicit sleeps and deterministic key order solved this.
+
+### What warrants a second pair of eyes
+
+- Confirm ANSI pane captures are acceptable as screenshot artifacts for archival and review.
+
+### What should be done in the future
+
+- Ticket tasks are complete; next operational step is ticket closure and distribution/upload flow.
+
+### Code review instructions
+
+- Start at:
+- `ttmp/2026/02/13/BOBA-002-AUTOCOMPLETE-REPL-IMPLEMENTATION--repl-autocomplete-implementation/various/js-phase5-validation.md`
+- Then inspect captures:
+- `ttmp/2026/02/13/BOBA-002-AUTOCOMPLETE-REPL-IMPLEMENTATION--repl-autocomplete-implementation/various/js-02-property-popup.txt`
+- `ttmp/2026/02/13/BOBA-002-AUTOCOMPLETE-REPL-IMPLEMENTATION--repl-autocomplete-implementation/various/js-04-module-popup.txt`
+- `ttmp/2026/02/13/BOBA-002-AUTOCOMPLETE-REPL-IMPLEMENTATION--repl-autocomplete-implementation/various/js-05-no-suggestion.txt`
+
+### Technical details
+
+```bash
+BOBATEA_NO_ALT_SCREEN=1 go run ./examples/js-repl
 ```
