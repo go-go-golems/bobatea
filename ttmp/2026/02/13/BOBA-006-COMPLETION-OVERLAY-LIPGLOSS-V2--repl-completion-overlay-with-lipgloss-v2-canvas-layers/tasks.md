@@ -8,7 +8,7 @@
 - [x] Add lipgloss v2 dependency and implement overlay renderer in `Model.View` (non-inline popup)
 - [x] Implement placement/sizing logic with terminal clamping and above/below fallback
 - [x] Implement scrolling/paging behavior for long suggestion lists
-- [ ] Add/adjust tests for viewport and overlay behavior
+- [x] Add/adjust tests for viewport and overlay behavior
 - [ ] Run focused validation (`go test`, lint on changed packages, manual `examples/js-repl` run)
 
 ## Done (Research)

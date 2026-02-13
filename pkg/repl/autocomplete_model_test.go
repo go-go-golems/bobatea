@@ -2,6 +2,7 @@ package repl
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -246,4 +247,98 @@ func TestCompletionCmdRecoversFromCompleterPanic(t *testing.T) {
 	assert.Equal(t, req.RequestID, msg.RequestID)
 	require.Error(t, msg.Err)
 	assert.Contains(t, msg.Err.Error(), "input completer panic")
+}
+
+func TestComputeCompletionOverlayLayoutClampsToBounds(t *testing.T) {
+	evaluator := &fakeCompleterEvaluator{}
+	m := newAutocompleteTestModel(t, evaluator)
+
+	m.width = 40
+	m.height = 10
+	m.textInput.SetValue("console.log")
+	m.textInput.SetCursor(len("console.log"))
+	m.completionVisible = true
+	m.completionMaxVisible = 10
+	m.completionMaxHeight = 6
+	m.completionMaxWidth = 28
+	m.completionMinWidth = 16
+	m.completionLastResult = CompletionResult{
+		Show: true,
+		Suggestions: []autocomplete.Suggestion{
+			{Id: "1", Value: "console", DisplayText: "console"},
+			{Id: "2", Value: "constructor", DisplayText: strings.Repeat("X", 90)},
+			{Id: "3", Value: "copyWithin", DisplayText: "copyWithin"},
+			{Id: "4", Value: "count", DisplayText: "count"},
+			{Id: "5", Value: "countReset", DisplayText: "countReset"},
+		},
+	}
+
+	layout, ok := m.computeCompletionOverlayLayout("title", "timeline\nline")
+	require.True(t, ok)
+	assert.GreaterOrEqual(t, layout.PopupX, 0)
+	assert.GreaterOrEqual(t, layout.PopupY, 0)
+	assert.LessOrEqual(t, layout.PopupWidth, m.width)
+	assert.LessOrEqual(t, layout.PopupWidth, m.completionMaxWidth)
+	assert.GreaterOrEqual(t, layout.PopupWidth, m.completionMinWidth)
+	assert.GreaterOrEqual(t, layout.VisibleRows, 1)
+	assert.LessOrEqual(t, layout.VisibleRows, 4, "max height 6 with frame should cap visible rows")
+}
+
+func TestRenderCompletionPopupUsesScrollWindow(t *testing.T) {
+	evaluator := &fakeCompleterEvaluator{}
+	m := newAutocompleteTestModel(t, evaluator)
+
+	m.completionVisible = true
+	m.completionSelection = 4
+	m.completionScrollTop = 3
+	m.completionLastResult = CompletionResult{
+		Show: true,
+		Suggestions: []autocomplete.Suggestion{
+			{Id: "1", Value: "alpha", DisplayText: "alpha"},
+			{Id: "2", Value: "beta", DisplayText: "beta"},
+			{Id: "3", Value: "gamma", DisplayText: "gamma"},
+			{Id: "4", Value: "delta", DisplayText: "delta"},
+			{Id: "5", Value: "epsilon", DisplayText: "epsilon"},
+		},
+	}
+
+	popup := m.renderCompletionPopup(completionOverlayLayout{
+		PopupWidth:   24,
+		VisibleRows:  2,
+		ContentWidth: 18,
+	})
+	assert.Contains(t, popup, "delta")
+	assert.Contains(t, popup, "epsilon")
+	assert.NotContains(t, popup, "alpha")
+	assert.NotContains(t, popup, "beta")
+}
+
+func TestCompletionPageNavigationMovesSelectionByViewport(t *testing.T) {
+	evaluator := &fakeCompleterEvaluator{}
+	m := newAutocompleteTestModel(t, evaluator)
+
+	m.completionVisible = true
+	m.completionVisibleRows = 3
+	m.completionLastResult = CompletionResult{
+		Show: true,
+		Suggestions: []autocomplete.Suggestion{
+			{Id: "1", Value: "a", DisplayText: "a"},
+			{Id: "2", Value: "b", DisplayText: "b"},
+			{Id: "3", Value: "c", DisplayText: "c"},
+			{Id: "4", Value: "d", DisplayText: "d"},
+			{Id: "5", Value: "e", DisplayText: "e"},
+			{Id: "6", Value: "f", DisplayText: "f"},
+			{Id: "7", Value: "g", DisplayText: "g"},
+		},
+	}
+
+	handled, _ := m.handleCompletionNavigation(tea.KeyMsg{Type: tea.KeyPgDown})
+	require.True(t, handled)
+	assert.Equal(t, 3, m.completionSelection)
+	assert.GreaterOrEqual(t, m.completionScrollTop, 1)
+
+	handled, _ = m.handleCompletionNavigation(tea.KeyMsg{Type: tea.KeyPgUp})
+	require.True(t, handled)
+	assert.Equal(t, 0, m.completionSelection)
+	assert.Equal(t, 0, m.completionScrollTop)
 }

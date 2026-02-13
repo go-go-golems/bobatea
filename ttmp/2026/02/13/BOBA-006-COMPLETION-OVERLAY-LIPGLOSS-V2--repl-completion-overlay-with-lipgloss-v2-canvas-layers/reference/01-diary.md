@@ -745,7 +745,7 @@ The main change is in `handleCompletionNavigation(...)`: every selection movemen
 
 **Inferred user intent:** Complete long-list usability, not just static overlay rendering.
 
-**Commit (code):** (recorded in the commit created for this step)
+**Commit (code):** `be88176` — "repl: add completion paging navigation behavior"
 
 ### What I did
 
@@ -802,3 +802,75 @@ The main change is in `handleCompletionNavigation(...)`: every selection movemen
 ### Technical details
 
 - Paging is currently selection-based; viewport follows selection via `ensureCompletionSelectionVisible()`.
+
+## Step 11: Task 7 Implementation — Overlay/Viewport Test Coverage
+
+With behavior mostly wired, I added targeted tests for geometry and viewport behavior so later refactors do not regress the overlay model silently.
+
+These tests exercise non-trivial paths that old inline popup tests did not cover: constrained layout calculations, scroll-window rendering, and page-key movement.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 5)
+
+**Assistant interpretation:** Continue task sequence and ensure each step is test-backed and committed.
+
+**Inferred user intent:** Avoid shipping overlay logic without guardrails.
+
+**Commit (code):** (recorded in the commit created for this step)
+
+### What I did
+
+- Updated `pkg/repl/autocomplete_model_test.go`:
+  - `TestComputeCompletionOverlayLayoutClampsToBounds`
+    - validates width and visible-row clamping under tight terminal dimensions
+  - `TestRenderCompletionPopupUsesScrollWindow`
+    - validates popup rendering window uses `completionScrollTop`
+  - `TestCompletionPageNavigationMovesSelectionByViewport`
+    - validates `pgup/pgdown` move selection by page step and sync viewport
+- Added `strings` import for test fixture setup.
+- Checked off Task 7 in:
+  - `ttmp/.../BOBA-006.../tasks.md`
+- Ran:
+  - `gofmt -w pkg/repl/autocomplete_model_test.go`
+  - `go test ./pkg/repl/... -count=1`
+
+### Why
+
+- Geometry and paging code is easy to regress; focused tests make later edits safer.
+
+### What worked
+
+- New tests pass with existing suite.
+- Coverage now includes overlay-specific mechanics beyond legacy inline behavior.
+
+### What didn't work
+
+- N/A for this step.
+
+### What I learned
+
+- A compact layout test can verify several invariants at once (width caps, min width, and visible row limits) without brittle snapshot assertions.
+
+### What was tricky to build
+
+- Making tests deterministic while `View()` depends on terminal dimensions and dynamic section heights; direct helper-method tests were cleaner than full-frame snapshots.
+
+### What warrants a second pair of eyes
+
+- We may want one snapshot-style integration test later once manual UX settles, but helper-based tests are currently the better stability tradeoff.
+
+### What should be done in the future
+
+- Final task will run broader validation (lint and manual js-repl run) and close checklist.
+
+### Code review instructions
+
+- Review:
+  - `pkg/repl/autocomplete_model_test.go`
+- Re-run:
+  - `go test ./pkg/repl/... -count=1`
+
+### Technical details
+
+- Test fixtures intentionally include long suggestion text to exercise width truncation branches.
