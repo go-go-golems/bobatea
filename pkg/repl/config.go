@@ -68,6 +68,28 @@ type HelpBarConfig struct {
 	RequestTimeout time.Duration
 }
 
+// HelpDrawerConfig controls keyboard-toggled contextual help drawer behavior.
+type HelpDrawerConfig struct {
+	// Enabled toggles REPL help drawer integration.
+	Enabled bool
+	// ToggleKeys open/close the drawer while typing.
+	ToggleKeys []string
+	// CloseKeys close the drawer while it is visible.
+	CloseKeys []string
+	// RefreshShortcuts trigger an immediate drawer refresh while visible.
+	RefreshShortcuts []string
+	// Debounce is the delay after input edits before a drawer refresh is sent.
+	Debounce time.Duration
+	// RequestTimeout bounds a single drawer request.
+	RequestTimeout time.Duration
+	// WidthPercent controls drawer width as percentage of terminal width.
+	WidthPercent int
+	// HeightPercent controls drawer height as percentage of terminal height.
+	HeightPercent int
+	// PrefetchWhenHidden keeps requests running while drawer is hidden.
+	PrefetchWhenHidden bool
+}
+
 // DefaultAutocompleteConfig returns default autocomplete settings.
 func DefaultAutocompleteConfig() AutocompleteConfig {
 	return AutocompleteConfig{
@@ -100,6 +122,21 @@ func DefaultHelpBarConfig() HelpBarConfig {
 	}
 }
 
+// DefaultHelpDrawerConfig returns default help drawer settings.
+func DefaultHelpDrawerConfig() HelpDrawerConfig {
+	return HelpDrawerConfig{
+		Enabled:            true,
+		ToggleKeys:         []string{"ctrl+h"},
+		CloseKeys:          []string{"esc", "ctrl+h"},
+		RefreshShortcuts:   []string{"ctrl+r"},
+		Debounce:           140 * time.Millisecond,
+		RequestTimeout:     500 * time.Millisecond,
+		WidthPercent:       52,
+		HeightPercent:      46,
+		PrefetchWhenHidden: false,
+	}
+}
+
 // Config holds REPL shell configuration.
 type Config struct {
 	Title                string
@@ -114,6 +151,8 @@ type Config struct {
 	Autocomplete AutocompleteConfig
 	// HelpBar controls contextual in-line help updates while typing.
 	HelpBar HelpBarConfig
+	// HelpDrawer controls keyboard-toggle contextual panel behavior.
+	HelpDrawer HelpDrawerConfig
 }
 
 // DefaultConfig returns a sensible default configuration.
@@ -129,5 +168,6 @@ func DefaultConfig() Config {
 		MaxHistorySize:       1000,
 		Autocomplete:         DefaultAutocompleteConfig(),
 		HelpBar:              DefaultHelpBarConfig(),
+		HelpDrawer:           DefaultHelpDrawerConfig(),
 	}
 }

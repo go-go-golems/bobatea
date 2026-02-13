@@ -24,6 +24,9 @@ type KeyMap struct {
 	CompletionPageUp   key.Binding `keymap-mode:"input"`
 	CompletionPageDown key.Binding `keymap-mode:"input"`
 	CompletionCancel   key.Binding `keymap-mode:"input"`
+	HelpDrawerToggle   key.Binding `keymap-mode:"input"`
+	HelpDrawerClose    key.Binding `keymap-mode:"input"`
+	HelpDrawerRefresh  key.Binding `keymap-mode:"input"`
 
 	TimelinePrev      key.Binding `keymap-mode:"timeline"`
 	TimelineNext      key.Binding `keymap-mode:"timeline"`
@@ -33,7 +36,7 @@ type KeyMap struct {
 }
 
 // NewKeyMap returns REPL key bindings derived from config.
-func NewKeyMap(autocompleteCfg AutocompleteConfig, focusToggleKey string) KeyMap {
+func NewKeyMap(autocompleteCfg AutocompleteConfig, helpDrawerCfg HelpDrawerConfig, focusToggleKey string) KeyMap {
 	km := KeyMap{
 		Quit: binding([]string{"ctrl+c", "alt+q"}, "quit"),
 		ToggleHelp: key.NewBinding(
@@ -53,6 +56,9 @@ func NewKeyMap(autocompleteCfg AutocompleteConfig, focusToggleKey string) KeyMap
 		CompletionPageUp:   binding([]string{"pgup", "ctrl+b"}, "completion page up"),
 		CompletionPageDown: binding([]string{"pgdown", "ctrl+f"}, "completion page down"),
 		CompletionCancel:   binding([]string{"esc"}, "close completion"),
+		HelpDrawerToggle:   binding(helpDrawerCfg.ToggleKeys, "toggle drawer"),
+		HelpDrawerClose:    binding(helpDrawerCfg.CloseKeys, "close drawer"),
+		HelpDrawerRefresh:  binding(helpDrawerCfg.RefreshShortcuts, "refresh drawer"),
 
 		TimelinePrev:      binding([]string{"up"}, "select prev"),
 		TimelineNext:      binding([]string{"down"}, "select next"),
@@ -66,6 +72,15 @@ func NewKeyMap(autocompleteCfg AutocompleteConfig, focusToggleKey string) KeyMap
 	}
 	if len(autocompleteCfg.AcceptKeys) == 0 {
 		km.CompletionAccept.SetEnabled(false)
+	}
+	if len(helpDrawerCfg.ToggleKeys) == 0 {
+		km.HelpDrawerToggle.SetEnabled(false)
+	}
+	if len(helpDrawerCfg.CloseKeys) == 0 {
+		km.HelpDrawerClose.SetEnabled(false)
+	}
+	if len(helpDrawerCfg.RefreshShortcuts) == 0 {
+		km.HelpDrawerRefresh.SetEnabled(false)
 	}
 
 	return km
@@ -98,6 +113,8 @@ func (k KeyMap) ShortHelp() []key.Binding {
 		k.CompletionTrigger,
 		k.CompletionAccept,
 		k.CompletionCancel,
+		k.HelpDrawerToggle,
+		k.HelpDrawerRefresh,
 		k.CompletionPageUp,
 		k.CompletionPageDown,
 		k.Submit,
@@ -117,6 +134,7 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 		{k.ToggleFocus, k.Submit},
 		{k.HistoryPrev, k.HistoryNext},
 		{k.CompletionTrigger, k.CompletionAccept, k.CompletionCancel},
+		{k.HelpDrawerToggle, k.HelpDrawerClose, k.HelpDrawerRefresh},
 		{k.CompletionPrev, k.CompletionNext, k.CompletionPageUp, k.CompletionPageDown},
 		{k.TimelinePrev, k.TimelineNext, k.TimelineEnterExit},
 		{k.CopyCode, k.CopyText},

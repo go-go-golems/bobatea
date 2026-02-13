@@ -120,6 +120,15 @@ func TestConfig(t *testing.T) {
 	assert.True(t, config.HelpBar.Enabled)
 	assert.Equal(t, 120*time.Millisecond, config.HelpBar.Debounce)
 	assert.Equal(t, 300*time.Millisecond, config.HelpBar.RequestTimeout)
+	assert.True(t, config.HelpDrawer.Enabled)
+	assert.Equal(t, []string{"ctrl+h"}, config.HelpDrawer.ToggleKeys)
+	assert.Equal(t, []string{"esc", "ctrl+h"}, config.HelpDrawer.CloseKeys)
+	assert.Equal(t, []string{"ctrl+r"}, config.HelpDrawer.RefreshShortcuts)
+	assert.Equal(t, 140*time.Millisecond, config.HelpDrawer.Debounce)
+	assert.Equal(t, 500*time.Millisecond, config.HelpDrawer.RequestTimeout)
+	assert.Equal(t, 52, config.HelpDrawer.WidthPercent)
+	assert.Equal(t, 46, config.HelpDrawer.HeightPercent)
+	assert.False(t, config.HelpDrawer.PrefetchWhenHidden)
 }
 
 func TestStyles(t *testing.T) {

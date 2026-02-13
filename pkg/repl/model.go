@@ -92,6 +92,19 @@ type Model struct {
 	helpBarLastErr     error
 	helpBarLastReqID   uint64
 	helpBarLastReqKind HelpBarReason
+
+	// optional help-drawer capability
+	helpDrawerProvider      HelpDrawerProvider
+	helpDrawerVisible       bool
+	helpDrawerDoc           HelpDrawerDocument
+	helpDrawerReqSeq        uint64
+	helpDrawerDebounce      time.Duration
+	helpDrawerReqTimeout    time.Duration
+	helpDrawerLoading       bool
+	helpDrawerErr           error
+	helpDrawerPrefetch      bool
+	helpDrawerWidthPercent  int
+	helpDrawerHeightPercent int
 }
 
 // NewModel constructs a new REPL shell with timeline transcript.
@@ -123,6 +136,10 @@ func NewModel(evaluator Evaluator, config Config, pub message.Publisher) *Model 
 	if p, ok := evaluator.(HelpBarProvider); ok {
 		helpBarProvider = p
 	}
+	var helpDrawerProvider HelpDrawerProvider
+	if p, ok := evaluator.(HelpDrawerProvider); ok {
+		helpDrawerProvider = p
+	}
 	autocompleteCfg := normalizeAutocompleteConfig(config.Autocomplete)
 	if !autocompleteCfg.Enabled {
 		completer = nil
@@ -130,6 +147,10 @@ func NewModel(evaluator Evaluator, config Config, pub message.Publisher) *Model 
 	helpBarCfg := normalizeHelpBarConfig(config.HelpBar)
 	if !helpBarCfg.Enabled {
 		helpBarProvider = nil
+	}
+	helpDrawerCfg := normalizeHelpDrawerConfig(config.HelpDrawer)
+	if !helpDrawerCfg.Enabled {
+		helpDrawerProvider = nil
 	}
 
 	focusToggleKey := autocompleteCfg.FocusToggleKey
@@ -154,7 +175,7 @@ func NewModel(evaluator Evaluator, config Config, pub message.Publisher) *Model 
 		sh:        sh,
 		focus:     "input",
 		help:      help.New(),
-		keyMap:    NewKeyMap(autocompleteCfg, focusToggleKey),
+		keyMap:    NewKeyMap(autocompleteCfg, helpDrawerCfg, focusToggleKey),
 		pub:       pub,
 		completer: completer,
 
@@ -175,6 +196,18 @@ func NewModel(evaluator Evaluator, config Config, pub message.Publisher) *Model 
 		helpBarProvider:   helpBarProvider,
 		helpBarDebounce:   helpBarCfg.Debounce,
 		helpBarReqTimeout: helpBarCfg.RequestTimeout,
+
+		helpDrawerProvider:      helpDrawerProvider,
+		helpDrawerDebounce:      helpDrawerCfg.Debounce,
+		helpDrawerReqTimeout:    helpDrawerCfg.RequestTimeout,
+		helpDrawerPrefetch:      helpDrawerCfg.PrefetchWhenHidden,
+		helpDrawerWidthPercent:  helpDrawerCfg.WidthPercent,
+		helpDrawerHeightPercent: helpDrawerCfg.HeightPercent,
+	}
+	if ret.helpDrawerProvider == nil {
+		ret.keyMap.HelpDrawerToggle.SetEnabled(false)
+		ret.keyMap.HelpDrawerClose.SetEnabled(false)
+		ret.keyMap.HelpDrawerRefresh.SetEnabled(false)
 	}
 	ret.updateKeyBindings()
 	return ret
@@ -251,6 +284,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.handleDebouncedHelpBar(v)
 	case helpBarResultMsg:
 		return m, m.handleHelpBarResult(v)
+	case helpDrawerDebounceMsg:
+		return m, m.handleDebouncedHelpDrawer(v)
+	case helpDrawerResultMsg:
+		return m, m.handleHelpDrawerResult(v)
 
 	case cursor.BlinkMsg:
 		return m, nil
@@ -269,6 +306,10 @@ func (m *Model) updateInput(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	log.Trace().Interface("k", k).Str("key", k.String()).Msg("updating input")
 	prevValue := m.textInput.Value()
 	prevCursor := m.textInput.Position()
+
+	if handled, cmd := m.handleHelpDrawerShortcuts(k); handled {
+		return m, cmd
+	}
 
 	if handled, cmd := m.handleCompletionNavigation(k); handled {
 		return m, cmd
@@ -306,6 +347,7 @@ func (m *Model) updateInput(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(
 			m.scheduleDebouncedCompletionIfNeeded(prevValue, prevCursor),
 			m.scheduleDebouncedHelpBarIfNeeded(prevValue, prevCursor),
+			m.scheduleDebouncedHelpDrawerIfNeeded(prevValue, prevCursor),
 		)
 	case key.Matches(k, m.keyMap.HistoryNext):
 		if m.config.EnableHistory {
@@ -315,6 +357,7 @@ func (m *Model) updateInput(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(
 			m.scheduleDebouncedCompletionIfNeeded(prevValue, prevCursor),
 			m.scheduleDebouncedHelpBarIfNeeded(prevValue, prevCursor),
+			m.scheduleDebouncedHelpDrawerIfNeeded(prevValue, prevCursor),
 		)
 	}
 	var cmd tea.Cmd
@@ -323,6 +366,7 @@ func (m *Model) updateInput(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		cmd,
 		m.scheduleDebouncedCompletionIfNeeded(prevValue, prevCursor),
 		m.scheduleDebouncedHelpBarIfNeeded(prevValue, prevCursor),
+		m.scheduleDebouncedHelpDrawerIfNeeded(prevValue, prevCursor),
 	)
 }
 
@@ -384,23 +428,53 @@ func (m *Model) View() string {
 	baseSections = append(baseSections, helpView)
 	base := lipgloss.JoinVertical(lipgloss.Left, baseSections...)
 
-	layout, ok := m.computeCompletionOverlayLayout(header, timelineView)
-	if !ok || m.width <= 0 || m.height <= 0 {
-		m.completionVisibleRows = 0
+	if m.width <= 0 || m.height <= 0 {
 		return base
 	}
-	popup := m.renderCompletionPopup(layout)
-	if popup == "" {
-		m.completionVisibleRows = 0
-		return base
-	}
-	m.completionVisibleRows = layout.VisibleRows
-	m.ensureCompletionSelectionVisible()
 
-	comp := lipglossv2.NewCompositor(
+	completionLayout, completionOK := m.computeCompletionOverlayLayout(header, timelineView)
+	completionPopup := ""
+	if completionOK {
+		completionPopup = m.renderCompletionPopup(completionLayout)
+		if completionPopup == "" {
+			m.completionVisibleRows = 0
+			completionOK = false
+		} else {
+			m.completionVisibleRows = completionLayout.VisibleRows
+			m.ensureCompletionSelectionVisible()
+		}
+	} else {
+		m.completionVisibleRows = 0
+	}
+
+	drawerLayout, drawerOK := m.computeHelpDrawerOverlayLayout(header)
+	drawerPanel := ""
+	if drawerOK {
+		drawerPanel = m.renderHelpDrawerPanel(drawerLayout)
+		if drawerPanel == "" {
+			drawerOK = false
+		}
+	}
+
+	if !completionOK && !drawerOK {
+		return base
+	}
+
+	layers := []*lipglossv2.Layer{
 		lipglossv2.NewLayer(base).X(0).Y(0).Z(0).ID("repl-base"),
-		lipglossv2.NewLayer(popup).X(layout.PopupX).Y(layout.PopupY).Z(20).ID("completion-overlay"),
-	)
+	}
+	if drawerOK {
+		layers = append(layers,
+			lipglossv2.NewLayer(drawerPanel).X(drawerLayout.PanelX).Y(drawerLayout.PanelY).Z(15).ID("help-drawer-overlay"),
+		)
+	}
+	if completionOK {
+		layers = append(layers,
+			lipglossv2.NewLayer(completionPopup).X(completionLayout.PopupX).Y(completionLayout.PopupY).Z(20).ID("completion-overlay"),
+		)
+	}
+
+	comp := lipglossv2.NewCompositor(layers...)
 	canvas := lipglossv2.NewCanvas(max(1, m.width), max(1, m.height))
 	canvas.Compose(comp)
 	return canvas.Render()
@@ -478,12 +552,31 @@ type helpBarResultMsg struct {
 	Err       error
 }
 
+type helpDrawerDebounceMsg struct {
+	RequestID uint64
+}
+
+type helpDrawerResultMsg struct {
+	RequestID uint64
+	Doc       HelpDrawerDocument
+	Err       error
+}
+
 type completionOverlayLayout struct {
 	PopupX       int
 	PopupY       int
 	PopupWidth   int
 	VisibleRows  int
 	ContentWidth int
+}
+
+type helpDrawerOverlayLayout struct {
+	PanelX        int
+	PanelY        int
+	PanelWidth    int
+	PanelHeight   int
+	ContentWidth  int
+	ContentHeight int
 }
 
 func (m *Model) scheduleRefresh() tea.Cmd {
@@ -524,6 +617,24 @@ func (m *Model) scheduleDebouncedHelpBarIfNeeded(prevValue string, prevCursor in
 	})
 }
 
+func (m *Model) scheduleDebouncedHelpDrawerIfNeeded(prevValue string, prevCursor int) tea.Cmd {
+	if m.helpDrawerProvider == nil {
+		return nil
+	}
+	if !m.helpDrawerVisible && !m.helpDrawerPrefetch {
+		return nil
+	}
+	if prevValue == m.textInput.Value() && prevCursor == m.textInput.Position() {
+		return nil
+	}
+
+	m.helpDrawerReqSeq++
+	reqID := m.helpDrawerReqSeq
+	return tea.Tick(m.helpDrawerDebounce, func(time.Time) tea.Msg {
+		return helpDrawerDebounceMsg{RequestID: reqID}
+	})
+}
+
 func (m *Model) handleDebouncedCompletion(msg completionDebounceMsg) tea.Cmd {
 	if m.completer == nil {
 		return nil
@@ -560,6 +671,27 @@ func (m *Model) handleDebouncedHelpBar(msg helpBarDebounceMsg) tea.Cmd {
 	m.helpBarLastReqID = req.RequestID
 	m.helpBarLastReqKind = req.Reason
 	return m.helpBarCmd(req)
+}
+
+func (m *Model) handleDebouncedHelpDrawer(msg helpDrawerDebounceMsg) tea.Cmd {
+	if m.helpDrawerProvider == nil {
+		return nil
+	}
+	if msg.RequestID != m.helpDrawerReqSeq {
+		return nil
+	}
+	if !m.helpDrawerVisible && !m.helpDrawerPrefetch {
+		return nil
+	}
+
+	req := HelpDrawerRequest{
+		Input:      m.textInput.Value(),
+		CursorByte: m.textInput.Position(),
+		RequestID:  msg.RequestID,
+		Trigger:    HelpDrawerTriggerTyping,
+	}
+	m.helpDrawerLoading = true
+	return m.helpDrawerCmd(req)
 }
 
 func (m *Model) triggerCompletionFromShortcut(k tea.KeyMsg) tea.Cmd {
@@ -670,6 +802,49 @@ func (m *Model) helpBarCmd(req HelpBarRequest) tea.Cmd {
 	}
 }
 
+func (m *Model) helpDrawerCmd(req HelpDrawerRequest) tea.Cmd {
+	return func() tea.Msg {
+		var (
+			doc       HelpDrawerDocument
+			err       error
+			recovered any
+			stack     string
+		)
+
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					recovered = r
+					stack = string(debug.Stack())
+				}
+			}()
+
+			ctx, cancel := context.WithTimeout(context.Background(), m.helpDrawerReqTimeout)
+			defer cancel()
+
+			doc, err = m.helpDrawerProvider.GetHelpDrawer(ctx, req)
+		}()
+
+		if recovered != nil {
+			log.Error().
+				Interface("panic", recovered).
+				Str("stack", stack).
+				Uint64("request_id", req.RequestID).
+				Msg("help drawer provider panicked")
+			return helpDrawerResultMsg{
+				RequestID: req.RequestID,
+				Err:       fmt.Errorf("help drawer provider panic: %v", recovered),
+			}
+		}
+
+		return helpDrawerResultMsg{
+			RequestID: req.RequestID,
+			Doc:       doc,
+			Err:       err,
+		}
+	}
+}
+
 func (m *Model) handleCompletionResult(msg completionResultMsg) tea.Cmd {
 	if msg.RequestID != m.completionReqSeq {
 		return nil
@@ -712,6 +887,19 @@ func (m *Model) handleHelpBarResult(msg helpBarResultMsg) tea.Cmd {
 	return nil
 }
 
+func (m *Model) handleHelpDrawerResult(msg helpDrawerResultMsg) tea.Cmd {
+	if msg.RequestID != m.helpDrawerReqSeq {
+		return nil
+	}
+	m.helpDrawerLoading = false
+	m.helpDrawerErr = msg.Err
+	if msg.Err != nil {
+		return nil
+	}
+	m.helpDrawerDoc = msg.Doc
+	return nil
+}
+
 func (m *Model) renderHelpBar() string {
 	if !m.helpBarVisible {
 		return ""
@@ -728,6 +916,58 @@ func (m *Model) helpBarStyleForSeverity(severity string) lipgloss.Style {
 	default:
 		return m.styles.Info
 	}
+}
+
+func (m *Model) handleHelpDrawerShortcuts(k tea.KeyMsg) (bool, tea.Cmd) {
+	if m.helpDrawerProvider == nil {
+		return false, nil
+	}
+
+	switch {
+	case key.Matches(k, m.keyMap.HelpDrawerToggle):
+		return true, m.toggleHelpDrawer()
+	case m.helpDrawerVisible && key.Matches(k, m.keyMap.HelpDrawerClose):
+		if m.completionVisible && key.Matches(k, m.keyMap.CompletionCancel) {
+			return false, nil
+		}
+		m.closeHelpDrawer()
+		return true, nil
+	case m.helpDrawerVisible && key.Matches(k, m.keyMap.HelpDrawerRefresh):
+		return true, m.requestHelpDrawerNow(HelpDrawerTriggerManualRefresh)
+	}
+
+	return false, nil
+}
+
+func (m *Model) toggleHelpDrawer() tea.Cmd {
+	if m.helpDrawerVisible {
+		m.closeHelpDrawer()
+		return nil
+	}
+
+	m.helpDrawerVisible = true
+	m.helpDrawerLoading = true
+	m.helpDrawerErr = nil
+	return m.requestHelpDrawerNow(HelpDrawerTriggerToggleOpen)
+}
+
+func (m *Model) closeHelpDrawer() {
+	m.helpDrawerVisible = false
+	m.helpDrawerLoading = false
+}
+
+func (m *Model) requestHelpDrawerNow(trigger HelpDrawerTrigger) tea.Cmd {
+	if m.helpDrawerProvider == nil {
+		return nil
+	}
+	m.helpDrawerReqSeq++
+	req := HelpDrawerRequest{
+		Input:      m.textInput.Value(),
+		CursorByte: m.textInput.Position(),
+		RequestID:  m.helpDrawerReqSeq,
+		Trigger:    trigger,
+	}
+	return m.helpDrawerCmd(req)
 }
 
 func (m *Model) handleCompletionNavigation(k tea.KeyMsg) (bool, tea.Cmd) {
@@ -908,6 +1148,101 @@ func (m *Model) computeCompletionOverlayLayout(header, timelineView string) (com
 	}, true
 }
 
+func (m *Model) computeHelpDrawerOverlayLayout(header string) (helpDrawerOverlayLayout, bool) {
+	if !m.helpDrawerVisible || m.width <= 0 || m.height <= 0 {
+		return helpDrawerOverlayLayout{}, false
+	}
+
+	widthPercent := clampInt(m.helpDrawerWidthPercent, 20, 90)
+	heightPercent := clampInt(m.helpDrawerHeightPercent, 20, 90)
+	panelWidth := max(32, m.width*widthPercent/100)
+	panelHeight := max(8, m.height*heightPercent/100)
+	panelWidth = min(panelWidth, max(20, m.width-2))
+	panelHeight = min(panelHeight, max(6, m.height-2))
+
+	panelStyle := m.helpDrawerPanelStyle()
+	frameWidth := panelStyle.GetHorizontalFrameSize()
+	frameHeight := panelStyle.GetVerticalFrameSize()
+	contentWidth := max(1, panelWidth-frameWidth)
+	contentHeight := max(1, panelHeight-frameHeight)
+
+	baseY := lipgloss.Height(header) + 1
+	panelY := clampInt(baseY, 0, max(0, m.height-panelHeight))
+	panelX := clampInt(m.width-panelWidth-1, 0, max(0, m.width-panelWidth))
+
+	return helpDrawerOverlayLayout{
+		PanelX:        panelX,
+		PanelY:        panelY,
+		PanelWidth:    panelWidth,
+		PanelHeight:   panelHeight,
+		ContentWidth:  contentWidth,
+		ContentHeight: contentHeight,
+	}, true
+}
+
+func (m *Model) renderHelpDrawerPanel(layout helpDrawerOverlayLayout) string {
+	if layout.ContentWidth <= 0 || layout.ContentHeight <= 0 {
+		return ""
+	}
+
+	title := "Help Drawer"
+	subtitle := "No contextual help provider content yet"
+	bodyLines := []string{}
+
+	switch {
+	case m.helpDrawerLoading:
+		subtitle = "Loading..."
+	case m.helpDrawerErr != nil:
+		subtitle = "Error"
+		bodyLines = append(bodyLines, m.helpDrawerErr.Error())
+	default:
+		doc := m.helpDrawerDoc
+		if strings.TrimSpace(doc.Title) != "" {
+			title = doc.Title
+		}
+		if strings.TrimSpace(doc.Subtitle) != "" {
+			subtitle = doc.Subtitle
+		}
+		if !doc.Show {
+			subtitle = "No contextual help for current input"
+		}
+		if strings.TrimSpace(doc.Markdown) != "" {
+			bodyLines = append(bodyLines, strings.TrimSpace(doc.Markdown))
+		}
+		if len(doc.Diagnostics) > 0 {
+			bodyLines = append(bodyLines, "")
+			bodyLines = append(bodyLines, "Diagnostics:")
+			for _, d := range doc.Diagnostics {
+				d = strings.TrimSpace(d)
+				if d == "" {
+					continue
+				}
+				bodyLines = append(bodyLines, "- "+d)
+			}
+		}
+		if strings.TrimSpace(doc.VersionTag) != "" {
+			bodyLines = append(bodyLines, "")
+			bodyLines = append(bodyLines, "Version: "+doc.VersionTag)
+		}
+	}
+
+	footer := "ctrl+h toggle • ctrl+r refresh"
+	content := []string{
+		m.helpDrawerTitleStyle().Render(title),
+		m.helpDrawerSubtitleStyle().Render(subtitle),
+	}
+	if len(bodyLines) > 0 {
+		content = append(content, strings.Join(bodyLines, "\n"))
+	}
+	content = append(content, m.styles.HelpText.Render(footer))
+
+	rendered := m.helpDrawerPanelStyle().
+		Width(layout.PanelWidth).
+		Height(layout.PanelHeight).
+		Render(strings.Join(content, "\n\n"))
+	return rendered
+}
+
 func (m *Model) renderCompletionPopup(layout completionOverlayLayout) string {
 	if layout.VisibleRows <= 0 || layout.ContentWidth <= 0 {
 		return ""
@@ -950,6 +1285,24 @@ func (m *Model) completionPopupStyle() lipgloss.Style {
 	return m.styles.CompletionPopup.
 		Border(lipgloss.HiddenBorder(), false, false, false, false).
 		Padding(0, 0)
+}
+
+func (m *Model) helpDrawerPanelStyle() lipgloss.Style {
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("240")).
+		Padding(0, 1)
+}
+
+func (m *Model) helpDrawerTitleStyle() lipgloss.Style {
+	return lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("33"))
+}
+
+func (m *Model) helpDrawerSubtitleStyle() lipgloss.Style {
+	return lipgloss.NewStyle().
+		Foreground(lipgloss.Color("248"))
 }
 
 func clampInt(v, low, high int) int {
@@ -1014,6 +1367,51 @@ func normalizeHelpBarConfig(cfg HelpBarConfig) HelpBarConfig {
 	if cfg.RequestTimeout > 0 {
 		merged.RequestTimeout = cfg.RequestTimeout
 	}
+	return merged
+}
+
+func normalizeHelpDrawerConfig(cfg HelpDrawerConfig) HelpDrawerConfig {
+	if cfg.Debounce == 0 &&
+		cfg.RequestTimeout == 0 &&
+		len(cfg.ToggleKeys) == 0 &&
+		len(cfg.CloseKeys) == 0 &&
+		len(cfg.RefreshShortcuts) == 0 &&
+		cfg.WidthPercent == 0 &&
+		cfg.HeightPercent == 0 &&
+		!cfg.PrefetchWhenHidden &&
+		!cfg.Enabled {
+		return DefaultHelpDrawerConfig()
+	}
+
+	merged := DefaultHelpDrawerConfig()
+	merged.Enabled = cfg.Enabled
+	if len(cfg.ToggleKeys) > 0 {
+		merged.ToggleKeys = cfg.ToggleKeys
+	}
+	if len(cfg.CloseKeys) > 0 {
+		merged.CloseKeys = cfg.CloseKeys
+	}
+	if len(cfg.RefreshShortcuts) > 0 {
+		merged.RefreshShortcuts = cfg.RefreshShortcuts
+	}
+	if cfg.Debounce > 0 {
+		merged.Debounce = cfg.Debounce
+	}
+	if cfg.RequestTimeout > 0 {
+		merged.RequestTimeout = cfg.RequestTimeout
+	}
+	if cfg.WidthPercent > 0 {
+		merged.WidthPercent = cfg.WidthPercent
+	}
+	if cfg.HeightPercent > 0 {
+		merged.HeightPercent = cfg.HeightPercent
+	}
+	if cfg.PrefetchWhenHidden {
+		merged.PrefetchWhenHidden = true
+	}
+
+	merged.WidthPercent = clampInt(merged.WidthPercent, 20, 90)
+	merged.HeightPercent = clampInt(merged.HeightPercent, 20, 90)
 	return merged
 }
 
