@@ -13,9 +13,10 @@ import (
 )
 
 type fakeCompleterEvaluator struct {
-	result   CompletionResult
-	err      error
-	requests []CompletionRequest
+	result          CompletionResult
+	err             error
+	requests        []CompletionRequest
+	panicOnComplete bool
 }
 
 func (f *fakeCompleterEvaluator) EvaluateStream(context.Context, string, func(Event)) error {
@@ -27,6 +28,9 @@ func (f *fakeCompleterEvaluator) GetName() string          { return "fake" }
 func (f *fakeCompleterEvaluator) SupportsMultiline() bool  { return false }
 func (f *fakeCompleterEvaluator) GetFileExtension() string { return ".txt" }
 func (f *fakeCompleterEvaluator) CompleteInput(_ context.Context, req CompletionRequest) (CompletionResult, error) {
+	if f.panicOnComplete {
+		panic("fake completer panic")
+	}
 	f.requests = append(f.requests, req)
 	return f.result, f.err
 }
@@ -225,4 +229,21 @@ func TestAutocompleteEndToEndTypingToApplyFlow(t *testing.T) {
 	drainModelCmds(m, cmd)
 	assert.Equal(t, "console", m.textInput.Value())
 	assert.False(t, m.completionVisible)
+}
+
+func TestCompletionCmdRecoversFromCompleterPanic(t *testing.T) {
+	evaluator := &fakeCompleterEvaluator{panicOnComplete: true}
+	m := newAutocompleteTestModel(t, evaluator)
+
+	req := CompletionRequest{
+		Input:      "co",
+		CursorByte: 2,
+		Reason:     CompletionReasonShortcut,
+		RequestID:  1,
+	}
+	msg, ok := m.completionCmd(req)().(completionResultMsg)
+	require.True(t, ok)
+	assert.Equal(t, req.RequestID, msg.RequestID)
+	require.Error(t, msg.Err)
+	assert.Contains(t, msg.Err.Error(), "input completer panic")
 }

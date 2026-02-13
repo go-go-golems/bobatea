@@ -2,6 +2,7 @@ package javascript
 
 import (
 	"context"
+	"sync"
 	"testing"
 
 	"github.com/go-go-golems/bobatea/pkg/repl"
@@ -406,6 +407,31 @@ func TestEvaluator_CompleteInput(t *testing.T) {
 		assert.Equal(t, len(input), result.ReplaceFrom)
 		assert.Equal(t, len(input), result.ReplaceTo)
 	})
+}
+
+func TestEvaluator_CompleteInput_ConcurrentRequests(t *testing.T) {
+	evaluator, err := NewWithDefaults()
+	require.NoError(t, err)
+
+	reqs := []repl.CompletionRequest{
+		{Input: ".co", CursorByte: len(".co"), Reason: repl.CompletionReasonDebounce},
+		{Input: "console.lo", CursorByte: len("console.lo"), Reason: repl.CompletionReasonShortcut, Shortcut: "tab"},
+		{Input: "const fs = require(\"fs\"); fs.re", CursorByte: len("const fs = require(\"fs\"); fs.re"), Reason: repl.CompletionReasonDebounce},
+		{Input: "zzz", CursorByte: len("zzz"), Reason: repl.CompletionReasonShortcut, Shortcut: "tab"},
+	}
+
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		for _, req := range reqs {
+			wg.Add(1)
+			go func(request repl.CompletionRequest) {
+				defer wg.Done()
+				_, completeErr := evaluator.CompleteInput(context.Background(), request)
+				assert.NoError(t, completeErr)
+			}(req)
+		}
+	}
+	wg.Wait()
 }
 
 func hasSuggestion(result repl.CompletionResult, label string) bool {

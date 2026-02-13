@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -454,10 +455,39 @@ func (m *Model) triggerCompletionFromShortcut(k tea.KeyMsg) tea.Cmd {
 
 func (m *Model) completionCmd(req CompletionRequest) tea.Cmd {
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), m.completionReqTimeout)
-		defer cancel()
+		var (
+			result    CompletionResult
+			err       error
+			recovered any
+			stack     string
+		)
 
-		result, err := m.completer.CompleteInput(ctx, req)
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					recovered = r
+					stack = string(debug.Stack())
+				}
+			}()
+
+			ctx, cancel := context.WithTimeout(context.Background(), m.completionReqTimeout)
+			defer cancel()
+
+			result, err = m.completer.CompleteInput(ctx, req)
+		}()
+
+		if recovered != nil {
+			log.Error().
+				Interface("panic", recovered).
+				Str("stack", stack).
+				Uint64("request_id", req.RequestID).
+				Msg("input completer panicked")
+			return completionResultMsg{
+				RequestID: req.RequestID,
+				Err:       fmt.Errorf("input completer panic: %v", recovered),
+			}
+		}
+
 		return completionResultMsg{
 			RequestID: req.RequestID,
 			Result:    result,

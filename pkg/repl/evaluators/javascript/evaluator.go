@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/dop251/goja"
 	"github.com/go-go-golems/bobatea/pkg/autocomplete"
@@ -44,6 +45,7 @@ var (
 type Evaluator struct {
 	runtime  *goja.Runtime
 	tsParser *jsparse.TSParser
+	tsMu     sync.Mutex
 	config   Config
 }
 
@@ -203,7 +205,9 @@ func (e *Evaluator) CompleteInput(_ context.Context, req repl.CompletionRequest)
 	input := req.Input
 	cursor := clampCursor(req.CursorByte, len(input))
 
+	e.tsMu.Lock()
 	root := e.tsParser.Parse([]byte(input))
+	e.tsMu.Unlock()
 	if root == nil {
 		return repl.CompletionResult{Show: false}, nil
 	}
