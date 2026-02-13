@@ -574,11 +574,25 @@ func (m *Model) handleCompletionNavigation(k tea.KeyMsg) (bool, tea.Cmd) {
 		if m.completionSelection > 0 {
 			m.completionSelection--
 		}
+		m.ensureCompletionSelectionVisible()
 		return true, nil
 	case key.Matches(k, m.keyMap.CompletionNext):
 		if m.completionSelection < len(suggestions)-1 {
 			m.completionSelection++
 		}
+		m.ensureCompletionSelectionVisible()
+		return true, nil
+	case key.Matches(k, m.keyMap.CompletionPageUp):
+		if m.completionSelection > 0 {
+			m.completionSelection = max(0, m.completionSelection-m.completionPageStep())
+		}
+		m.ensureCompletionSelectionVisible()
+		return true, nil
+	case key.Matches(k, m.keyMap.CompletionPageDown):
+		if m.completionSelection < len(suggestions)-1 {
+			m.completionSelection = min(len(suggestions)-1, m.completionSelection+m.completionPageStep())
+		}
+		m.ensureCompletionSelectionVisible()
 		return true, nil
 	case key.Matches(k, m.keyMap.CompletionAccept):
 		m.applySelectedCompletion()

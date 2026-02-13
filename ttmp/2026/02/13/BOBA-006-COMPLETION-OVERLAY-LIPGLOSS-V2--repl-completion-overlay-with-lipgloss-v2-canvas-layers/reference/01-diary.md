@@ -664,7 +664,7 @@ This step adds dedicated layout computation (`computeCompletionOverlayLayout`) a
 
 **Inferred user intent:** Make overlay behavior production-safe for small terminals and long suggestions.
 
-**Commit (code):** (recorded in the commit created for this step)
+**Commit (code):** `c05a3ea` — "repl: clamp completion overlay placement and size"
 
 ### What I did
 
@@ -730,3 +730,75 @@ This step adds dedicated layout computation (`computeCompletionOverlayLayout`) a
 ### Technical details
 
 - Placement heuristic currently prefers below-input when it can satisfy desired rows or when below has at least as many rows as above.
+
+## Step 10: Task 6 Implementation — Scrolling/Paging Navigation Behavior
+
+After geometry work, I connected navigation behavior to viewport state. This step activates page movement keys and ensures selection movement (`up/down/page`) updates `completionScrollTop` consistently.
+
+The main change is in `handleCompletionNavigation(...)`: every selection movement now calls `ensureCompletionSelectionVisible()`, and `pgup/pgdown` use `completionPageStep()`.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 5)
+
+**Assistant interpretation:** Continue sequential task execution with commits and diary updates.
+
+**Inferred user intent:** Complete long-list usability, not just static overlay rendering.
+
+**Commit (code):** (recorded in the commit created for this step)
+
+### What I did
+
+- Updated `pkg/repl/model.go` navigation switch:
+  - `CompletionPrev` / `CompletionNext` now call `ensureCompletionSelectionVisible()`
+  - added `CompletionPageUp` handling:
+    - decrements selection by `completionPageStep()`
+    - clamps and ensures visibility
+  - added `CompletionPageDown` handling:
+    - increments selection by `completionPageStep()`
+    - clamps and ensures visibility
+- Checked off Task 6 in:
+  - `ttmp/.../BOBA-006.../tasks.md`
+- Ran:
+  - `gofmt -w pkg/repl/model.go`
+  - `go test ./pkg/repl/... -count=1`
+
+### Why
+
+- Overlay lists need viewport-aware navigation to be usable when suggestion count exceeds visible rows.
+
+### What worked
+
+- Tests passed after navigation changes.
+- Paging keys now map to concrete state transitions.
+
+### What didn't work
+
+- N/A for this step.
+
+### What I learned
+
+- Calling `ensureCompletionSelectionVisible()` from all movement actions keeps scroll logic centralized and avoids duplicate clamp code.
+
+### What was tricky to build
+
+- Ensuring page movement stays bounded when visible row count is dynamic and can change after resize/layout updates.
+
+### What warrants a second pair of eyes
+
+- Page-step UX (`OverlayPageSize=0` -> visible rows) should be validated in manual runs for feel.
+
+### What should be done in the future
+
+- Add dedicated tests for paging behavior and overlay viewport windows (next task).
+
+### Code review instructions
+
+- Review:
+  - `pkg/repl/model.go` in `handleCompletionNavigation`
+- Re-run:
+  - `go test ./pkg/repl/... -count=1`
+
+### Technical details
+
+- Paging is currently selection-based; viewport follows selection via `ensureCompletionSelectionVisible()`.
