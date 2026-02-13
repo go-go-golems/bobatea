@@ -52,6 +52,11 @@ type Model struct {
 	completionDebounce    time.Duration
 	completionReqTimeout  time.Duration
 	completionTriggerKeys map[string]struct{}
+	completionVisible     bool
+	completionSelection   int
+	completionReplaceFrom int
+	completionReplaceTo   int
+	completionMaxVisible  int
 	completionLastResult  CompletionResult
 	completionLastError   error
 	completionLastReqID   uint64
@@ -105,6 +110,7 @@ func NewModel(evaluator Evaluator, config Config, pub message.Publisher) *Model 
 		completionTriggerKeys: map[string]struct{}{
 			"tab": {},
 		},
+		completionMaxVisible: 8,
 	}
 }
 
@@ -189,6 +195,10 @@ func (m *Model) updateInput(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch k.Type {
 	case tea.KeyCtrlC:
 		return m, tea.Quit
+	}
+
+	if handled, cmd := m.handleCompletionNavigation(k); handled {
+		return m, cmd
 	}
 
 	if cmd := m.triggerCompletionFromShortcut(k.String()); cmd != nil {
@@ -279,6 +289,10 @@ func (m *Model) View() string {
 	}
 	b.WriteString(inputView)
 	b.WriteString("\n")
+	if popup := m.renderCompletionPopup(); popup != "" {
+		b.WriteString(popup)
+		b.WriteString("\n")
+	}
 	// help
 	help := "TAB: switch focus | Enter: submit | Up/Down: history/selection | c: copy code | y: copy text | Ctrl+C: quit"
 	b.WriteString(m.styles.HelpText.Render(help))
@@ -363,6 +377,7 @@ func (m *Model) scheduleDebouncedCompletionIfNeeded(prevValue string, prevCursor
 	if prevValue == m.textInput.Value() && prevCursor == m.textInput.Position() {
 		return nil
 	}
+	m.hideCompletionPopup()
 
 	m.completionReqSeq++
 	reqID := m.completionReqSeq
@@ -432,7 +447,105 @@ func (m *Model) handleCompletionResult(msg completionResultMsg) tea.Cmd {
 	m.completionLastReqID = msg.RequestID
 	m.completionLastResult = msg.Result
 	m.completionLastError = msg.Err
+	if msg.Err != nil || !msg.Result.Show || len(msg.Result.Suggestions) == 0 {
+		m.hideCompletionPopup()
+		return nil
+	}
+
+	m.completionSelection = 0
+	m.completionVisible = true
+	m.completionReplaceFrom = clampInt(msg.Result.ReplaceFrom, 0, len(m.textInput.Value()))
+	m.completionReplaceTo = clampInt(msg.Result.ReplaceTo, m.completionReplaceFrom, len(m.textInput.Value()))
 	return nil
+}
+
+func (m *Model) handleCompletionNavigation(k tea.KeyMsg) (bool, tea.Cmd) {
+	if !m.completionVisible {
+		return false, nil
+	}
+
+	suggestions := m.completionLastResult.Suggestions
+	if len(suggestions) == 0 {
+		m.hideCompletionPopup()
+		return false, nil
+	}
+
+	switch k.String() {
+	case "esc":
+		m.hideCompletionPopup()
+		return true, nil
+	case "up", "ctrl+p":
+		if m.completionSelection > 0 {
+			m.completionSelection--
+		}
+		return true, nil
+	case "down", "ctrl+n":
+		if m.completionSelection < len(suggestions)-1 {
+			m.completionSelection++
+		}
+		return true, nil
+	case "enter", "tab":
+		m.applySelectedCompletion()
+		return true, nil
+	default:
+		return false, nil
+	}
+}
+
+func (m *Model) applySelectedCompletion() {
+	suggestions := m.completionLastResult.Suggestions
+	if len(suggestions) == 0 || m.completionSelection >= len(suggestions) {
+		m.hideCompletionPopup()
+		return
+	}
+
+	selected := suggestions[m.completionSelection]
+	input := m.textInput.Value()
+	from := clampInt(m.completionReplaceFrom, 0, len(input))
+	to := clampInt(m.completionReplaceTo, from, len(input))
+	newInput := input[:from] + selected.Value + input[to:]
+
+	m.textInput.SetValue(newInput)
+	m.textInput.SetCursor(from + len(selected.Value))
+	m.hideCompletionPopup()
+}
+
+func (m *Model) hideCompletionPopup() {
+	m.completionVisible = false
+	m.completionSelection = 0
+	m.completionReplaceFrom = 0
+	m.completionReplaceTo = 0
+}
+
+func (m *Model) renderCompletionPopup() string {
+	if !m.completionVisible {
+		return ""
+	}
+	suggestions := m.completionLastResult.Suggestions
+	if len(suggestions) == 0 {
+		return ""
+	}
+
+	var lines []string
+	limit := min(len(suggestions), m.completionMaxVisible)
+	for i := 0; i < limit; i++ {
+		prefix := "  "
+		if i == m.completionSelection {
+			prefix = "› "
+		}
+		lines = append(lines, m.styles.Info.Render(prefix+suggestions[i].DisplayText))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func clampInt(v, low, high int) int {
+	if v < low {
+		return low
+	}
+	if v > high {
+		return high
+	}
+	return v
 }
 
 func (m *Model) ctrl() *timeline.Controller { return m.sh.Controller() }

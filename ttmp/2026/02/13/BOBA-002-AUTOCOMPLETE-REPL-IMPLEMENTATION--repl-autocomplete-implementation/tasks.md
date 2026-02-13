@@ -12,7 +12,7 @@
 - [x] Define final generic contracts in `pkg/repl` for request/response (`CompletionRequest`, `CompletionResult`, `InputCompleter`)
 - [x] Implement generic REPL-side debounce scheduling and request ID stale-result filtering
 - [x] Implement generic shortcut-trigger path (`Tab` or configurable key) without REPL trigger heuristics
-- [ ] Implement generic suggestion popup rendering, selection navigation, and apply/replace-range behavior
+- [x] Implement generic suggestion popup rendering, selection navigation, and apply/replace-range behavior
 - [ ] Resolve `tab` conflict with timeline focus toggle by introducing explicit configurable focus key
 - [ ] Add config defaults and docs for debounce, timeout, trigger keys, accept keys, max suggestions, and focus toggle
 - [ ] Add unit tests for generic mechanism: debounce coalescing, stale drop, shortcut reason tagging, key routing, and apply behavior

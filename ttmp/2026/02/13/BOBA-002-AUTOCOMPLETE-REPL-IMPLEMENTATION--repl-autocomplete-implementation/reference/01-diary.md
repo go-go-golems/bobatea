@@ -281,7 +281,7 @@ At this stage, the shortcut key set is model-internal (`tab` default) and will b
 
 **Inferred user intent:** Ensure users can force completion on demand (for example via `Tab`) even when debounce cadence is not enough.
 
-**Commit (code):** pending
+**Commit (code):** `fd49623` — "feat(repl): add shortcut completion trigger path (task 5)"
 
 ### What I did
 
@@ -345,4 +345,97 @@ req := CompletionRequest{
     Reason:   CompletionReasonShortcut,
     Shortcut: key,
 }
+```
+
+## Step 5: Implement Completion Popup Rendering + Apply Flow (Task 6)
+
+This step implemented the visible completion popup path, keyboard navigation over suggestions, and insertion/apply behavior using completer-provided replace ranges.
+
+The step deliberately keeps visual styling simple while establishing correct input semantics: cancel, move selection, and accept.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 1)
+
+**Assistant interpretation:** Complete Task 6 by adding completion popup UI behavior, list navigation, and selected suggestion application.
+
+**Inferred user intent:** Move from backend request plumbing to user-visible autocomplete interaction in the REPL input loop.
+
+**Commit (code):** pending
+
+### What I did
+
+- Updated `pkg/repl/model.go` with popup state:
+- visibility flag,
+- selected index,
+- replace range,
+- max visible rows.
+- Added popup interaction handlers:
+- `handleCompletionNavigation`
+- `applySelectedCompletion`
+- `hideCompletionPopup`
+- Added popup renderer:
+- `renderCompletionPopup`
+- Added range utility:
+- `clampInt`
+- Integrated popup rendering in `View()` directly under input line.
+- Updated completion result handling:
+- show popup when `Show=true` and suggestions exist,
+- hide popup on errors, `Show=false`, or empty suggestions.
+- Updated input update flow:
+- completion navigation keys are consumed first when popup is visible.
+- Ran validation:
+- `gofmt -w pkg/repl/model.go`
+- `go test ./pkg/repl/...`
+
+### Why
+
+- Task 6 requires concrete, keyboard-driven completion UI behavior.
+- This is the minimum viable interaction loop before key conflict and config polish tasks.
+
+### What worked
+
+- Suggestion popup state now toggles correctly from completion results.
+- `enter`/`tab` apply selected suggestion using replace ranges.
+- `up`/`down`/`esc` interaction is wired and deterministic.
+- Package tests still pass.
+
+### What didn't work
+
+- N/A in this step.
+
+### What I learned
+
+- Storing replace ranges and applying at accept-time is simpler and safer than trying to keep a mutable “current token span” on every keystroke.
+
+### What was tricky to build
+
+- The tricky part was key precedence: popup navigation keys must be processed before general input logic, otherwise `enter` would submit code instead of accepting completion and `tab` would route to unrelated focus behavior.
+
+### What warrants a second pair of eyes
+
+- Confirm popup text rendering style and row limit defaults before polishing.
+- Confirm whether typing while popup is visible should immediately hide popup (current behavior hides when input changes and debounce reschedules).
+
+### What should be done in the future
+
+- Implement Task 7 to fully resolve focus-toggle versus `tab` trigger semantics.
+- Implement Task 8 to surface current constants into `Config`.
+
+### Code review instructions
+
+- Start at: `pkg/repl/model.go`
+- Focus symbols:
+- `handleCompletionNavigation`
+- `applySelectedCompletion`
+- `renderCompletionPopup`
+- `handleCompletionResult`
+- Validate with: `go test ./pkg/repl/...`
+
+### Technical details
+
+```go
+newInput := input[:from] + selected.Value + input[to:]
+m.textInput.SetValue(newInput)
+m.textInput.SetCursor(from + len(selected.Value))
 ```
