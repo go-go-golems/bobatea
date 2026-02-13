@@ -2,6 +2,22 @@ package repl
 
 import "time"
 
+type CompletionOverlayPlacement string
+
+const (
+	CompletionOverlayPlacementAuto   CompletionOverlayPlacement = "auto"
+	CompletionOverlayPlacementAbove  CompletionOverlayPlacement = "above"
+	CompletionOverlayPlacementBelow  CompletionOverlayPlacement = "below"
+	CompletionOverlayPlacementBottom CompletionOverlayPlacement = "bottom"
+)
+
+type CompletionOverlayHorizontalGrow string
+
+const (
+	CompletionOverlayHorizontalGrowRight CompletionOverlayHorizontalGrow = "right"
+	CompletionOverlayHorizontalGrowLeft  CompletionOverlayHorizontalGrow = "left"
+)
+
 // AutocompleteConfig controls autocomplete request and key-routing behavior.
 type AutocompleteConfig struct {
 	// Enabled toggles REPL autocomplete integration.
@@ -34,26 +50,34 @@ type AutocompleteConfig struct {
 	OverlayOffsetY int
 	// OverlayNoBorder renders completion popup without border chrome.
 	OverlayNoBorder bool
+	// OverlayPlacement controls vertical popup placement strategy.
+	// Supported values: auto, above, below, bottom.
+	OverlayPlacement CompletionOverlayPlacement
+	// OverlayHorizontalGrow controls horizontal growth direction from anchor.
+	// Supported values: right, left.
+	OverlayHorizontalGrow CompletionOverlayHorizontalGrow
 }
 
 // DefaultAutocompleteConfig returns default autocomplete settings.
 func DefaultAutocompleteConfig() AutocompleteConfig {
 	return AutocompleteConfig{
-		Enabled:          true,
-		Debounce:         120 * time.Millisecond,
-		RequestTimeout:   400 * time.Millisecond,
-		TriggerKeys:      []string{"tab"},
-		AcceptKeys:       []string{"enter", "tab"},
-		FocusToggleKey:   "",
-		MaxSuggestions:   8,
-		OverlayMaxWidth:  56,
-		OverlayMaxHeight: 12,
-		OverlayMinWidth:  24,
-		OverlayMargin:    1,
-		OverlayPageSize:  0,
-		OverlayOffsetX:   0,
-		OverlayOffsetY:   0,
-		OverlayNoBorder:  false,
+		Enabled:               true,
+		Debounce:              120 * time.Millisecond,
+		RequestTimeout:        400 * time.Millisecond,
+		TriggerKeys:           []string{"tab"},
+		AcceptKeys:            []string{"enter", "tab"},
+		FocusToggleKey:        "",
+		MaxSuggestions:        8,
+		OverlayMaxWidth:       56,
+		OverlayMaxHeight:      12,
+		OverlayMinWidth:       24,
+		OverlayMargin:         1,
+		OverlayPageSize:       0,
+		OverlayOffsetX:        0,
+		OverlayOffsetY:        0,
+		OverlayNoBorder:       false,
+		OverlayPlacement:      CompletionOverlayPlacementAuto,
+		OverlayHorizontalGrow: CompletionOverlayHorizontalGrowRight,
 	}
 }
 

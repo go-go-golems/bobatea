@@ -75,6 +75,8 @@ type Model struct {
 	completionOffsetX     int
 	completionOffsetY     int
 	completionNoBorder    bool
+	completionPlacement   CompletionOverlayPlacement
+	completionHorizontal  CompletionOverlayHorizontalGrow
 	completionLastResult  CompletionResult
 	completionLastError   error
 	completionLastReqID   uint64
@@ -148,6 +150,8 @@ func NewModel(evaluator Evaluator, config Config, pub message.Publisher) *Model 
 		completionOffsetX:    autocompleteCfg.OverlayOffsetX,
 		completionOffsetY:    autocompleteCfg.OverlayOffsetY,
 		completionNoBorder:   autocompleteCfg.OverlayNoBorder,
+		completionPlacement:  autocompleteCfg.OverlayPlacement,
+		completionHorizontal: autocompleteCfg.OverlayHorizontalGrow,
 	}
 	ret.updateKeyBindings()
 	return ret
@@ -685,16 +689,33 @@ func (m *Model) computeCompletionOverlayLayout(header, timelineView string) (com
 	availableAbove := max(0, inputY-margin)
 	belowRows := max(0, min(availableBelow, maxHeight)-frameHeight)
 	aboveRows := max(0, min(availableAbove, maxHeight)-frameHeight)
-	if belowRows == 0 && aboveRows == 0 {
+
+	bottomRows := max(0, min(maxHeight, m.height-margin)-frameHeight)
+	if belowRows == 0 && aboveRows == 0 && bottomRows == 0 {
 		return completionOverlayLayout{}, false
 	}
 
-	placeBelow := belowRows >= desiredRows || belowRows >= aboveRows
 	visibleRows := desiredRows
 	popupY := inputY + 1 + margin
-	if placeBelow {
+	switch m.completionPlacement {
+	case CompletionOverlayPlacementAbove:
+		visibleRows = min(visibleRows, aboveRows)
+		popupY = inputY - margin - (visibleRows + frameHeight)
+	case CompletionOverlayPlacementBelow:
 		visibleRows = min(visibleRows, belowRows)
-	} else {
+		popupY = inputY + 1 + margin
+	case CompletionOverlayPlacementBottom:
+		visibleRows = min(visibleRows, bottomRows)
+		popupY = m.height - margin - (visibleRows + frameHeight)
+	case CompletionOverlayPlacementAuto:
+		placeBelow := belowRows >= desiredRows || belowRows >= aboveRows
+		if placeBelow {
+			visibleRows = min(visibleRows, belowRows)
+		} else {
+			visibleRows = min(visibleRows, aboveRows)
+			popupY = inputY - margin - (visibleRows + frameHeight)
+		}
+	default:
 		visibleRows = min(visibleRows, aboveRows)
 		popupY = inputY - margin - (visibleRows + frameHeight)
 	}
@@ -703,7 +724,11 @@ func (m *Model) computeCompletionOverlayLayout(header, timelineView string) (com
 	}
 
 	anchorX := m.completionAnchorColumn()
-	popupX := anchorX + m.completionOffsetX
+	popupX := anchorX
+	if m.completionHorizontal == CompletionOverlayHorizontalGrowLeft {
+		popupX -= popupWidth
+	}
+	popupX += m.completionOffsetX
 	popupY += m.completionOffsetY
 	popupX = clampInt(popupX, 0, max(0, m.width-popupWidth))
 	popupY = clampInt(popupY, 0, max(0, m.height-1))
@@ -826,6 +851,8 @@ func normalizeAutocompleteConfig(cfg AutocompleteConfig) AutocompleteConfig {
 		cfg.OverlayOffsetX == 0 &&
 		cfg.OverlayOffsetY == 0 &&
 		!cfg.OverlayNoBorder &&
+		cfg.OverlayPlacement == "" &&
+		cfg.OverlayHorizontalGrow == "" &&
 		!cfg.Enabled {
 		return DefaultAutocompleteConfig()
 	}
@@ -874,7 +901,36 @@ func normalizeAutocompleteConfig(cfg AutocompleteConfig) AutocompleteConfig {
 	if cfg.OverlayNoBorder {
 		merged.OverlayNoBorder = true
 	}
+	if cfg.OverlayPlacement != "" {
+		merged.OverlayPlacement = cfg.OverlayPlacement
+	}
+	if cfg.OverlayHorizontalGrow != "" {
+		merged.OverlayHorizontalGrow = cfg.OverlayHorizontalGrow
+	}
+	merged.OverlayPlacement = normalizeOverlayPlacement(merged.OverlayPlacement)
+	merged.OverlayHorizontalGrow = normalizeOverlayHorizontalGrow(merged.OverlayHorizontalGrow)
 	return merged
+}
+
+func normalizeOverlayPlacement(v CompletionOverlayPlacement) CompletionOverlayPlacement {
+	switch v {
+	case CompletionOverlayPlacementAuto,
+		CompletionOverlayPlacementAbove,
+		CompletionOverlayPlacementBelow,
+		CompletionOverlayPlacementBottom:
+		return v
+	default:
+		return CompletionOverlayPlacementAuto
+	}
+}
+
+func normalizeOverlayHorizontalGrow(v CompletionOverlayHorizontalGrow) CompletionOverlayHorizontalGrow {
+	switch v {
+	case CompletionOverlayHorizontalGrowRight, CompletionOverlayHorizontalGrowLeft:
+		return v
+	default:
+		return CompletionOverlayHorizontalGrowRight
+	}
 }
 
 func (m *Model) ctrl() *timeline.Controller { return m.sh.Controller() }

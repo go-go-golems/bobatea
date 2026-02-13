@@ -255,8 +255,9 @@ func TestComputeCompletionOverlayLayoutClampsToBounds(t *testing.T) {
 
 	m.width = 40
 	m.height = 10
-	m.textInput.SetValue("console.log")
-	m.textInput.SetCursor(len("console.log"))
+	longInput := strings.Repeat("x", 140)
+	m.textInput.SetValue(longInput)
+	m.textInput.SetCursor(len(longInput))
 	m.completionVisible = true
 	m.completionMaxVisible = 10
 	m.completionMaxHeight = 6
@@ -390,6 +391,71 @@ func TestCompletionOverlayLayoutAppliesOffsets(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, baseLayout.PopupX+3, shiftedLayout.PopupX)
 	assert.Equal(t, baseLayout.PopupY+2, shiftedLayout.PopupY)
+}
+
+func TestCompletionOverlayLayoutBottomPlacementAnchorsToBottom(t *testing.T) {
+	evaluator := &fakeCompleterEvaluator{}
+	m := newAutocompleteTestModel(t, evaluator)
+	m.width = 80
+	m.height = 24
+	m.completionVisible = true
+	m.completionPlacement = CompletionOverlayPlacementBottom
+	m.completionMargin = 1
+	m.completionLastResult = CompletionResult{
+		Show: true,
+		Suggestions: []autocomplete.Suggestion{
+			{Id: "1", Value: "console", DisplayText: "console"},
+			{Id: "2", Value: "const", DisplayText: "const"},
+			{Id: "3", Value: "continue", DisplayText: "continue"},
+		},
+	}
+	m.textInput.SetValue("cons")
+	m.textInput.SetCursor(4)
+
+	layout, ok := m.computeCompletionOverlayLayout("title", "timeline")
+	require.True(t, ok)
+	frameHeight := m.completionPopupStyle().GetVerticalFrameSize()
+	expectedY := m.height - m.completionMargin - (layout.VisibleRows + frameHeight)
+	assert.Equal(t, expectedY, layout.PopupY)
+}
+
+func TestCompletionOverlayLayoutGrowsLeftFromAnchor(t *testing.T) {
+	evaluator := &fakeCompleterEvaluator{}
+	m := newAutocompleteTestModel(t, evaluator)
+	m.width = 120
+	m.height = 24
+	m.completionVisible = true
+	m.completionPlacement = CompletionOverlayPlacementBottom
+	m.completionMargin = 1
+	m.textInput.SetValue("console.log")
+	m.textInput.SetCursor(len("console.log"))
+	m.completionLastResult = CompletionResult{
+		Show: true,
+		Suggestions: []autocomplete.Suggestion{
+			{Id: "1", Value: "console", DisplayText: "console"},
+		},
+	}
+
+	m.completionHorizontal = CompletionOverlayHorizontalGrowRight
+	rightLayout, ok := m.computeCompletionOverlayLayout("title", "timeline")
+	require.True(t, ok)
+
+	m.completionHorizontal = CompletionOverlayHorizontalGrowLeft
+	leftLayout, ok := m.computeCompletionOverlayLayout("title", "timeline")
+	require.True(t, ok)
+
+	expectedLeftX := max(0, rightLayout.PopupX-leftLayout.PopupWidth)
+	assert.Equal(t, expectedLeftX, leftLayout.PopupX)
+}
+
+func TestNormalizeAutocompleteConfigSanitizesOverlayPlacementAndGrow(t *testing.T) {
+	cfg := DefaultAutocompleteConfig()
+	cfg.OverlayPlacement = CompletionOverlayPlacement("nonsense")
+	cfg.OverlayHorizontalGrow = CompletionOverlayHorizontalGrow("sideways")
+
+	normalized := normalizeAutocompleteConfig(cfg)
+	assert.Equal(t, CompletionOverlayPlacementAuto, normalized.OverlayPlacement)
+	assert.Equal(t, CompletionOverlayHorizontalGrowRight, normalized.OverlayHorizontalGrow)
 }
 
 func TestCompletionPopupStyleNoBorderRemovesFrame(t *testing.T) {

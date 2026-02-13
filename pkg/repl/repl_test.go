@@ -115,6 +115,8 @@ func TestConfig(t *testing.T) {
 	assert.Equal(t, 0, config.Autocomplete.OverlayOffsetX)
 	assert.Equal(t, 0, config.Autocomplete.OverlayOffsetY)
 	assert.False(t, config.Autocomplete.OverlayNoBorder)
+	assert.Equal(t, CompletionOverlayPlacementAuto, config.Autocomplete.OverlayPlacement)
+	assert.Equal(t, CompletionOverlayHorizontalGrowRight, config.Autocomplete.OverlayHorizontalGrow)
 }
 
 func TestStyles(t *testing.T) {
