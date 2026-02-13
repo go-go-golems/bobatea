@@ -889,7 +889,7 @@ I used an interactive TTY session, typed `.co<Tab>`, and observed the suggestion
 
 **Inferred user intent:** Ensure the feature works in practice, not only in unit tests.
 
-**Commit (code):** (recorded in the commit created for this step)
+**Commit (code):** `7e28524` — "docs: close BOBA-006 implementation checklist"
 
 ### What I did
 
