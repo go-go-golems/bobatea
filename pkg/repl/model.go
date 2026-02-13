@@ -81,6 +81,17 @@ type Model struct {
 	completionLastError   error
 	completionLastReqID   uint64
 	completionLastReqKind CompletionReason
+
+	// optional help-bar capability
+	helpBarProvider    HelpBarProvider
+	helpBarReqSeq      uint64
+	helpBarDebounce    time.Duration
+	helpBarReqTimeout  time.Duration
+	helpBarVisible     bool
+	helpBarPayload     HelpBarPayload
+	helpBarLastErr     error
+	helpBarLastReqID   uint64
+	helpBarLastReqKind HelpBarReason
 }
 
 // NewModel constructs a new REPL shell with timeline transcript.
@@ -108,9 +119,17 @@ func NewModel(evaluator Evaluator, config Config, pub message.Publisher) *Model 
 	if c, ok := evaluator.(InputCompleter); ok {
 		completer = c
 	}
+	var helpBarProvider HelpBarProvider
+	if p, ok := evaluator.(HelpBarProvider); ok {
+		helpBarProvider = p
+	}
 	autocompleteCfg := normalizeAutocompleteConfig(config.Autocomplete)
 	if !autocompleteCfg.Enabled {
 		completer = nil
+	}
+	helpBarCfg := normalizeHelpBarConfig(config.HelpBar)
+	if !helpBarCfg.Enabled {
+		helpBarProvider = nil
 	}
 
 	focusToggleKey := autocompleteCfg.FocusToggleKey
@@ -152,6 +171,10 @@ func NewModel(evaluator Evaluator, config Config, pub message.Publisher) *Model 
 		completionNoBorder:   autocompleteCfg.OverlayNoBorder,
 		completionPlacement:  autocompleteCfg.OverlayPlacement,
 		completionHorizontal: autocompleteCfg.OverlayHorizontalGrow,
+
+		helpBarProvider:   helpBarProvider,
+		helpBarDebounce:   helpBarCfg.Debounce,
+		helpBarReqTimeout: helpBarCfg.RequestTimeout,
 	}
 	ret.updateKeyBindings()
 	return ret
@@ -224,6 +247,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.handleDebouncedCompletion(v)
 	case completionResultMsg:
 		return m, m.handleCompletionResult(v)
+	case helpBarDebounceMsg:
+		return m, m.handleDebouncedHelpBar(v)
+	case helpBarResultMsg:
+		return m, m.handleHelpBarResult(v)
 
 	case cursor.BlinkMsg:
 		return m, nil
@@ -264,6 +291,7 @@ func (m *Model) updateInput(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.textInput.Reset()
+		m.helpBarVisible = false
 		if m.config.EnableHistory {
 			m.history.Add(input, "", false)
 			m.history.ResetNavigation()
@@ -275,17 +303,27 @@ func (m *Model) updateInput(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.textInput.SetValue(entry)
 			}
 		}
-		return m, m.scheduleDebouncedCompletionIfNeeded(prevValue, prevCursor)
+		return m, tea.Batch(
+			m.scheduleDebouncedCompletionIfNeeded(prevValue, prevCursor),
+			m.scheduleDebouncedHelpBarIfNeeded(prevValue, prevCursor),
+		)
 	case key.Matches(k, m.keyMap.HistoryNext):
 		if m.config.EnableHistory {
 			entry := m.history.NavigateDown()
 			m.textInput.SetValue(entry)
 		}
-		return m, m.scheduleDebouncedCompletionIfNeeded(prevValue, prevCursor)
+		return m, tea.Batch(
+			m.scheduleDebouncedCompletionIfNeeded(prevValue, prevCursor),
+			m.scheduleDebouncedHelpBarIfNeeded(prevValue, prevCursor),
+		)
 	}
 	var cmd tea.Cmd
 	m.textInput, cmd = m.textInput.Update(k)
-	return m, tea.Batch(cmd, m.scheduleDebouncedCompletionIfNeeded(prevValue, prevCursor))
+	return m, tea.Batch(
+		cmd,
+		m.scheduleDebouncedCompletionIfNeeded(prevValue, prevCursor),
+		m.scheduleDebouncedHelpBarIfNeeded(prevValue, prevCursor),
+	)
 }
 
 func (m *Model) updateTimeline(k tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -339,8 +377,11 @@ func (m *Model) View() string {
 		"",
 		timelineView,
 		inputView,
-		helpView,
 	}
+	if helpBarView := m.renderHelpBar(); helpBarView != "" {
+		baseSections = append(baseSections, helpBarView)
+	}
+	baseSections = append(baseSections, helpView)
 	base := lipgloss.JoinVertical(lipgloss.Left, baseSections...)
 
 	layout, ok := m.computeCompletionOverlayLayout(header, timelineView)
@@ -427,6 +468,16 @@ type completionResultMsg struct {
 	Err       error
 }
 
+type helpBarDebounceMsg struct {
+	RequestID uint64
+}
+
+type helpBarResultMsg struct {
+	RequestID uint64
+	Payload   HelpBarPayload
+	Err       error
+}
+
 type completionOverlayLayout struct {
 	PopupX       int
 	PopupY       int
@@ -458,6 +509,21 @@ func (m *Model) scheduleDebouncedCompletionIfNeeded(prevValue string, prevCursor
 	})
 }
 
+func (m *Model) scheduleDebouncedHelpBarIfNeeded(prevValue string, prevCursor int) tea.Cmd {
+	if m.helpBarProvider == nil {
+		return nil
+	}
+	if prevValue == m.textInput.Value() && prevCursor == m.textInput.Position() {
+		return nil
+	}
+
+	m.helpBarReqSeq++
+	reqID := m.helpBarReqSeq
+	return tea.Tick(m.helpBarDebounce, func(time.Time) tea.Msg {
+		return helpBarDebounceMsg{RequestID: reqID}
+	})
+}
+
 func (m *Model) handleDebouncedCompletion(msg completionDebounceMsg) tea.Cmd {
 	if m.completer == nil {
 		return nil
@@ -475,6 +541,25 @@ func (m *Model) handleDebouncedCompletion(msg completionDebounceMsg) tea.Cmd {
 	m.completionLastReqID = req.RequestID
 	m.completionLastReqKind = req.Reason
 	return m.completionCmd(req)
+}
+
+func (m *Model) handleDebouncedHelpBar(msg helpBarDebounceMsg) tea.Cmd {
+	if m.helpBarProvider == nil {
+		return nil
+	}
+	if msg.RequestID != m.helpBarReqSeq {
+		return nil
+	}
+
+	req := HelpBarRequest{
+		Input:      m.textInput.Value(),
+		CursorByte: m.textInput.Position(),
+		Reason:     HelpBarReasonDebounce,
+		RequestID:  msg.RequestID,
+	}
+	m.helpBarLastReqID = req.RequestID
+	m.helpBarLastReqKind = req.Reason
+	return m.helpBarCmd(req)
 }
 
 func (m *Model) triggerCompletionFromShortcut(k tea.KeyMsg) tea.Cmd {
@@ -542,6 +627,49 @@ func (m *Model) completionCmd(req CompletionRequest) tea.Cmd {
 	}
 }
 
+func (m *Model) helpBarCmd(req HelpBarRequest) tea.Cmd {
+	return func() tea.Msg {
+		var (
+			payload   HelpBarPayload
+			err       error
+			recovered any
+			stack     string
+		)
+
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					recovered = r
+					stack = string(debug.Stack())
+				}
+			}()
+
+			ctx, cancel := context.WithTimeout(context.Background(), m.helpBarReqTimeout)
+			defer cancel()
+
+			payload, err = m.helpBarProvider.GetHelpBar(ctx, req)
+		}()
+
+		if recovered != nil {
+			log.Error().
+				Interface("panic", recovered).
+				Str("stack", stack).
+				Uint64("request_id", req.RequestID).
+				Msg("help bar provider panicked")
+			return helpBarResultMsg{
+				RequestID: req.RequestID,
+				Err:       fmt.Errorf("help bar provider panic: %v", recovered),
+			}
+		}
+
+		return helpBarResultMsg{
+			RequestID: req.RequestID,
+			Payload:   payload,
+			Err:       err,
+		}
+	}
+}
+
 func (m *Model) handleCompletionResult(msg completionResultMsg) tea.Cmd {
 	if msg.RequestID != m.completionReqSeq {
 		return nil
@@ -562,6 +690,44 @@ func (m *Model) handleCompletionResult(msg completionResultMsg) tea.Cmd {
 	m.completionReplaceTo = clampInt(msg.Result.ReplaceTo, m.completionReplaceFrom, len(m.textInput.Value()))
 	m.ensureCompletionSelectionVisible()
 	return nil
+}
+
+func (m *Model) handleHelpBarResult(msg helpBarResultMsg) tea.Cmd {
+	if msg.RequestID != m.helpBarReqSeq {
+		return nil
+	}
+	m.helpBarLastReqID = msg.RequestID
+	m.helpBarLastErr = msg.Err
+	if msg.Err != nil {
+		m.helpBarVisible = false
+		return nil
+	}
+	if !msg.Payload.Show || strings.TrimSpace(msg.Payload.Text) == "" {
+		m.helpBarVisible = false
+		return nil
+	}
+
+	m.helpBarPayload = msg.Payload
+	m.helpBarVisible = true
+	return nil
+}
+
+func (m *Model) renderHelpBar() string {
+	if !m.helpBarVisible {
+		return ""
+	}
+	return m.helpBarStyleForSeverity(m.helpBarPayload.Severity).Render(m.helpBarPayload.Text)
+}
+
+func (m *Model) helpBarStyleForSeverity(severity string) lipgloss.Style {
+	switch severity {
+	case "error":
+		return m.styles.Error
+	case "warning":
+		return m.styles.HelpText
+	default:
+		return m.styles.Info
+	}
 }
 
 func (m *Model) handleCompletionNavigation(k tea.KeyMsg) (bool, tea.Cmd) {
@@ -835,6 +1001,21 @@ func (m *Model) ensureCompletionSelectionVisible() {
 }
 
 func (m *Model) updateKeyBindings() { mode_keymap.EnableMode(&m.keyMap, m.focus) }
+
+func normalizeHelpBarConfig(cfg HelpBarConfig) HelpBarConfig {
+	if cfg.Debounce == 0 && cfg.RequestTimeout == 0 && !cfg.Enabled {
+		return DefaultHelpBarConfig()
+	}
+	merged := DefaultHelpBarConfig()
+	merged.Enabled = cfg.Enabled
+	if cfg.Debounce > 0 {
+		merged.Debounce = cfg.Debounce
+	}
+	if cfg.RequestTimeout > 0 {
+		merged.RequestTimeout = cfg.RequestTimeout
+	}
+	return merged
+}
 
 func normalizeAutocompleteConfig(cfg AutocompleteConfig) AutocompleteConfig {
 	if cfg.Debounce == 0 &&

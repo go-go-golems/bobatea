@@ -58,6 +58,16 @@ type AutocompleteConfig struct {
 	OverlayHorizontalGrow CompletionOverlayHorizontalGrow
 }
 
+// HelpBarConfig controls contextual help bar request and rendering behavior.
+type HelpBarConfig struct {
+	// Enabled toggles REPL help bar integration.
+	Enabled bool
+	// Debounce is the delay after input edits before a help bar request is sent.
+	Debounce time.Duration
+	// RequestTimeout bounds a single help bar request.
+	RequestTimeout time.Duration
+}
+
 // DefaultAutocompleteConfig returns default autocomplete settings.
 func DefaultAutocompleteConfig() AutocompleteConfig {
 	return AutocompleteConfig{
@@ -81,6 +91,15 @@ func DefaultAutocompleteConfig() AutocompleteConfig {
 	}
 }
 
+// DefaultHelpBarConfig returns default contextual help bar settings.
+func DefaultHelpBarConfig() HelpBarConfig {
+	return HelpBarConfig{
+		Enabled:        true,
+		Debounce:       120 * time.Millisecond,
+		RequestTimeout: 300 * time.Millisecond,
+	}
+}
+
 // Config holds REPL shell configuration.
 type Config struct {
 	Title                string
@@ -93,6 +112,8 @@ type Config struct {
 	MaxHistorySize       int
 	// Autocomplete controls completion scheduling, shortcuts, and popup behavior.
 	Autocomplete AutocompleteConfig
+	// HelpBar controls contextual in-line help updates while typing.
+	HelpBar HelpBarConfig
 }
 
 // DefaultConfig returns a sensible default configuration.
@@ -107,5 +128,6 @@ func DefaultConfig() Config {
 		EnableHistory:        true,
 		MaxHistorySize:       1000,
 		Autocomplete:         DefaultAutocompleteConfig(),
+		HelpBar:              DefaultHelpBarConfig(),
 	}
 }
