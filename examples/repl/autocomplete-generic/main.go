@@ -119,6 +119,10 @@ func (e *GenericEvaluator) GetHelpBar(_ context.Context, req repl.HelpBarRequest
 		if len(token) < 2 {
 			return repl.HelpBarPayload{Show: false}, nil
 		}
+	case repl.HelpBarReasonShortcut:
+		// Explicit shortcut requests should always attempt a help resolution.
+	case repl.HelpBarReasonManual:
+		// Manual requests should always attempt a help resolution.
 	}
 
 	// Exact match gets canonical symbol help.
