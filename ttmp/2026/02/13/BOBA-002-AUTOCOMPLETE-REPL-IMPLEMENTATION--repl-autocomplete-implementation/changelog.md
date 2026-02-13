@@ -7,6 +7,18 @@
 
 ## 2026-02-13
 
+Post-validation UX follow-up completed (commit `23095dc`): fixed debounce-time popup flicker by keeping the completion overlay visible while new debounced requests are pending, and added overlay positioning/appearance controls for minimal popup layouts.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/model.go — Removed hide-on-input-change behavior, added popup style override path, and applied overlay X/Y offsets in layout computation
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/config.go — Added `OverlayOffsetX`, `OverlayOffsetY`, and `OverlayNoBorder` autocomplete config options
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/autocomplete_model_test.go — Added tests for no-flicker debounce behavior, offset placement, and borderless frame sizing
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/repl_test.go — Added default config assertions for new overlay controls
+
+
+## 2026-02-13
+
 Created a detailed autocomplete implementation guide focused on REPL-side debounce scheduling, completer-owned trigger decisions, stale-result handling, and optional keyboard shortcut trigger mode (including Tab) with key-conflict mitigation.
 
 ### Related Files
