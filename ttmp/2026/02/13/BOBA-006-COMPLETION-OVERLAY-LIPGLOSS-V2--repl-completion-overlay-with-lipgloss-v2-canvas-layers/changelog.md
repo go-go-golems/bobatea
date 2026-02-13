@@ -49,3 +49,16 @@ Task 3 complete: added completion viewport state (scroll top/visible rows/geomet
 - /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-006-COMPLETION-OVERLAY-LIPGLOSS-V2--repl-completion-overlay-with-lipgloss-v2-canvas-layers/reference/01-diary.md — Added Step 7 diary entry
 - /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-006-COMPLETION-OVERLAY-LIPGLOSS-V2--repl-completion-overlay-with-lipgloss-v2-canvas-layers/tasks.md — Checked off Task 3
 
+
+## 2026-02-13
+
+Task 4 complete: introduced lipgloss v2 dependency and switched REPL completion popup from inline join to layered canvas overlay composition.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/go.mod — Added lipgloss v2 module dependency
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/go.sum — Resolved transitive module updates for v2 overlay path
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/model.go — Overlay-based View rendering path
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-006-COMPLETION-OVERLAY-LIPGLOSS-V2--repl-completion-overlay-with-lipgloss-v2-canvas-layers/reference/01-diary.md — Added Step 8 diary entry
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-006-COMPLETION-OVERLAY-LIPGLOSS-V2--repl-completion-overlay-with-lipgloss-v2-canvas-layers/tasks.md — Checked off Task 4
+

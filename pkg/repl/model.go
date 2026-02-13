@@ -1,6 +1,7 @@
 package repl
 
 import (
+	lipglossv2 "charm.land/lipgloss/v2"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -321,21 +322,37 @@ func (m *Model) View() string {
 		inputView = m.styles.HelpText.Render(inputView)
 	}
 
-	inputBlock := inputView
-	if popup := m.renderCompletionPopup(); popup != "" {
-		inputBlock = lipgloss.JoinVertical(lipgloss.Left, inputView, popup)
-	}
-
 	helpView := m.help.View(m.keyMap)
-
-	sections := []string{
+	baseSections := []string{
 		header,
 		"",
 		timelineView,
-		inputBlock,
+		inputView,
 		helpView,
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, sections...)
+	base := lipgloss.JoinVertical(lipgloss.Left, baseSections...)
+
+	popup := m.renderCompletionPopup()
+	if popup == "" || m.width <= 0 || m.height <= 0 {
+		return base
+	}
+
+	inputY := lipgloss.Height(header) + 1 + lipgloss.Height(timelineView)
+	popupHeight := lipgloss.Height(popup)
+	overlayX := 0
+	overlayY := inputY + 1 + m.completionMargin
+	if overlayY+popupHeight > m.height {
+		overlayY = inputY - popupHeight - m.completionMargin
+	}
+	overlayY = clampInt(overlayY, 0, max(0, m.height-1))
+
+	comp := lipglossv2.NewCompositor(
+		lipglossv2.NewLayer(base).X(0).Y(0).Z(0).ID("repl-base"),
+		lipglossv2.NewLayer(popup).X(overlayX).Y(overlayY).Z(20).ID("completion-overlay"),
+	)
+	canvas := lipglossv2.NewCanvas(max(1, m.width), max(1, m.height))
+	canvas.Compose(comp)
+	return canvas.Render()
 }
 
 // submit runs evaluation and streams events to m.events

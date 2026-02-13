@@ -504,7 +504,7 @@ I introduced scroll/visible-row fields and helper methods for selection visibili
 
 **Inferred user intent:** Build a robust foundation before introducing visual overlay changes.
 
-**Commit (code):** (recorded in the commit created for this step)
+**Commit (code):** `a65f776` — "repl: scaffold completion viewport state"
 
 ### What I did
 
@@ -568,3 +568,84 @@ I introduced scroll/visible-row fields and helper methods for selection visibili
 ### Technical details
 
 - `ensureCompletionSelectionVisible()` clamps both `completionSelection` and `completionScrollTop` against current suggestion length and effective visible limit.
+
+## Step 8: Task 4 Implementation — Lipgloss v2 Overlay Renderer in `Model.View`
+
+This step switches rendering away from inline popup composition to an overlay-composited frame. I added lipgloss v2 dependency support and changed `View()` to compose base REPL content with completion popup as a separate high-Z layer.
+
+The first overlay pass uses straightforward placement (near input row with above/below fallback) and canvas clipping. Precise width/height clamping and anchor refinement are handled in the next sizing task.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 5)
+
+**Assistant interpretation:** Continue implementing tasks one by one, committing and testing each slice.
+
+**Inferred user intent:** Get a real overlay architecture in place as soon as possible, then iterate on geometry details.
+
+**Commit (code):** (recorded in the commit created for this step)
+
+### What I did
+
+- Added dependency:
+  - `charm.land/lipgloss/v2@v2.0.0-beta.3.0.20260210014823-2f36a2f1ba17`
+  - updated `go.mod` / `go.sum`
+- Updated `pkg/repl/model.go`:
+  - imported `lipglossv2`
+  - removed inline `JoinVertical` popup composition path
+  - built `base` REPL view without popup
+  - composed overlay via:
+    - `lipglossv2.NewLayer(base)...Z(0)`
+    - `lipglossv2.NewLayer(popup)...Z(20)`
+    - `lipglossv2.NewCompositor(...)`
+    - `lipglossv2.NewCanvas(m.width,m.height).Compose(...)`
+  - returned composed canvas render output
+- Checked off Task 4 in:
+  - `ttmp/.../BOBA-006.../tasks.md`
+- Ran:
+  - `go test ./pkg/repl/... -count=1`
+
+### Why
+
+- This is the core architecture shift requested: completion popup should be an overlay, not flow content.
+- Doing this before advanced sizing logic keeps diff readable and testable.
+
+### What worked
+
+- REPL tests remained green after renderer swap.
+- Overlay composition path now exists and can be iterated for sizing/paging.
+
+### What didn't work
+
+- N/A in this step.
+
+### What I learned
+
+- Keeping base view and overlay assembly in one function is workable initially, but extracting placement/render helpers will be cleaner for next tasks.
+
+### What was tricky to build
+
+- Coordinating mixed lipgloss v1 styling with v2 layer/canvas composition without breaking existing REPL styling outputs.
+
+### What warrants a second pair of eyes
+
+- Dependency pin choice for v2 path (`charm.land` pseudo-version) should be confirmed against broader repo migration plans.
+
+### What should be done in the future
+
+- Next task should implement strict placement/sizing clamping using new config fields, not just basic above/below fallback.
+
+### Code review instructions
+
+- Review:
+  - `pkg/repl/model.go` (`View` rendering path)
+  - `go.mod`
+  - `go.sum`
+- Re-run:
+  - `go test ./pkg/repl/... -count=1`
+
+### Technical details
+
+- Overlay z-order currently uses:
+  - base: `Z(0)`
+  - completion: `Z(20)`
