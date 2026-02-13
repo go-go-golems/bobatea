@@ -46,3 +46,14 @@ Task 3 completed: added generic autocomplete contracts in pkg/repl (CompletionRe
 - /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-002-AUTOCOMPLETE-REPL-IMPLEMENTATION--repl-autocomplete-implementation/reference/01-diary.md — Step 2 execution notes and test log
 - /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-002-AUTOCOMPLETE-REPL-IMPLEMENTATION--repl-autocomplete-implementation/tasks.md — Task 3 checked
 
+
+## 2026-02-13
+
+Task 4 completed: implemented REPL-side debounced completion scheduling and stale-response filtering in repl.Model; validated with gofmt and go test ./pkg/repl/...
+
+### Related Files
+
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/model.go — Added completion debounce messages
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-002-AUTOCOMPLETE-REPL-IMPLEMENTATION--repl-autocomplete-implementation/reference/01-diary.md — Added Step 3 execution notes
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-002-AUTOCOMPLETE-REPL-IMPLEMENTATION--repl-autocomplete-implementation/tasks.md — Task 4 checked
+

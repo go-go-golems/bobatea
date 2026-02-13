@@ -12,6 +12,8 @@ Owners: []
 RelatedFiles:
     - Path: bobatea/pkg/repl/autocomplete_types.go
       Note: Task 3 implementation artifact documented in Step 2
+    - Path: bobatea/pkg/repl/model.go
+      Note: Task 4 debounce scheduling and stale-result handling implementation
     - Path: bobatea/ttmp/2026/02/13/BOBA-002-AUTOCOMPLETE-REPL-IMPLEMENTATION--repl-autocomplete-implementation/design-doc/01-autocomplete-implementation-guide.md
       Note: Design decisions and implementation plan referenced by diary steps
     - Path: bobatea/ttmp/2026/02/13/BOBA-002-AUTOCOMPLETE-REPL-IMPLEMENTATION--repl-autocomplete-implementation/tasks.md
@@ -22,6 +24,7 @@ LastUpdated: 2026-02-13T10:46:00-05:00
 WhatFor: Record task-by-task implementation progress, including tests, commits, failures, and validation instructions.
 WhenToUse: Use while implementing, reviewing, or continuing BOBA-002 work.
 ---
+
 
 
 
@@ -118,7 +121,7 @@ The primary output is a new `pkg/repl` contract file that defines trigger reason
 
 **Inferred user intent:** Establish the generic autocomplete API first so subsequent behavior and evaluator integrations are consistent.
 
-**Commit (code):** pending
+**Commit (code):** `f3fa020` — "feat(repl): add generic autocomplete contracts (task 3)"
 
 ### What I did
 
@@ -172,5 +175,94 @@ The primary output is a new `pkg/repl` contract file that defines trigger reason
 ```go
 type InputCompleter interface {
     CompleteInput(ctx context.Context, req CompletionRequest) (CompletionResult, error)
+}
+```
+
+## Step 3: Implement Debounced Scheduling + Stale Filtering in REPL Model (Task 4)
+
+This step implemented the runtime plumbing for debounced completion requests in `repl.Model`, including request sequencing and stale-response dropping. The implementation is intentionally non-visual at this stage: it records completion results but does not yet render a popup list.
+
+The goal of this step is to establish correct asynchronous behavior before adding UI interaction complexity.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 1)
+
+**Assistant interpretation:** Continue BOBA-002 with the next checklist item, implementing debounced scheduling and stale filtering in the REPL core.
+
+**Inferred user intent:** Build robust foundational behavior first so later shortcut and popup work is deterministic and race-safe.
+
+**Commit (code):** pending
+
+### What I did
+
+- Extended `pkg/repl/model.go` with autocomplete runtime state:
+- optional `InputCompleter` discovery from evaluator,
+- request sequencing counters,
+- debounce and request timeout settings,
+- last result/error tracking fields.
+- Added internal messages:
+- `completionDebounceMsg`
+- `completionResultMsg`
+- Added scheduling helper:
+- `scheduleDebouncedCompletionIfNeeded(prevValue, prevCursor)`
+- Added execution helper:
+- `completionCmd(req CompletionRequest)`
+- Added handlers:
+- `handleDebouncedCompletion`
+- `handleCompletionResult` with stale-request guard (`msg.RequestID != m.completionReqSeq`).
+- Wired scheduling calls into input update paths for default editing and history navigation (`up`/`down`).
+- Ran tests:
+- `gofmt -w pkg/repl/model.go`
+- `go test ./pkg/repl/...`
+
+### Why
+
+- Task 4 explicitly requires REPL-side debounce scheduling and stale-result filtering.
+- This isolates correctness-critical concurrency behavior before adding rendering logic.
+
+### What worked
+
+- `pkg/repl` compiles and tests pass.
+- Debounced messages are now scheduled only when input/cursor actually changes.
+- Stale responses are safely ignored through request ID matching.
+
+### What didn't work
+
+- N/A in this step.
+
+### What I learned
+
+- The existing `updateInput` structure supports clean insertion of scheduling hooks by capturing pre-update input/cursor snapshots.
+
+### What was tricky to build
+
+- The main edge was ensuring scheduling happens on both direct text editing and history navigation updates while avoiding redundant requests for no-op key events. Capturing `prevValue` and `prevCursor` at the top of `updateInput` solved this consistently.
+
+### What warrants a second pair of eyes
+
+- Verify that scheduling on history navigation is desired UX (currently enabled).
+- Verify default debounce/timeout constants (`120ms`, `400ms`) before Task 8 moves them to config.
+
+### What should be done in the future
+
+- Implement Task 5: explicit shortcut-trigger completion path.
+- Then implement Task 6 popup rendering and application behavior.
+
+### Code review instructions
+
+- Start at: `pkg/repl/model.go`
+- Focus symbols:
+- `scheduleDebouncedCompletionIfNeeded`
+- `handleDebouncedCompletion`
+- `handleCompletionResult`
+- Validate with: `go test ./pkg/repl/...`
+- Confirm task state in: `ttmp/2026/02/13/BOBA-002-AUTOCOMPLETE-REPL-IMPLEMENTATION--repl-autocomplete-implementation/tasks.md`
+
+### Technical details
+
+```go
+if msg.RequestID != m.completionReqSeq {
+    return nil // stale result dropped
 }
 ```

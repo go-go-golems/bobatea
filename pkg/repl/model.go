@@ -45,6 +45,16 @@ type Model struct {
 	// refresh scheduling
 	refreshPending   bool
 	refreshScheduled bool
+
+	// optional autocomplete capability
+	completer             InputCompleter
+	completionReqSeq      uint64
+	completionDebounce    time.Duration
+	completionReqTimeout  time.Duration
+	completionLastResult  CompletionResult
+	completionLastError   error
+	completionLastReqID   uint64
+	completionLastReqKind CompletionReason
 }
 
 // NewModel constructs a new REPL shell with timeline transcript.
@@ -68,6 +78,11 @@ func NewModel(evaluator Evaluator, config Config, pub message.Publisher) *Model 
 
 	sh := timeline.NewShell(reg)
 
+	var completer InputCompleter
+	if c, ok := evaluator.(InputCompleter); ok {
+		completer = c
+	}
+
 	return &Model{
 		evaluator: evaluator,
 		config:    config,
@@ -81,6 +96,11 @@ func NewModel(evaluator Evaluator, config Config, pub message.Publisher) *Model 
 		sh:        sh,
 		focus:     "input",
 		pub:       pub,
+		completer: completer,
+
+		// These become configurable in a later task.
+		completionDebounce:   120 * time.Millisecond,
+		completionReqTimeout: 400 * time.Millisecond,
 	}
 }
 
@@ -138,6 +158,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case completionDebounceMsg:
+		return m, m.handleDebouncedCompletion(v)
+	case completionResultMsg:
+		return m, m.handleCompletionResult(v)
+
 	case cursor.BlinkMsg:
 		return m, nil
 	default:
@@ -153,6 +178,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *Model) updateInput(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	log.Trace().Interface("k", k).Str("key", k.String()).Msg("updating input")
+	prevValue := m.textInput.Value()
+	prevCursor := m.textInput.Position()
+
 	//nolint:exhaustive
 	switch k.Type {
 	case tea.KeyCtrlC:
@@ -181,17 +209,17 @@ func (m *Model) updateInput(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.textInput.SetValue(entry)
 			}
 		}
-		return m, nil
+		return m, m.scheduleDebouncedCompletionIfNeeded(prevValue, prevCursor)
 	case "down":
 		if m.config.EnableHistory {
 			entry := m.history.NavigateDown()
 			m.textInput.SetValue(entry)
 		}
-		return m, nil
+		return m, m.scheduleDebouncedCompletionIfNeeded(prevValue, prevCursor)
 	}
 	var cmd tea.Cmd
 	m.textInput, cmd = m.textInput.Update(k)
-	return m, cmd
+	return m, tea.Batch(cmd, m.scheduleDebouncedCompletionIfNeeded(prevValue, prevCursor))
 }
 
 func (m *Model) updateTimeline(k tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -301,6 +329,15 @@ func ensureAppendPatch(props map[string]any) map[string]any {
 
 // internal helpers
 type timelineRefreshMsg struct{}
+type completionDebounceMsg struct {
+	RequestID uint64
+}
+
+type completionResultMsg struct {
+	RequestID uint64
+	Result    CompletionResult
+	Err       error
+}
 
 func (m *Model) scheduleRefresh() tea.Cmd {
 	if m.refreshScheduled {
@@ -308,6 +345,64 @@ func (m *Model) scheduleRefresh() tea.Cmd {
 	}
 	m.refreshScheduled = true
 	return tea.Tick(50*time.Millisecond, func(time.Time) tea.Msg { return timelineRefreshMsg{} })
+}
+
+func (m *Model) scheduleDebouncedCompletionIfNeeded(prevValue string, prevCursor int) tea.Cmd {
+	if m.completer == nil {
+		return nil
+	}
+	if prevValue == m.textInput.Value() && prevCursor == m.textInput.Position() {
+		return nil
+	}
+
+	m.completionReqSeq++
+	reqID := m.completionReqSeq
+	return tea.Tick(m.completionDebounce, func(time.Time) tea.Msg {
+		return completionDebounceMsg{RequestID: reqID}
+	})
+}
+
+func (m *Model) handleDebouncedCompletion(msg completionDebounceMsg) tea.Cmd {
+	if m.completer == nil {
+		return nil
+	}
+	if msg.RequestID != m.completionReqSeq {
+		return nil
+	}
+
+	req := CompletionRequest{
+		Input:      m.textInput.Value(),
+		CursorByte: m.textInput.Position(),
+		Reason:     CompletionReasonDebounce,
+		RequestID:  msg.RequestID,
+	}
+	m.completionLastReqID = req.RequestID
+	m.completionLastReqKind = req.Reason
+	return m.completionCmd(req)
+}
+
+func (m *Model) completionCmd(req CompletionRequest) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), m.completionReqTimeout)
+		defer cancel()
+
+		result, err := m.completer.CompleteInput(ctx, req)
+		return completionResultMsg{
+			RequestID: req.RequestID,
+			Result:    result,
+			Err:       err,
+		}
+	}
+}
+
+func (m *Model) handleCompletionResult(msg completionResultMsg) tea.Cmd {
+	if msg.RequestID != m.completionReqSeq {
+		return nil
+	}
+	m.completionLastReqID = msg.RequestID
+	m.completionLastResult = msg.Result
+	m.completionLastError = msg.Err
+	return nil
 }
 
 func (m *Model) ctrl() *timeline.Controller { return m.sh.Controller() }
