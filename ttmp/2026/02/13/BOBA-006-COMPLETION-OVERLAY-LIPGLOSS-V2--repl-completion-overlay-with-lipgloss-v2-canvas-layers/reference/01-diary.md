@@ -817,7 +817,7 @@ These tests exercise non-trivial paths that old inline popup tests did not cover
 
 **Inferred user intent:** Avoid shipping overlay logic without guardrails.
 
-**Commit (code):** (recorded in the commit created for this step)
+**Commit (code):** `aee28ff` — "repl: add overlay layout and paging tests"
 
 ### What I did
 
@@ -874,3 +874,79 @@ These tests exercise non-trivial paths that old inline popup tests did not cover
 ### Technical details
 
 - Test fixtures intentionally include long suggestion text to exercise width truncation branches.
+
+## Step 12: Task 8 Validation — Tests, Lint, and Manual JS REPL Run
+
+I completed the validation task across automated checks and an interactive run of the JS REPL. The manual run confirmed the popup now renders as an overlay layer (floating box) rather than inline flow content.
+
+I used an interactive TTY session, typed `.co<Tab>`, and observed the suggestion box displayed above the input line with no layout push-down. This validates the core UX goal in live behavior.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 5)
+
+**Assistant interpretation:** Finish implementation task list with concrete verification and keep ticket diary/task state updated.
+
+**Inferred user intent:** Ensure the feature works in practice, not only in unit tests.
+
+**Commit (code):** (recorded in the commit created for this step)
+
+### What I did
+
+- Automated checks:
+  - `go test ./pkg/repl/... ./examples/js-repl -count=1`
+  - `golangci-lint run -v --max-same-issues=100 ./pkg/repl/...`
+- Manual TTY validation:
+  - launched: `go run ./examples/js-repl`
+  - typed: `.co<Tab>`
+  - observed floating completion box rendering in overlay area
+  - exited cleanly with `Ctrl+C`
+- Checked off Task 8 in:
+  - `ttmp/.../BOBA-006.../tasks.md`
+
+### Why
+
+- Overlay UX needs visual confirmation under Bubble Tea runtime conditions.
+- Lint/test pass ensures the step is safe to merge incrementally.
+
+### What worked
+
+- Tests passed for REPL packages and JS evaluator package.
+- Lint passed on `pkg/repl/...`.
+- Manual run showed overlay popup at separate screen coordinates from input line.
+
+### What didn't work
+
+- N/A for this step.
+
+### What I learned
+
+- TTY-driven check is valuable for this feature because layout/compositing bugs are hard to infer from pure unit tests.
+
+### What was tricky to build
+
+- Capturing useful evidence from an alternate-screen Bubble Tea app in terminal logs; using interactive session output snapshots solved this.
+
+### What warrants a second pair of eyes
+
+- A future pass could add golden-style frame snapshots for representative terminal sizes, but current helper-level tests + manual run are sufficient for now.
+
+### What should be done in the future
+
+- If desired, add an example scenario with very long completion lists to visually tune page-step UX defaults.
+
+### Code review instructions
+
+- Re-run:
+  - `go test ./pkg/repl/... ./examples/js-repl -count=1`
+  - `golangci-lint run -v --max-same-issues=100 ./pkg/repl/...`
+- Manual:
+  - `go run ./examples/js-repl`
+  - type `.co<Tab>` and verify overlay appears without shifting layout.
+
+### Technical details
+
+- Interactive session observed overlay box:
+  - `╭────────────────────────╮`
+  - `│ › ◆ console - global   │`
+  - `╰────────────────────────╯`

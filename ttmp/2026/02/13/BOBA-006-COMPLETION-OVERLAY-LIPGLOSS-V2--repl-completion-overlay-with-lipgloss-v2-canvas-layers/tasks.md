@@ -9,7 +9,7 @@
 - [x] Implement placement/sizing logic with terminal clamping and above/below fallback
 - [x] Implement scrolling/paging behavior for long suggestion lists
 - [x] Add/adjust tests for viewport and overlay behavior
-- [ ] Run focused validation (`go test`, lint on changed packages, manual `examples/js-repl` run)
+- [x] Run focused validation (`go test`, lint on changed packages, manual `examples/js-repl` run)
 
 ## Done (Research)
 
