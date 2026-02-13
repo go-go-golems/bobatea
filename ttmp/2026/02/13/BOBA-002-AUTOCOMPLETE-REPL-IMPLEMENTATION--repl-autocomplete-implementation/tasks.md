@@ -9,7 +9,7 @@
 ### Phase 1: Generic Autocomplete Mechanism (No JS)
 
 - [x] Decide implementation path for autocomplete UI: refactor existing `pkg/autocomplete` or rewrite from scratch for fresh cutover (no backward compatibility constraints)
-- [ ] Define final generic contracts in `pkg/repl` for request/response (`CompletionRequest`, `CompletionResult`, `InputCompleter`)
+- [x] Define final generic contracts in `pkg/repl` for request/response (`CompletionRequest`, `CompletionResult`, `InputCompleter`)
 - [ ] Implement generic REPL-side debounce scheduling and request ID stale-result filtering
 - [ ] Implement generic shortcut-trigger path (`Tab` or configurable key) without REPL trigger heuristics
 - [ ] Implement generic suggestion popup rendering, selection navigation, and apply/replace-range behavior

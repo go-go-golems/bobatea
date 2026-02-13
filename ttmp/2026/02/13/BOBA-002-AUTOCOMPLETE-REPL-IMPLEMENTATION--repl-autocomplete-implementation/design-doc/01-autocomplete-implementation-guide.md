@@ -14,6 +14,8 @@ RelatedFiles:
       Note: Existing autocomplete model analyzed for refactor vs reuse
     - Path: bobatea/pkg/listbox/listbox.go
       Note: Candidate list rendering/navigation primitive for popup UI
+    - Path: bobatea/pkg/repl/autocomplete_types.go
+      Note: Canonical generic request/result/completer contracts added for Task 3
     - Path: bobatea/pkg/repl/config.go
       Note: Add autocomplete configuration and key binding defaults
     - Path: bobatea/pkg/repl/evaluator.go
@@ -28,6 +30,7 @@ LastUpdated: 2026-02-13T10:08:00-05:00
 WhatFor: Implement robust REPL autocomplete with debounced scheduling while delegating trigger decisions to the input completer.
 WhenToUse: Use when implementing or reviewing REPL autocomplete behavior and key routing.
 ---
+
 
 
 # Autocomplete Implementation Guide
