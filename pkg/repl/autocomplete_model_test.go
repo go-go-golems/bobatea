@@ -45,6 +45,30 @@ func newAutocompleteTestModel(t *testing.T, evaluator *fakeCompleterEvaluator) *
 	return NewModel(evaluator, cfg, bus.Publisher)
 }
 
+func drainModelCmds(m *Model, cmd tea.Cmd) {
+	queue := []tea.Cmd{cmd}
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+		if current == nil {
+			continue
+		}
+
+		msg := current()
+		if msg == nil {
+			continue
+		}
+
+		if batch, ok := msg.(tea.BatchMsg); ok {
+			queue = append(queue, []tea.Cmd(batch)...)
+			continue
+		}
+
+		_, nextCmd := m.Update(msg)
+		queue = append(queue, nextCmd)
+	}
+}
+
 func TestCompletionDebounceCoalescesToLatestRequest(t *testing.T) {
 	evaluator := &fakeCompleterEvaluator{}
 	m := newAutocompleteTestModel(t, evaluator)
@@ -169,4 +193,36 @@ func TestPopupKeyRoutingConsumesNavigationAndApply(t *testing.T) {
 	_, _ = m.updateInput(tea.KeyMsg{Type: tea.KeyEnter})
 	assert.Equal(t, "console", m.textInput.Value())
 	assert.False(t, m.completionVisible, "popup should close after apply")
+}
+
+func TestAutocompleteEndToEndTypingToApplyFlow(t *testing.T) {
+	evaluator := &fakeCompleterEvaluator{
+		result: CompletionResult{
+			Show: true,
+			Suggestions: []autocomplete.Suggestion{
+				{Id: "1", Value: "const", DisplayText: "const"},
+				{Id: "2", Value: "console", DisplayText: "console"},
+			},
+			ReplaceFrom: 0,
+			ReplaceTo:   1,
+		},
+	}
+	m := newAutocompleteTestModel(t, evaluator)
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
+	drainModelCmds(m, cmd)
+
+	require.Len(t, evaluator.requests, 1)
+	assert.Equal(t, CompletionReasonDebounce, evaluator.requests[0].Reason)
+	assert.Equal(t, "c", evaluator.requests[0].Input)
+	assert.True(t, m.completionVisible)
+
+	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	drainModelCmds(m, cmd)
+	assert.Equal(t, 1, m.completionSelection)
+
+	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	drainModelCmds(m, cmd)
+	assert.Equal(t, "console", m.textInput.Value())
+	assert.False(t, m.completionVisible)
 }
