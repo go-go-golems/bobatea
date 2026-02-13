@@ -39,6 +39,40 @@ var (
 			{Label: "parse", Kind: jsparse.CandidateMethod, Detail: "url method"},
 		},
 	}
+
+	helpBarSymbolSignatures = map[string]string{
+		"console":        "console: object (log, error, warn, info, debug, table)",
+		"console.log":    "console.log(...args): void",
+		"console.error":  "console.error(...args): void",
+		"console.warn":   "console.warn(...args): void",
+		"console.info":   "console.info(...args): void",
+		"console.debug":  "console.debug(...args): void",
+		"console.table":  "console.table(data, columns?): void",
+		"Math":           "Math: object (numeric helpers)",
+		"Math.max":       "Math.max(...values): number",
+		"Math.min":       "Math.min(...values): number",
+		"Math.random":    "Math.random(): number",
+		"Math.floor":     "Math.floor(value): number",
+		"Math.ceil":      "Math.ceil(value): number",
+		"Math.round":     "Math.round(value): number",
+		"JSON":           "JSON: object (parse, stringify)",
+		"JSON.parse":     "JSON.parse(text): any",
+		"JSON.stringify": "JSON.stringify(value): string",
+		"fs":             "fs: module alias (file system APIs)",
+		"fs.readFile":    "fs.readFile(path, [options], callback): void",
+		"fs.writeFile":   "fs.writeFile(path, data, [options], callback): void",
+		"fs.existsSync":  "fs.existsSync(path): bool",
+		"fs.mkdirSync":   "fs.mkdirSync(path, [options]): string | undefined",
+		"path":           "path: module alias (path utilities)",
+		"path.join":      "path.join(...parts): string",
+		"path.resolve":   "path.resolve(...parts): string",
+		"path.dirname":   "path.dirname(path): string",
+		"path.basename":  "path.basename(path): string",
+		"path.extname":   "path.extname(path): string",
+		"url":            "url: module alias (URL utilities)",
+		"url.parse":      "url.parse(input): URLRecord",
+		"url.URL":        "url.URL(input): URL",
+	}
 )
 
 // Evaluator implements the REPL evaluator interface for JavaScript
@@ -288,6 +322,56 @@ func (e *Evaluator) CompleteInput(_ context.Context, req repl.CompletionRequest)
 	}, nil
 }
 
+// GetHelpBar resolves contextual one-line symbol help for the JS REPL input.
+func (e *Evaluator) GetHelpBar(_ context.Context, req repl.HelpBarRequest) (repl.HelpBarPayload, error) {
+	if e.tsParser == nil {
+		return repl.HelpBarPayload{Show: false}, nil
+	}
+
+	input := req.Input
+	cursor := clampCursor(req.CursorByte, len(input))
+
+	e.tsMu.Lock()
+	root := e.tsParser.Parse([]byte(input))
+	e.tsMu.Unlock()
+	if root == nil {
+		return repl.HelpBarPayload{Show: false}, nil
+	}
+
+	analysis := jsparse.Analyze("repl-input.js", input, nil)
+	row, col := byteOffsetToRowCol(input, cursor)
+	ctx := analysis.CompletionContextAt(root, row, col)
+
+	token, _, _ := tokenAtCursor(input, cursor)
+	token = strings.TrimSpace(token)
+	if token == "" && ctx.Kind == jsparse.CompletionNone {
+		return repl.HelpBarPayload{Show: false}, nil
+	}
+	if req.Reason == repl.HelpBarReasonDebounce && ctx.Kind == jsparse.CompletionIdentifier && len(strings.TrimSpace(ctx.PartialText)) < 2 {
+		return repl.HelpBarPayload{Show: false}, nil
+	}
+
+	aliases := extractRequireAliases(input)
+	candidates := []jsparse.CompletionCandidate{}
+	if ctx.Kind != jsparse.CompletionNone {
+		candidates = jsparse.ResolveCandidates(ctx, analysis.Index, root)
+		if ctx.Kind == jsparse.CompletionProperty {
+			if moduleName, ok := aliases[ctx.BaseExpr]; ok {
+				if moduleCandidates, ok := nodeModuleCandidates[moduleName]; ok {
+					candidates = append(candidates, moduleCandidates...)
+				}
+			}
+		}
+	}
+	candidates = dedupeAndSortCandidates(candidates)
+
+	if payload, ok := e.helpBarFromContext(ctx, candidates, aliases); ok {
+		return payload, nil
+	}
+
+	return e.helpBarFromTokenFallback(token), nil
+}
+
 // GetPrompt returns the prompt string for JavaScript evaluation
 func (e *Evaluator) GetPrompt() string {
 	return "js>"
@@ -418,6 +502,229 @@ func extractRequireAliases(input string) map[string]string {
 		aliases[alias] = moduleName
 	}
 	return aliases
+}
+
+func (e *Evaluator) helpBarFromContext(
+	ctx jsparse.CompletionContext,
+	candidates []jsparse.CompletionCandidate,
+	aliases map[string]string,
+) (repl.HelpBarPayload, bool) {
+	switch ctx.Kind {
+	case jsparse.CompletionProperty:
+		base := strings.TrimSpace(ctx.BaseExpr)
+		if base == "" {
+			return repl.HelpBarPayload{}, false
+		}
+
+		// Base object summary when no property token is typed yet.
+		if strings.TrimSpace(ctx.PartialText) == "" {
+			if txt, ok := e.helpBarSignatureFor(base, "", aliases); ok {
+				return makeHelpBarPayload(txt, "signature"), true
+			}
+		}
+
+		exact := findExactCandidate(candidates, ctx.PartialText)
+		if exact != nil {
+			if txt, ok := e.helpBarSignatureFor(base, exact.Label, aliases); ok {
+				return makeHelpBarPayload(txt, "signature"), true
+			}
+			return makeHelpBarPayload(fmt.Sprintf("%s.%s - %s", base, exact.Label, normalizeCandidateDetail(exact.Detail)), "info"), true
+		}
+		if len(candidates) > 0 {
+			c := candidates[0]
+			if txt, ok := e.helpBarSignatureFor(base, c.Label, aliases); ok {
+				return makeHelpBarPayload(txt, "signature"), true
+			}
+			return makeHelpBarPayload(fmt.Sprintf("%s.%s - %s", base, c.Label, normalizeCandidateDetail(c.Detail)), "info"), true
+		}
+	case jsparse.CompletionIdentifier:
+		exact := findExactCandidate(candidates, ctx.PartialText)
+		if exact != nil {
+			if txt, ok := e.helpBarSignatureFor(exact.Label, "", nil); ok {
+				return makeHelpBarPayload(txt, "signature"), true
+			}
+			if txt, ok := e.runtimeHelpForIdentifier(exact.Label); ok {
+				return makeHelpBarPayload(txt, "runtime"), true
+			}
+			return makeHelpBarPayload(fmt.Sprintf("%s - %s", exact.Label, normalizeCandidateDetail(exact.Detail)), "info"), true
+		}
+		if len(candidates) > 0 {
+			c := candidates[0]
+			if txt, ok := e.helpBarSignatureFor(c.Label, "", nil); ok {
+				return makeHelpBarPayload(txt, "signature"), true
+			}
+			if txt, ok := e.runtimeHelpForIdentifier(c.Label); ok {
+				return makeHelpBarPayload(txt, "runtime"), true
+			}
+			return makeHelpBarPayload(fmt.Sprintf("%s - %s", c.Label, normalizeCandidateDetail(c.Detail)), "info"), true
+		}
+	case jsparse.CompletionNone, jsparse.CompletionArgument:
+		return repl.HelpBarPayload{}, false
+	}
+
+	return repl.HelpBarPayload{}, false
+}
+
+func (e *Evaluator) helpBarFromTokenFallback(token string) repl.HelpBarPayload {
+	if token == "" {
+		return repl.HelpBarPayload{Show: false}
+	}
+	// Keep fallback token-only: no arbitrary expression evaluation.
+	token = strings.Trim(token, ".")
+	if token == "" {
+		return repl.HelpBarPayload{Show: false}
+	}
+
+	if txt, ok := helpBarSymbolSignatures[token]; ok {
+		return makeHelpBarPayload(txt, "signature")
+	}
+	if txt, ok := e.runtimeHelpForIdentifier(token); ok {
+		return makeHelpBarPayload(txt, "runtime")
+	}
+	return repl.HelpBarPayload{Show: false}
+}
+
+func (e *Evaluator) helpBarSignatureFor(base, property string, aliases map[string]string) (string, bool) {
+	candidates := make([]string, 0, 4)
+
+	if property == "" {
+		if aliases != nil {
+			if moduleName, ok := aliases[base]; ok {
+				candidates = append(candidates, moduleName)
+			}
+		}
+		candidates = append(candidates, base)
+	} else {
+		if aliases != nil {
+			if moduleName, ok := aliases[base]; ok {
+				candidates = append(candidates, moduleName+"."+property)
+			}
+		}
+		candidates = append(candidates, base+"."+property)
+	}
+
+	for _, key := range candidates {
+		if txt, ok := helpBarSymbolSignatures[key]; ok {
+			return txt, true
+		}
+	}
+
+	return "", false
+}
+
+func (e *Evaluator) runtimeHelpForIdentifier(name string) (string, bool) {
+	if name == "" || strings.Contains(name, ".") {
+		return "", false
+	}
+
+	v := e.runtime.Get(name)
+	if v == nil || goja.IsUndefined(v) || goja.IsNull(v) {
+		return "", false
+	}
+
+	if _, ok := goja.AssertFunction(v); ok {
+		obj := v.ToObject(e.runtime)
+		displayName := name
+		if n := obj.Get("name"); n != nil && !goja.IsUndefined(n) {
+			if s := strings.TrimSpace(n.String()); s != "" {
+				displayName = s
+			}
+		}
+		if l := obj.Get("length"); l != nil && !goja.IsUndefined(l) {
+			switch vv := l.Export().(type) {
+			case int64:
+				return fmt.Sprintf("%s(...): function (arity %d)", displayName, vv), true
+			case int32:
+				return fmt.Sprintf("%s(...): function (arity %d)", displayName, vv), true
+			case int:
+				return fmt.Sprintf("%s(...): function (arity %d)", displayName, vv), true
+			case float64:
+				return fmt.Sprintf("%s(...): function (arity %d)", displayName, int64(vv)), true
+			}
+		}
+		return fmt.Sprintf("%s(...): function", displayName), true
+	}
+
+	obj := v.ToObject(e.runtime)
+	className := strings.ToLower(strings.TrimSpace(obj.ClassName()))
+	if className == "" {
+		className = "value"
+	}
+	return fmt.Sprintf("%s: %s", name, className), true
+}
+
+func tokenAtCursor(input string, cursor int) (string, int, int) {
+	cursor = clampCursor(cursor, len(input))
+	start := cursor
+	for start > 0 && isTokenByte(input[start-1]) {
+		start--
+	}
+	end := cursor
+	for end < len(input) && isTokenByte(input[end]) {
+		end++
+	}
+	return input[start:end], start, end
+}
+
+func isTokenByte(b byte) bool {
+	return (b >= 'a' && b <= 'z') ||
+		(b >= 'A' && b <= 'Z') ||
+		(b >= '0' && b <= '9') ||
+		b == '_' ||
+		b == '$' ||
+		b == '.'
+}
+
+func dedupeAndSortCandidates(candidates []jsparse.CompletionCandidate) []jsparse.CompletionCandidate {
+	if len(candidates) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(candidates))
+	out := make([]jsparse.CompletionCandidate, 0, len(candidates))
+	for _, c := range candidates {
+		if strings.TrimSpace(c.Label) == "" {
+			continue
+		}
+		if _, ok := seen[c.Label]; ok {
+			continue
+		}
+		seen[c.Label] = struct{}{}
+		out = append(out, c)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return out[i].Label < out[j].Label
+	})
+	return out
+}
+
+func findExactCandidate(candidates []jsparse.CompletionCandidate, partial string) *jsparse.CompletionCandidate {
+	partial = strings.TrimSpace(partial)
+	if partial == "" {
+		return nil
+	}
+	for i := range candidates {
+		if strings.EqualFold(candidates[i].Label, partial) {
+			return &candidates[i]
+		}
+	}
+	return nil
+}
+
+func normalizeCandidateDetail(detail string) string {
+	detail = strings.TrimSpace(detail)
+	if detail == "" {
+		return "symbol"
+	}
+	return detail
+}
+
+func makeHelpBarPayload(text, kind string) repl.HelpBarPayload {
+	return repl.HelpBarPayload{
+		Show:     true,
+		Text:     text,
+		Kind:     kind,
+		Severity: "info",
+	}
 }
 
 // IsValidCode checks if the given code is syntactically valid JavaScript

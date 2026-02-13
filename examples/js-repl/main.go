@@ -51,12 +51,13 @@ func main() {
 	}
 
 	config := repl.DefaultConfig()
-	config.Title = "JavaScript REPL (jsparse autocomplete)"
-	config.Placeholder = "Type console.lo or const fs = require('fs'); fs.re"
+	config.Title = "JavaScript REPL (jsparse autocomplete + help bar)"
+	config.Placeholder = "Type console.lo or const fs = require('fs'); fs.re and watch inline help"
 	config.Autocomplete.Enabled = true
 	config.Autocomplete.FocusToggleKey = "ctrl+t"
 	config.Autocomplete.TriggerKeys = []string{"tab"}
 	config.Autocomplete.AcceptKeys = []string{"enter", "tab"}
+	config.HelpBar.Enabled = true
 
 	bus, err := eventbus.NewInMemoryBus()
 	if err != nil {

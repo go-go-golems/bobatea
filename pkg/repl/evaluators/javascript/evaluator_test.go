@@ -2,6 +2,7 @@ package javascript
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"testing"
 
@@ -432,6 +433,77 @@ func TestEvaluator_CompleteInput_ConcurrentRequests(t *testing.T) {
 		}
 	}
 	wg.Wait()
+}
+
+func TestEvaluator_GetHelpBar(t *testing.T) {
+	evaluator, err := NewWithDefaults()
+	require.NoError(t, err)
+
+	ctx := context.Background()
+
+	t.Run("exact property symbol uses signature catalog", func(t *testing.T) {
+		payload, helpErr := evaluator.GetHelpBar(ctx, repl.HelpBarRequest{
+			Input:      "console.log",
+			CursorByte: len("console.log"),
+			Reason:     repl.HelpBarReasonDebounce,
+		})
+		require.NoError(t, helpErr)
+		require.True(t, payload.Show)
+		assert.Equal(t, "signature", payload.Kind)
+		assert.Contains(t, payload.Text, "console.log")
+	})
+
+	t.Run("prefix identifier uses best candidate", func(t *testing.T) {
+		payload, helpErr := evaluator.GetHelpBar(ctx, repl.HelpBarRequest{
+			Input:      "cons",
+			CursorByte: len("cons"),
+			Reason:     repl.HelpBarReasonDebounce,
+		})
+		require.NoError(t, helpErr)
+		require.True(t, payload.Show)
+		assert.Equal(t, "signature", payload.Kind)
+		assert.Contains(t, payload.Text, "console")
+	})
+
+	t.Run("module alias property uses require alias mapping", func(t *testing.T) {
+		input := "const fs = require(\"fs\");\nfs.re"
+		payload, helpErr := evaluator.GetHelpBar(ctx, repl.HelpBarRequest{
+			Input:      input,
+			CursorByte: len(input),
+			Reason:     repl.HelpBarReasonDebounce,
+		})
+		require.NoError(t, helpErr)
+		require.True(t, payload.Show)
+		assert.Equal(t, "signature", payload.Kind)
+		assert.Contains(t, payload.Text, "fs.")
+	})
+
+	t.Run("runtime fallback exposes name and arity without evaluation", func(t *testing.T) {
+		_, evalErr := evaluator.Evaluate(ctx, "function localFn(a, b, c) { return a + b + c; }")
+		require.NoError(t, evalErr)
+
+		payload, helpErr := evaluator.GetHelpBar(ctx, repl.HelpBarRequest{
+			Input:      "localFn",
+			CursorByte: len("localFn"),
+			Reason:     repl.HelpBarReasonManual,
+		})
+		require.NoError(t, helpErr)
+		require.True(t, payload.Show)
+		assert.Equal(t, "runtime", payload.Kind)
+		assert.Contains(t, payload.Text, "localFn")
+		assert.Contains(t, payload.Text, "arity")
+	})
+
+	t.Run("debounce keeps quiet for one-character identifier", func(t *testing.T) {
+		payload, helpErr := evaluator.GetHelpBar(ctx, repl.HelpBarRequest{
+			Input:      "c",
+			CursorByte: len("c"),
+			Reason:     repl.HelpBarReasonDebounce,
+		})
+		require.NoError(t, helpErr)
+		assert.False(t, payload.Show)
+		assert.True(t, strings.TrimSpace(payload.Text) == "")
+	})
 }
 
 func hasSuggestion(result repl.CompletionResult, label string) bool {
