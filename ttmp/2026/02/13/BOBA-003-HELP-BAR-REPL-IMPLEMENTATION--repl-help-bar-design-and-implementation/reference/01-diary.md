@@ -17,6 +17,10 @@ RelatedFiles:
       Note: Added behavior tests for debounce
     - Path: pkg/repl/help_bar_types.go
       Note: Introduced help bar request/payload/provider contracts
+    - Path: pkg/repl/help_drawer_model_test.go
+      Note: Coverage for dock/pin/flicker behavior
+    - Path: pkg/repl/keymap.go
+      Note: Help drawer pin key binding and help rows
     - Path: pkg/repl/model.go
       Note: Integrated help bar state
     - Path: pkg/repl/repl_test.go
@@ -29,6 +33,7 @@ LastUpdated: 2026-02-13T15:53:00-05:00
 WhatFor: ""
 WhenToUse: ""
 ---
+
 
 
 # Diary
@@ -216,3 +221,121 @@ I also resolved the earlier timeout-test flake by making the fake provider conte
   - `handleHelpBarResult`
   - `renderHelpBar`
   - `normalizeHelpBarConfig`
+
+## Step 3: Help Drawer Docking, Pinning, and Refresh Stability
+
+I implemented the follow-up UX improvements in the same ticket to address real behavior seen while typing: right-edge cutoff, flicker during refresh, and lack of pinning. The core of this step was to make help drawer placement explicit and configurable while keeping rendering stable once content is already shown.
+
+This step also added keybinding configurability for pinning and expanded tests so the new behavior is regression-protected. I validated with focused REPL package tests and lint first, then with full pre-commit checks at commit time.
+
+### Prompt Context
+
+**User prompt (verbatim):** "the drawer seems cutoff on the right. Allow it to be docked in different locations, per default above the repl.
+
+I also see it flicker with \"Help Drawer\" or something like that as I type. Allow me to pin it as well, so it doesn't refresh more as I type,in case I like the documentation I found. Make those keyboard shortcuts configurable.
+
+Add tasks to BOBA-003 and then work them off, same way as before. Keep the diary as usual."
+
+**Assistant interpretation:** Add configurable docking and pinning to help drawer, stop refresh flicker, make shortcuts configurable, track all of it in BOBA-003 tasks and diary.
+
+**Inferred user intent:** Make help drawer behavior production-grade and comfortable for iterative typing workflows.
+
+**Commit (code):** 2fbf225 — "repl: add dockable pinned help drawer behavior"
+
+### What I did
+
+- Added help drawer docking config and defaults in `pkg/repl/config.go`:
+  - `HelpDrawerDock` enum-like type (`above-repl`, `right`, `left`, `bottom`)
+  - `HelpDrawerConfig.Dock` defaulting to `above-repl`
+  - `HelpDrawerConfig.PinShortcuts` defaulting to `ctrl+g`
+  - `HelpDrawerConfig.Margin` for edge spacing
+- Extended key bindings in `pkg/repl/keymap.go`:
+  - new `HelpDrawerPin` binding
+  - pin binding included in short/full help
+  - disable behavior when no pin shortcuts are configured
+- Updated model behavior in `pkg/repl/model.go`:
+  - new state: `helpDrawerPinned`, `helpDrawerDock`, `helpDrawerMargin`
+  - pin toggle in shortcut handler
+  - skip typing-triggered debounced refresh when pinned
+  - moved `helpDrawerLoading=true` to request execution path
+  - switched drawer layout to dock-aware placement with clamping
+  - used timeline/input context so default `above-repl` anchors relative to REPL row
+  - preserved last resolved content while loading to avoid title/body flicker
+  - footer now renders configured key labels dynamically (`toggle`, `refresh`, `pin`)
+  - normalized new config values including dock validation/fallback
+- Added/extended tests in `pkg/repl/help_drawer_model_test.go`:
+  - pin blocks typing refresh
+  - default dock above REPL behavior
+  - right-dock no-cutoff clamping
+  - no-placeholder flicker while refreshing with existing doc
+  - configurable pin shortcut wiring
+- Added task tracking in `tasks.md` and checked off tasks 22-27 after the code commit.
+
+### Why
+
+- The old fixed placement could overflow visually and did not match desired UX.
+- Refresh flicker came from temporarily reverting to generic placeholder strings during loading.
+- Pinning is needed for stable reading while still typing nearby context.
+
+### What worked
+
+- Focused validation:
+  - `go test ./pkg/repl/... -count=1`
+  - `golangci-lint run -v --max-same-issues=100 ./pkg/repl/...`
+- Pre-commit full checks also passed (repo-wide test/lint/gosec) before commit was accepted.
+- New tests caught one layout assertion issue and guided the fix.
+
+### What didn't work
+
+- Initial compile attempt failed due incorrect assumption about key API:
+  - error: `assignment mismatch: 2 variables but b.Help returns 1 value`
+  - fix: use `b.Help().Key` (current bubbles `key.Binding.Help()` returns `key.Help` struct).
+- One new test initially failed:
+  - `TestHelpDrawerDefaultDockAboveRepl` assertion expected above-input placement in a cramped layout where clamping to top is valid.
+  - fix: made test scenario tall enough to assert intended above-REPL placement semantics.
+
+### What I learned
+
+- For placement tests, layout must leave enough room for the desired policy; otherwise clamping behavior is correct and should be asserted separately.
+- Preserving prior resolved content is a simple and effective anti-flicker pattern for async refresh UIs.
+
+### What was tricky to build
+
+- The main tricky point was combining policy and safety:
+  - policy: dock where requested (`above-repl`, `right`, `left`, `bottom`)
+  - safety: always clamp to terminal bounds
+- This creates edge cases where a policy cannot be fully honored (small terminals), so tests must distinguish policy-intent from clamped fallback.
+
+### What warrants a second pair of eyes
+
+- `computeHelpDrawerOverlayLayout` for very small terminal sizes and extreme percent/margin values.
+- Interaction between `helpDrawerPinned` and explicit manual refresh (`ctrl+r`), to confirm expected UX for all evaluators.
+
+### What should be done in the future
+
+- Add example-level knobs (CLI flags/env/config) to demonstrate dock, margin, and pin shortcut customization in `examples/repl/autocomplete-generic`.
+- Consider style-level options (borderless/minimal drawer) in config for easier visual customization.
+
+### Code review instructions
+
+- Start with:
+  - `pkg/repl/config.go`
+  - `pkg/repl/keymap.go`
+  - `pkg/repl/model.go`
+  - `pkg/repl/help_drawer_model_test.go`
+- Validate with:
+  - `go test ./pkg/repl/... -count=1`
+  - `golangci-lint run -v --max-same-issues=100 ./pkg/repl/...`
+
+### Technical details
+
+- Added config symbols:
+  - `HelpDrawerDock`
+  - `HelpDrawerDockAboveRepl`
+  - `HelpDrawerDockRight`
+  - `HelpDrawerDockLeft`
+  - `HelpDrawerDockBottom`
+- Added normalization helper:
+  - `normalizeHelpDrawerDock`
+- Added key extraction helper:
+  - `bindingPrimaryKey`

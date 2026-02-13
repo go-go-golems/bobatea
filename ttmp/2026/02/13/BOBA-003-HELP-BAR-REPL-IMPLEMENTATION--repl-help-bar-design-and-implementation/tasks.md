@@ -40,3 +40,10 @@
 - [x] Maintain detailed diary entries for each implementation step
 - [x] Update changelog with commit hashes and related file links
 - [x] Check tasks as each phase/task is completed
+- [x] Add help drawer docking config with multiple locations (default above-repl)
+- [x] Fix help drawer right-edge cutoff and clamp layout correctly
+- [x] Add help drawer pin state to freeze typing-triggered refresh
+- [x] Add configurable pin shortcut in HelpDrawerConfig and keymap
+- [x] Prevent loading-title flicker by preserving last resolved drawer content while refreshing
+- [x] Add/extend tests for docking, pin behavior, shortcut wiring, and anti-flicker rendering
+- [x] Run validation (go test ./pkg/repl/... and golangci-lint) and update BOBA-003 diary/changelog
