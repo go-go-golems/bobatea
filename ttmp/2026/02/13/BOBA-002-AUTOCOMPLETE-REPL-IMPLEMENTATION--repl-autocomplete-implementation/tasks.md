@@ -20,10 +20,10 @@
 
 ### Phase 2: Minimal Generic Example (No JS)
 
-- [ ] Add a minimal non-JS example program using a tiny in-memory generic completer (for example static symbols + prefix filtering)
-- [ ] Ensure example exercises both debounce trigger and explicit shortcut trigger paths
-- [ ] Document exact run command(s) in a playbook section inside this ticket
-- [ ] Add success criteria for the example: popup appears, navigation works, accept inserts suggestion at correct cursor position
+- [x] Add a minimal non-JS example program using a tiny in-memory generic completer (for example static symbols + prefix filtering)
+- [x] Ensure example exercises both debounce trigger and explicit shortcut trigger paths
+- [x] Document exact run command(s) in a playbook section inside this ticket
+- [x] Add success criteria for the example: popup appears, navigation works, accept inserts suggestion at correct cursor position
 
 ### Phase 3: Manual Validation in tmux (Generic Example)
 

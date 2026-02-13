@@ -28,6 +28,10 @@ RelatedFiles:
         Task 8 default config assertions
     - Path: pkg/repl/autocomplete_model_test.go
       Note: Task 9 unit tests for debounce/stale/shortcut/key-routing/apply
+    - Path: examples/repl/autocomplete-generic/main.go
+      Note: Phase 2 minimal non-JS autocomplete example
+    - Path: ttmp/2026/02/13/BOBA-002-AUTOCOMPLETE-REPL-IMPLEMENTATION--repl-autocomplete-implementation/reference/02-generic-example-playbook.md
+      Note: Phase 2 runbook and success criteria
     - Path: pkg/repl/styles.go
       Note: Step 7 completion popup lipgloss styling
     - Path: ttmp/2026/02/13/BOBA-002-AUTOCOMPLETE-REPL-IMPLEMENTATION--repl-autocomplete-implementation/design-doc/01-autocomplete-implementation-guide.md
@@ -36,7 +40,7 @@ RelatedFiles:
       Note: Checklist state tracked per implementation task
 ExternalSources: []
 Summary: Implementation diary for BOBA-002 task-by-task execution with tests, commits, and validation artifacts
-LastUpdated: 2026-02-13T11:42:00-05:00
+LastUpdated: 2026-02-13T11:49:00-05:00
 WhatFor: Record task-by-task implementation progress, including tests, commits, failures, and validation instructions.
 WhenToUse: Use while implementing, reviewing, or continuing BOBA-002 work.
 ---
@@ -797,4 +801,95 @@ The test intentionally uses a command-draining helper to execute nested Bubble T
 ```go
 _, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
 drainModelCmds(m, cmd)
+```
+
+## Step 10: Implement Phase 2 Minimal Generic Example + Playbook (Tasks 11-14)
+
+This step moved BOBA-002 into Phase 2 by adding a dedicated non-JS autocomplete example and documenting exactly how to run and validate it. The example evaluator now implements `InputCompleter` directly and demonstrates both debounce and explicit shortcut-trigger behavior.
+
+In parallel, a ticket playbook was added with concrete run commands and success criteria, then Tasks 11-14 were checked.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 1)
+
+**Assistant interpretation:** Continue sequential execution after test tasks by implementing the minimal generic example and documenting its run/validation workflow.
+
+**Inferred user intent:** Ensure there is a practical, runnable non-JS baseline before tmux screenshot validation and JS integration.
+
+**Commit (code):** `d568e59` — "feat(repl): add minimal generic autocomplete demo"
+
+### What I did
+
+- Added `examples/repl/autocomplete-generic/main.go`:
+- Implemented a minimal evaluator + completer with in-memory symbol suggestions.
+- Completer behavior:
+- debounce requests show suggestions at token length >= 2
+- shortcut (`tab`) can force immediate suggestion display
+- Configured REPL with explicit autocomplete bindings and `ctrl+t` focus toggle.
+- Added ticket runbook doc:
+- `ttmp/.../reference/02-generic-example-playbook.md`
+- Included:
+- exact run command (`go run ./examples/repl/autocomplete-generic`)
+- explicit key bindings
+- success criteria checklist (popup, navigation, accept, insertion, focus toggle)
+- Validation commands run:
+- `go test ./examples/repl/autocomplete-generic ./pkg/repl/...`
+- `golangci-lint run -v --max-same-issues=100`
+- Checked tasks:
+- `docmgr task check --ticket BOBA-002-AUTOCOMPLETE-REPL-IMPLEMENTATION --id 11,12,13,14`
+
+### Why
+
+- Tasks 11-14 require a concrete non-JS runnable path and explicit operator guidance before manual tmux capture.
+- This lowers friction for upcoming manual validation and isolates autocomplete behavior from JS parser complexity.
+
+### What worked
+
+- Example compiles and runs.
+- Lint and tests pass after adding the new example.
+- Playbook captures all required run and pass/fail criteria in one place.
+
+### What didn't work
+
+- Initial lint run failed with:
+- missing exhaustive switch case (`CompletionReasonManual`)
+- `nonamedreturns` violation in `currentToken(...)`
+- Fix: added explicit `CompletionReasonManual` branch and removed named return values.
+
+### What I learned
+
+- Keeping the completer token parser deliberately small makes it easier to reason about trigger ownership and replace-range behavior in demos.
+
+### What was tricky to build
+
+- The tricky part was balancing demo simplicity with real behavior coverage: it needed to demonstrate both debounce and shortcut triggers without introducing domain-specific parsing complexity.
+
+### What warrants a second pair of eyes
+
+- Confirm symbol set and token parsing heuristics in the generic demo are sufficient for operator validation, or if additional edge cases should be included pre-tmux.
+
+### What should be done in the future
+
+- Proceed to Phase 3 manual tmux run, checklist execution, screenshots, and changelog validation notes.
+
+### Code review instructions
+
+- Start at: `examples/repl/autocomplete-generic/main.go`
+- Then: `ttmp/2026/02/13/BOBA-002-AUTOCOMPLETE-REPL-IMPLEMENTATION--repl-autocomplete-implementation/reference/02-generic-example-playbook.md`
+- Validate with:
+- `go test ./examples/repl/autocomplete-generic ./pkg/repl/...`
+- `go run ./examples/repl/autocomplete-generic`
+
+### Technical details
+
+```go
+switch req.Reason {
+case repl.CompletionReasonDebounce:
+    show = len(token) >= 2
+case repl.CompletionReasonShortcut:
+    show = true
+case repl.CompletionReasonManual:
+    show = len(token) > 0
+}
 ```
