@@ -6,6 +6,7 @@ type Config struct {
 	Prompt               string
 	Placeholder          string
 	Width                int
+	FocusToggleKey       string
 	StartMultiline       bool
 	EnableExternalEditor bool
 	EnableHistory        bool
@@ -19,6 +20,7 @@ func DefaultConfig() Config {
 		Prompt:               "> ",
 		Placeholder:          "Enter code or /command",
 		Width:                80,
+		FocusToggleKey:       "",
 		StartMultiline:       false,
 		EnableExternalEditor: false,
 		EnableHistory:        true,

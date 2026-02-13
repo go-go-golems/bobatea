@@ -361,7 +361,7 @@ The step deliberately keeps visual styling simple while establishing correct inp
 
 **Inferred user intent:** Move from backend request plumbing to user-visible autocomplete interaction in the REPL input loop.
 
-**Commit (code):** pending
+**Commit (code):** `84810db` — "feat(repl): add completion popup navigation and apply flow (task 6)"
 
 ### What I did
 
@@ -438,4 +438,93 @@ The step deliberately keeps visual styling simple while establishing correct inp
 newInput := input[:from] + selected.Value + input[to:]
 m.textInput.SetValue(newInput)
 m.textInput.SetCursor(from + len(selected.Value))
+```
+
+## Step 6: Resolve Tab-vs-Focus Conflict with Configurable Focus Toggle Key (Task 7)
+
+This step decoupled focus switching from hardcoded `tab` and moved it to a configurable key path. The model now computes an explicit focus-toggle key and uses it in both input and timeline modes.
+
+The default behavior is now context-aware: when autocomplete is available, focus toggle defaults to `ctrl+t`; otherwise it preserves `tab` for existing non-autocomplete flows.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 1)
+
+**Assistant interpretation:** Complete Task 7 by resolving key conflicts and making focus switching key-configurable.
+
+**Inferred user intent:** Prevent `tab` ambiguity so completion shortcuts and focus navigation can coexist predictably.
+
+**Commit (code):** pending
+
+### What I did
+
+- Extended `pkg/repl/config.go`:
+- Added `FocusToggleKey string` in `Config`.
+- Updated default config to carry an explicit field (empty means auto-select behavior).
+- Updated `pkg/repl/model.go`:
+- Added `focusToggleKey` model field.
+- In `NewModel`, compute effective key:
+- if `Config.FocusToggleKey` set, use it;
+- else if completer exists, default to `ctrl+t`;
+- else default to `tab`.
+- Replaced hardcoded `"tab"` focus-switch logic in both:
+- `updateInput`
+- `updateTimeline`
+- Updated help line in `View()` to render the active focus key dynamically.
+- Ran validation:
+- `gofmt -w pkg/repl/model.go pkg/repl/config.go`
+- `go test ./pkg/repl/...`
+
+### Why
+
+- Task 7 explicitly requires conflict resolution between `tab` completion and focus switching.
+- Config-driven key routing is required for portability and user preference control.
+
+### What worked
+
+- Focus key routing is now centralized and explicit.
+- Existing tests pass after keymap changes.
+- Help text now reflects actual runtime key binding.
+
+### What didn't work
+
+- N/A in this step.
+
+### What I learned
+
+- Delaying full config expansion until Task 8 still allows a clean Task 7 resolution by introducing one targeted field now.
+
+### What was tricky to build
+
+- The subtle part was default behavior compatibility. A single static default (`ctrl+t`) would have changed non-autocomplete UX unnecessarily; computing the default based on completer availability preserves old behavior where possible.
+
+### What warrants a second pair of eyes
+
+- Verify the chosen default policy (`ctrl+t` when completer exists, else `tab`) is desired long-term.
+
+### What should be done in the future
+
+- Complete Task 8 by moving remaining autocomplete constants and key maps into dedicated `AutocompleteConfig`.
+
+### Code review instructions
+
+- Start at:
+- `pkg/repl/config.go`
+- `pkg/repl/model.go`
+- Focus symbols:
+- `FocusToggleKey`
+- `focusToggleKey` initialization in `NewModel`
+- focus switch branches in `updateInput`/`updateTimeline`
+- Validate with: `go test ./pkg/repl/...`
+
+### Technical details
+
+```go
+if focusToggleKey == "" {
+    if completer != nil {
+        focusToggleKey = "ctrl+t"
+    } else {
+        focusToggleKey = "tab"
+    }
+}
 ```

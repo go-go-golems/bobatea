@@ -37,6 +37,8 @@ type Model struct {
 	reg   *timeline.Registry
 	sh    *timeline.Shell
 	focus string // "input" or "timeline"
+	// configurable key for switching input/timeline focus
+	focusToggleKey string
 
 	// bus publisher
 	pub     message.Publisher
@@ -88,21 +90,30 @@ func NewModel(evaluator Evaluator, config Config, pub message.Publisher) *Model 
 	if c, ok := evaluator.(InputCompleter); ok {
 		completer = c
 	}
+	focusToggleKey := config.FocusToggleKey
+	if focusToggleKey == "" {
+		if completer != nil {
+			focusToggleKey = "ctrl+t"
+		} else {
+			focusToggleKey = "tab"
+		}
+	}
 
 	return &Model{
-		evaluator: evaluator,
-		config:    config,
-		styles:    DefaultStyles(),
-		history:   NewHistory(config.MaxHistorySize),
-		textInput: ti,
-		multiline: config.StartMultiline,
-		lines:     []string{},
-		width:     config.Width,
-		reg:       reg,
-		sh:        sh,
-		focus:     "input",
-		pub:       pub,
-		completer: completer,
+		evaluator:      evaluator,
+		config:         config,
+		styles:         DefaultStyles(),
+		history:        NewHistory(config.MaxHistorySize),
+		textInput:      ti,
+		multiline:      config.StartMultiline,
+		lines:          []string{},
+		width:          config.Width,
+		reg:            reg,
+		sh:             sh,
+		focus:          "input",
+		focusToggleKey: focusToggleKey,
+		pub:            pub,
+		completer:      completer,
 
 		// These become configurable in a later task.
 		completionDebounce:   120 * time.Millisecond,
@@ -206,7 +217,7 @@ func (m *Model) updateInput(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch k.String() {
-	case "tab":
+	case m.focusToggleKey:
 		m.focus = "timeline"
 		m.textInput.Blur()
 		m.sh.SetSelectionVisible(true)
@@ -243,7 +254,7 @@ func (m *Model) updateInput(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m *Model) updateTimeline(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch k.String() {
-	case "tab":
+	case m.focusToggleKey:
 		m.focus = "input"
 		m.textInput.Focus()
 		m.sh.SetSelectionVisible(false)
@@ -294,7 +305,9 @@ func (m *Model) View() string {
 		b.WriteString("\n")
 	}
 	// help
-	help := "TAB: switch focus | Enter: submit | Up/Down: history/selection | c: copy code | y: copy text | Ctrl+C: quit"
+	help := fmt.Sprintf("%s: switch focus | Enter: submit | Up/Down: history/selection | c: copy code | y: copy text | Ctrl+C: quit",
+		strings.ToUpper(m.focusToggleKey),
+	)
 	b.WriteString(m.styles.HelpText.Render(help))
 	b.WriteString("\n")
 	return b.String()
