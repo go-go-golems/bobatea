@@ -51,6 +51,7 @@ type Model struct {
 	completionReqSeq      uint64
 	completionDebounce    time.Duration
 	completionReqTimeout  time.Duration
+	completionTriggerKeys map[string]struct{}
 	completionLastResult  CompletionResult
 	completionLastError   error
 	completionLastReqID   uint64
@@ -101,6 +102,9 @@ func NewModel(evaluator Evaluator, config Config, pub message.Publisher) *Model 
 		// These become configurable in a later task.
 		completionDebounce:   120 * time.Millisecond,
 		completionReqTimeout: 400 * time.Millisecond,
+		completionTriggerKeys: map[string]struct{}{
+			"tab": {},
+		},
 	}
 }
 
@@ -186,6 +190,11 @@ func (m *Model) updateInput(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case tea.KeyCtrlC:
 		return m, tea.Quit
 	}
+
+	if cmd := m.triggerCompletionFromShortcut(k.String()); cmd != nil {
+		return m, cmd
+	}
+
 	switch k.String() {
 	case "tab":
 		m.focus = "timeline"
@@ -375,6 +384,27 @@ func (m *Model) handleDebouncedCompletion(msg completionDebounceMsg) tea.Cmd {
 		CursorByte: m.textInput.Position(),
 		Reason:     CompletionReasonDebounce,
 		RequestID:  msg.RequestID,
+	}
+	m.completionLastReqID = req.RequestID
+	m.completionLastReqKind = req.Reason
+	return m.completionCmd(req)
+}
+
+func (m *Model) triggerCompletionFromShortcut(key string) tea.Cmd {
+	if m.completer == nil {
+		return nil
+	}
+	if _, ok := m.completionTriggerKeys[key]; !ok {
+		return nil
+	}
+
+	m.completionReqSeq++
+	req := CompletionRequest{
+		Input:      m.textInput.Value(),
+		CursorByte: m.textInput.Position(),
+		Reason:     CompletionReasonShortcut,
+		Shortcut:   key,
+		RequestID:  m.completionReqSeq,
 	}
 	m.completionLastReqID = req.RequestID
 	m.completionLastReqKind = req.Reason

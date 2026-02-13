@@ -192,7 +192,7 @@ The goal of this step is to establish correct asynchronous behavior before addin
 
 **Inferred user intent:** Build robust foundational behavior first so later shortcut and popup work is deterministic and race-safe.
 
-**Commit (code):** pending
+**Commit (code):** `940d555` — "feat(repl): add debounced completion scheduling (task 4)"
 
 ### What I did
 
@@ -264,5 +264,85 @@ The goal of this step is to establish correct asynchronous behavior before addin
 ```go
 if msg.RequestID != m.completionReqSeq {
     return nil // stale result dropped
+}
+```
+
+## Step 4: Add Explicit Shortcut Trigger Path (Task 5)
+
+This step added an immediate shortcut-triggered completion request path in `repl.Model`. It does not add trigger heuristics; it only maps configured key presses to direct completion requests.
+
+At this stage, the shortcut key set is model-internal (`tab` default) and will be moved into user-facing config in Task 8.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 1)
+
+**Assistant interpretation:** Implement Task 5 by adding a direct shortcut-trigger path for completion requests.
+
+**Inferred user intent:** Ensure users can force completion on demand (for example via `Tab`) even when debounce cadence is not enough.
+
+**Commit (code):** pending
+
+### What I did
+
+- Extended `pkg/repl/model.go` with shortcut trigger key storage:
+- `completionTriggerKeys map[string]struct{}`
+- Initialized shortcut defaults in `NewModel` (currently `tab`).
+- Added shortcut handler:
+- `triggerCompletionFromShortcut(key string) tea.Cmd`
+- Wired shortcut handler into `updateInput` before the normal key switch.
+- Shortcut requests now send:
+- `Reason: CompletionReasonShortcut`
+- `Shortcut: <pressed key>`
+- new request ID via `completionReqSeq`.
+- Ran validation:
+- `gofmt -w pkg/repl/model.go`
+- `go test ./pkg/repl/...`
+
+### Why
+
+- Task 5 requires explicit shortcut-trigger requests with no REPL trigger detection logic.
+- This path is needed for deterministic user-invoked completion.
+
+### What worked
+
+- Shortcut requests are generated immediately with the correct reason metadata.
+- Existing package tests still pass.
+
+### What didn't work
+
+- N/A in this step.
+
+### What I learned
+
+- Hooking the shortcut branch ahead of the main key switch is the cleanest way to avoid mixing shortcut semantics with historical focus-switch behavior.
+
+### What was tricky to build
+
+- The tricky part was preserving the Task 5 scope while not over-solving Task 7 yet. The implementation currently defaults `tab` as a trigger key and intentionally defers comprehensive key conflict resolution and config surfacing to Task 7/Task 8.
+
+### What warrants a second pair of eyes
+
+- Confirm whether defaulting `tab` in model internals is acceptable before config migration in Task 8.
+
+### What should be done in the future
+
+- Implement Task 6 popup rendering/application behavior.
+- Implement Task 7 focus-toggle conflict resolution explicitly.
+
+### Code review instructions
+
+- Start at: `pkg/repl/model.go`
+- Focus symbols:
+- `triggerCompletionFromShortcut`
+- early-return branch in `updateInput`
+- Validate with: `go test ./pkg/repl/...`
+
+### Technical details
+
+```go
+req := CompletionRequest{
+    Reason:   CompletionReasonShortcut,
+    Shortcut: key,
 }
 ```

@@ -57,3 +57,14 @@ Task 4 completed: implemented REPL-side debounced completion scheduling and stal
 - /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-002-AUTOCOMPLETE-REPL-IMPLEMENTATION--repl-autocomplete-implementation/reference/01-diary.md — Added Step 3 execution notes
 - /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-002-AUTOCOMPLETE-REPL-IMPLEMENTATION--repl-autocomplete-implementation/tasks.md — Task 4 checked
 
+
+## 2026-02-13
+
+Task 5 completed: added explicit shortcut-trigger completion path in repl.Model (Reason=shortcut, Shortcut metadata) without REPL-side trigger heuristics; validated with gofmt and go test ./pkg/repl/...
+
+### Related Files
+
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/model.go — Added shortcut trigger handling and immediate request dispatch
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-002-AUTOCOMPLETE-REPL-IMPLEMENTATION--repl-autocomplete-implementation/reference/01-diary.md — Added Step 4 execution notes
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-002-AUTOCOMPLETE-REPL-IMPLEMENTATION--repl-autocomplete-implementation/tasks.md — Task 5 checked
+
