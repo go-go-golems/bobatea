@@ -26,6 +26,8 @@ RelatedFiles:
       Note: |-
         Task 8 default-config assertions
         Task 8 default config assertions
+    - Path: pkg/repl/autocomplete_model_test.go
+      Note: Task 9 unit tests for debounce/stale/shortcut/key-routing/apply
     - Path: pkg/repl/styles.go
       Note: Step 7 completion popup lipgloss styling
     - Path: ttmp/2026/02/13/BOBA-002-AUTOCOMPLETE-REPL-IMPLEMENTATION--repl-autocomplete-implementation/design-doc/01-autocomplete-implementation-guide.md
@@ -34,7 +36,7 @@ RelatedFiles:
       Note: Checklist state tracked per implementation task
 ExternalSources: []
 Summary: Implementation diary for BOBA-002 task-by-task execution with tests, commits, and validation artifacts
-LastUpdated: 2026-02-13T11:24:00-05:00
+LastUpdated: 2026-02-13T11:34:00-05:00
 WhatFor: Record task-by-task implementation progress, including tests, commits, failures, and validation instructions.
 WhenToUse: Use while implementing, reviewing, or continuing BOBA-002 work.
 ---
@@ -640,4 +642,80 @@ case key.Matches(v, m.keyMap.ToggleHelp):
     m.help.ShowAll = !m.help.ShowAll
     return m, nil
 }
+```
+
+## Step 8: Add Task 9 Unit Tests for Generic Autocomplete Mechanics
+
+This step implemented Task 9 by adding focused unit tests for the generic REPL autocomplete mechanism. The test suite uses a fake evaluator/completer and directly exercises debounce scheduling behavior, stale-response dropping, shortcut reason tagging, and popup key-routing/apply semantics.
+
+The scope is intentionally model-level and deterministic, so we can validate behavior without tmux/manual interaction.
+
+### Prompt Context
+
+**User prompt (verbatim):** (same as Step 1)
+
+**Assistant interpretation:** Continue task-by-task execution and add automated tests for autocomplete behavior before moving to integration/manual phases.
+
+**Inferred user intent:** Ensure core autocomplete behavior is verifiable and regression-safe at unit level before higher-level examples and tmux validation.
+
+**Commit (code):** `650ea1e` — "test(repl): cover debounce stale and shortcut autocomplete routing"
+
+### What I did
+
+- Added `pkg/repl/autocomplete_model_test.go` with a fake evaluator that implements `InputCompleter`.
+- Added tests:
+- `TestCompletionDebounceCoalescesToLatestRequest`
+- `TestCompletionResultDropsStaleResponse`
+- `TestShortcutTriggerUsesShortcutReason`
+- `TestPopupKeyRoutingConsumesNavigationAndApply`
+- Validated with:
+- `gofmt -w pkg/repl/autocomplete_model_test.go`
+- `go test ./pkg/repl/...`
+- `golangci-lint run -v --max-same-issues=100`
+- Checked task status:
+- `docmgr task check --ticket BOBA-002-AUTOCOMPLETE-REPL-IMPLEMENTATION --id 9`
+
+### Why
+
+- Task 9 explicitly requires unit tests for debounce/stale/shortcut/key routing/apply behavior.
+- This provides guardrails before Task 10 integration-style tests and before example/tmux manual validation phases.
+
+### What worked
+
+- All new tests pass and target the expected behavior edges.
+- REPL package tests remain green.
+- Lint remains clean with the updated `.golangci.yml`.
+
+### What didn't work
+
+- N/A in this step.
+
+### What I learned
+
+- Testing `completionDebounceMsg` and `completionResultMsg` flows directly keeps tests stable and avoids brittle terminal timing assumptions.
+
+### What was tricky to build
+
+- The key subtlety was proving key-routing precedence while popup is visible. The test had to demonstrate that `down` and `enter` are consumed by completion navigation/apply and do not fall through to history/submit behavior.
+
+### What warrants a second pair of eyes
+
+- Confirm these test boundaries match expected UX, especially around popup-visible key precedence and acceptable default trigger/accept keys.
+
+### What should be done in the future
+
+- Implement Task 10 integration-style model test using fake completer and end-to-end update flow.
+
+### Code review instructions
+
+- Start at: `pkg/repl/autocomplete_model_test.go`
+- Validate with:
+- `go test ./pkg/repl/...`
+- `golangci-lint run -v --max-same-issues=100`
+
+### Technical details
+
+```go
+staleCmd := m.handleDebouncedCompletion(msg1)
+assert.Nil(t, staleCmd, "outdated debounce request must be dropped")
 ```
