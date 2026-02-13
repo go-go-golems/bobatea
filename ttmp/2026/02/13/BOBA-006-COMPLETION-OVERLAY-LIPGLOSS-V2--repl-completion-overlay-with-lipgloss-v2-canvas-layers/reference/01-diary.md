@@ -434,7 +434,7 @@ I added `CompletionPageUp` and `CompletionPageDown` bindings and included them i
 
 **Inferred user intent:** Ensure implementation remains idiomatic with existing REPL key/help model.
 
-**Commit (code):** (recorded in the commit created for this step)
+**Commit (code):** `f75f5a1` — "repl: add completion paging key bindings"
 
 ### What I did
 
@@ -489,3 +489,82 @@ I added `CompletionPageUp` and `CompletionPageDown` bindings and included them i
 ### Technical details
 
 - New bindings added with `keymap-mode:"input"` tags so mode-based help toggling remains intact.
+
+## Step 7: Task 3 Implementation — Completion Viewport State and Visibility Helpers
+
+With paging bindings in place, I added the model-level state and helpers needed to support viewport-based rendering. This step still avoids rendering migration; it prepares deterministic state transitions first.
+
+I introduced scroll/visible-row fields and helper methods for selection visibility, page-step computation, and viewport limit derivation. I also reset viewport state when completion opens/closes to avoid stale offsets.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 5)
+
+**Assistant interpretation:** Continue task-by-task implementation in small reviewed slices.
+
+**Inferred user intent:** Build a robust foundation before introducing visual overlay changes.
+
+**Commit (code):** (recorded in the commit created for this step)
+
+### What I did
+
+- Updated `pkg/repl/model.go`:
+  - new state:
+    - `completionScrollTop`
+    - `completionVisibleRows`
+    - `completionPageSize`
+    - `completionMaxWidth`
+    - `completionMaxHeight`
+    - `completionMinWidth`
+    - `completionMargin`
+  - wired config values into `NewModel(...)`
+  - reset viewport state when showing/hiding completion
+  - added helpers:
+    - `completionVisibleLimit()`
+    - `completionPageStep()`
+    - `ensureCompletionSelectionVisible()`
+- Checked off Task 3 in:
+  - `ttmp/.../BOBA-006.../tasks.md`
+- Ran:
+  - `go test ./pkg/repl/... -count=1`
+
+### Why
+
+- Overlay and paging behavior depend on stable internal viewport state.
+- Implementing state/helpers first reduces complexity of subsequent render refactor.
+
+### What worked
+
+- REPL tests still pass.
+- Viewport state now resets correctly around popup lifecycle.
+
+### What didn't work
+
+- N/A for this step.
+
+### What I learned
+
+- Keeping page-step and visible-limit logic centralized simplifies upcoming key handling changes.
+
+### What was tricky to build
+
+- Ensuring helper invariants stay valid when suggestion count is zero and when visibility limits are dynamic.
+
+### What warrants a second pair of eyes
+
+- Whether `completionVisibleRows` should be persisted across frames or recomputed from render geometry each frame (current design expects recomputation during render).
+
+### What should be done in the future
+
+- Next step integrates lipgloss v2 overlay rendering and placement clamping using these new fields.
+
+### Code review instructions
+
+- Review:
+  - `pkg/repl/model.go` (new completion viewport fields + helpers)
+- Re-run:
+  - `go test ./pkg/repl/... -count=1`
+
+### Technical details
+
+- `ensureCompletionSelectionVisible()` clamps both `completionSelection` and `completionScrollTop` against current suggestion length and effective visible limit.

@@ -38,3 +38,14 @@ Task 2 complete: added completion page-up/page-down key bindings and integrated 
 - /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-006-COMPLETION-OVERLAY-LIPGLOSS-V2--repl-completion-overlay-with-lipgloss-v2-canvas-layers/reference/01-diary.md — Added Step 6 diary entry
 - /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-006-COMPLETION-OVERLAY-LIPGLOSS-V2--repl-completion-overlay-with-lipgloss-v2-canvas-layers/tasks.md — Checked off Task 2
 
+
+## 2026-02-13
+
+Task 3 complete: added completion viewport state (scroll top/visible rows/geometry knobs) and selection-visibility helper methods in repl model.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/model.go — Viewport state and helper methods
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-006-COMPLETION-OVERLAY-LIPGLOSS-V2--repl-completion-overlay-with-lipgloss-v2-canvas-layers/reference/01-diary.md — Added Step 7 diary entry
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-006-COMPLETION-OVERLAY-LIPGLOSS-V2--repl-completion-overlay-with-lipgloss-v2-canvas-layers/tasks.md — Checked off Task 3
+

@@ -62,7 +62,14 @@ type Model struct {
 	completionSelection   int
 	completionReplaceFrom int
 	completionReplaceTo   int
+	completionScrollTop   int
+	completionVisibleRows int
 	completionMaxVisible  int
+	completionPageSize    int
+	completionMaxWidth    int
+	completionMaxHeight   int
+	completionMinWidth    int
+	completionMargin      int
 	completionLastResult  CompletionResult
 	completionLastError   error
 	completionLastReqID   uint64
@@ -128,6 +135,11 @@ func NewModel(evaluator Evaluator, config Config, pub message.Publisher) *Model 
 		completionDebounce:   autocompleteCfg.Debounce,
 		completionReqTimeout: autocompleteCfg.RequestTimeout,
 		completionMaxVisible: autocompleteCfg.MaxSuggestions,
+		completionPageSize:   autocompleteCfg.OverlayPageSize,
+		completionMaxWidth:   autocompleteCfg.OverlayMaxWidth,
+		completionMaxHeight:  autocompleteCfg.OverlayMaxHeight,
+		completionMinWidth:   autocompleteCfg.OverlayMinWidth,
+		completionMargin:     autocompleteCfg.OverlayMargin,
 	}
 	ret.updateKeyBindings()
 	return ret
@@ -510,8 +522,11 @@ func (m *Model) handleCompletionResult(msg completionResultMsg) tea.Cmd {
 
 	m.completionSelection = 0
 	m.completionVisible = true
+	m.completionScrollTop = 0
+	m.completionVisibleRows = 0
 	m.completionReplaceFrom = clampInt(msg.Result.ReplaceFrom, 0, len(m.textInput.Value()))
 	m.completionReplaceTo = clampInt(msg.Result.ReplaceTo, m.completionReplaceFrom, len(m.textInput.Value()))
+	m.ensureCompletionSelectionVisible()
 	return nil
 }
 
@@ -570,6 +585,8 @@ func (m *Model) hideCompletionPopup() {
 	m.completionSelection = 0
 	m.completionReplaceFrom = 0
 	m.completionReplaceTo = 0
+	m.completionScrollTop = 0
+	m.completionVisibleRows = 0
 }
 
 func (m *Model) renderCompletionPopup() string {
@@ -605,6 +622,44 @@ func clampInt(v, low, high int) int {
 		return high
 	}
 	return v
+}
+
+func (m *Model) completionVisibleLimit() int {
+	if m.completionVisibleRows > 0 {
+		return max(1, m.completionVisibleRows)
+	}
+	if m.completionMaxVisible > 0 {
+		return m.completionMaxVisible
+	}
+	return 1
+}
+
+func (m *Model) completionPageStep() int {
+	if m.completionPageSize > 0 {
+		return max(1, m.completionPageSize)
+	}
+	return m.completionVisibleLimit()
+}
+
+func (m *Model) ensureCompletionSelectionVisible() {
+	suggestions := m.completionLastResult.Suggestions
+	if len(suggestions) == 0 {
+		m.completionScrollTop = 0
+		return
+	}
+
+	m.completionSelection = clampInt(m.completionSelection, 0, len(suggestions)-1)
+	limit := m.completionVisibleLimit()
+	maxTop := max(0, len(suggestions)-limit)
+	m.completionScrollTop = clampInt(m.completionScrollTop, 0, maxTop)
+	if m.completionSelection < m.completionScrollTop {
+		m.completionScrollTop = m.completionSelection
+	}
+	visibleEnd := m.completionScrollTop + limit - 1
+	if m.completionSelection > visibleEnd {
+		m.completionScrollTop = m.completionSelection - limit + 1
+	}
+	m.completionScrollTop = clampInt(m.completionScrollTop, 0, maxTop)
 }
 
 func (m *Model) updateKeyBindings() { mode_keymap.EnableMode(&m.keyMap, m.focus) }
