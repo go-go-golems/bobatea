@@ -27,3 +27,14 @@ Task 1 complete: added overlay config controls (max/min size, margin, page size)
 - /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-006-COMPLETION-OVERLAY-LIPGLOSS-V2--repl-completion-overlay-with-lipgloss-v2-canvas-layers/reference/01-diary.md — Added Step 5 implementation diary entry
 - /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-006-COMPLETION-OVERLAY-LIPGLOSS-V2--repl-completion-overlay-with-lipgloss-v2-canvas-layers/tasks.md — Checked off Task 1
 
+
+## 2026-02-13
+
+Task 2 complete: added completion page-up/page-down key bindings and integrated them into short/full help groups.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/keymap.go — Added paging bindings and help wiring
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-006-COMPLETION-OVERLAY-LIPGLOSS-V2--repl-completion-overlay-with-lipgloss-v2-canvas-layers/reference/01-diary.md — Added Step 6 diary entry
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-006-COMPLETION-OVERLAY-LIPGLOSS-V2--repl-completion-overlay-with-lipgloss-v2-canvas-layers/tasks.md — Checked off Task 2
+

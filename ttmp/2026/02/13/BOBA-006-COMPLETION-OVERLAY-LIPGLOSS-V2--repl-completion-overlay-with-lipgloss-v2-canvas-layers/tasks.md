@@ -3,7 +3,7 @@
 ## TODO
 
 - [x] Add overlay config controls to `AutocompleteConfig` (max width/height, min width, margin, paging)
-- [ ] Add completion paging key bindings (page up/down) and help integration
+- [x] Add completion paging key bindings (page up/down) and help integration
 - [ ] Add REPL completion viewport state (scroll offset / visible rows) and selection-visibility helpers
 - [ ] Add lipgloss v2 dependency and implement overlay renderer in `Model.View` (non-inline popup)
 - [ ] Implement placement/sizing logic with terminal clamping and above/below fallback

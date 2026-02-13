@@ -351,7 +351,7 @@ This step extends `AutocompleteConfig` with overlay geometry and paging knobs, u
 
 **Inferred user intent:** Run implementation like an auditable, staged delivery rather than a single large patch.
 
-**Commit (code):** (recorded in the commit created for this step)
+**Commit (code):** `681a20c` — "repl: add autocomplete overlay sizing config scaffolding"
 
 ### What I did
 
@@ -419,3 +419,73 @@ This step extends `AutocompleteConfig` with overlay geometry and paging knobs, u
   - `OverlayMinWidth=24`
   - `OverlayMargin=1`
   - `OverlayPageSize=0` (use visible rows)
+
+## Step 6: Task 2 Implementation — Paging Key Bindings and Help Integration
+
+After config scaffolding, I implemented the next narrow slice: key binding surface and help exposure for paging operations. This keeps UI discoverability aligned with bobatea conventions before behavior wiring.
+
+I added `CompletionPageUp` and `CompletionPageDown` bindings and included them in short/full help groups so users can discover paging controls once long lists are enabled.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 5)
+
+**Assistant interpretation:** Proceed task-by-task with small commits and keep ticket bookkeeping in sync.
+
+**Inferred user intent:** Ensure implementation remains idiomatic with existing REPL key/help model.
+
+**Commit (code):** (recorded in the commit created for this step)
+
+### What I did
+
+- Updated `pkg/repl/keymap.go`:
+  - added key bindings:
+    - `CompletionPageUp` -> `pgup`, `ctrl+b`
+    - `CompletionPageDown` -> `pgdown`, `ctrl+f`
+  - added both bindings to `ShortHelp()`
+  - added both bindings to `FullHelp()` completion navigation group
+- Checked off Task 2 in:
+  - `ttmp/.../BOBA-006.../tasks.md`
+- Ran:
+  - `go test ./pkg/repl/... -count=1`
+
+### Why
+
+- Overlay paging behavior should be exposed through the existing help model from the start.
+- Keeping keymap changes separate from behavior changes simplifies review.
+
+### What worked
+
+- REPL package tests remained green.
+- New bindings are now first-class in help output.
+
+### What didn't work
+
+- N/A for this step.
+
+### What I learned
+
+- Existing keymap grouping structure makes it straightforward to add new input-mode actions without changing mode infrastructure.
+
+### What was tricky to build
+
+- No technical blockers; mostly preserving concise help output while adding two more completion controls.
+
+### What warrants a second pair of eyes
+
+- Whether `pgup/pgdown` should stay in `ShortHelp` or move to full-help only.
+
+### What should be done in the future
+
+- Next step wires actual viewport state and selection visibility logic to consume these bindings.
+
+### Code review instructions
+
+- Review:
+  - `pkg/repl/keymap.go`
+- Re-run:
+  - `go test ./pkg/repl/... -count=1`
+
+### Technical details
+
+- New bindings added with `keymap-mode:"input"` tags so mode-based help toggling remains intact.

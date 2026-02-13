@@ -17,11 +17,13 @@ type KeyMap struct {
 	HistoryPrev key.Binding `keymap-mode:"input"`
 	HistoryNext key.Binding `keymap-mode:"input"`
 
-	CompletionTrigger key.Binding `keymap-mode:"input"`
-	CompletionAccept  key.Binding `keymap-mode:"input"`
-	CompletionPrev    key.Binding `keymap-mode:"input"`
-	CompletionNext    key.Binding `keymap-mode:"input"`
-	CompletionCancel  key.Binding `keymap-mode:"input"`
+	CompletionTrigger  key.Binding `keymap-mode:"input"`
+	CompletionAccept   key.Binding `keymap-mode:"input"`
+	CompletionPrev     key.Binding `keymap-mode:"input"`
+	CompletionNext     key.Binding `keymap-mode:"input"`
+	CompletionPageUp   key.Binding `keymap-mode:"input"`
+	CompletionPageDown key.Binding `keymap-mode:"input"`
+	CompletionCancel   key.Binding `keymap-mode:"input"`
 
 	TimelinePrev      key.Binding `keymap-mode:"timeline"`
 	TimelineNext      key.Binding `keymap-mode:"timeline"`
@@ -44,11 +46,13 @@ func NewKeyMap(autocompleteCfg AutocompleteConfig, focusToggleKey string) KeyMap
 		HistoryPrev: binding([]string{"up"}, "history prev"),
 		HistoryNext: binding([]string{"down"}, "history next"),
 
-		CompletionTrigger: binding(autocompleteCfg.TriggerKeys, "trigger completion"),
-		CompletionAccept:  binding(autocompleteCfg.AcceptKeys, "accept completion"),
-		CompletionPrev:    binding([]string{"up", "ctrl+p"}, "completion prev"),
-		CompletionNext:    binding([]string{"down", "ctrl+n"}, "completion next"),
-		CompletionCancel:  binding([]string{"esc"}, "close completion"),
+		CompletionTrigger:  binding(autocompleteCfg.TriggerKeys, "trigger completion"),
+		CompletionAccept:   binding(autocompleteCfg.AcceptKeys, "accept completion"),
+		CompletionPrev:     binding([]string{"up", "ctrl+p"}, "completion prev"),
+		CompletionNext:     binding([]string{"down", "ctrl+n"}, "completion next"),
+		CompletionPageUp:   binding([]string{"pgup", "ctrl+b"}, "completion page up"),
+		CompletionPageDown: binding([]string{"pgdown", "ctrl+f"}, "completion page down"),
+		CompletionCancel:   binding([]string{"esc"}, "close completion"),
 
 		TimelinePrev:      binding([]string{"up"}, "select prev"),
 		TimelineNext:      binding([]string{"down"}, "select next"),
@@ -94,6 +98,8 @@ func (k KeyMap) ShortHelp() []key.Binding {
 		k.CompletionTrigger,
 		k.CompletionAccept,
 		k.CompletionCancel,
+		k.CompletionPageUp,
+		k.CompletionPageDown,
 		k.Submit,
 		k.HistoryPrev,
 		k.HistoryNext,
@@ -111,7 +117,7 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 		{k.ToggleFocus, k.Submit},
 		{k.HistoryPrev, k.HistoryNext},
 		{k.CompletionTrigger, k.CompletionAccept, k.CompletionCancel},
-		{k.CompletionPrev, k.CompletionNext},
+		{k.CompletionPrev, k.CompletionNext, k.CompletionPageUp, k.CompletionPageDown},
 		{k.TimelinePrev, k.TimelineNext, k.TimelineEnterExit},
 		{k.CopyCode, k.CopyText},
 	}
