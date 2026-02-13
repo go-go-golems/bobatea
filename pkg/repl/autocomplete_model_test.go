@@ -342,3 +342,66 @@ func TestCompletionPageNavigationMovesSelectionByViewport(t *testing.T) {
 	assert.Equal(t, 0, m.completionSelection)
 	assert.Equal(t, 0, m.completionScrollTop)
 }
+
+func TestDebounceInputChangeKeepsPopupVisible(t *testing.T) {
+	evaluator := &fakeCompleterEvaluator{}
+	m := newAutocompleteTestModel(t, evaluator)
+
+	m.completionVisible = true
+	m.completionLastResult = CompletionResult{
+		Show: true,
+		Suggestions: []autocomplete.Suggestion{
+			{Id: "1", Value: "console", DisplayText: "console"},
+		},
+		ReplaceFrom: 0,
+		ReplaceTo:   2,
+	}
+	m.textInput.SetValue("co")
+	m.textInput.SetCursor(2)
+
+	m.textInput.SetValue("con")
+	m.textInput.SetCursor(3)
+	cmd := m.scheduleDebouncedCompletionIfNeeded("co", 2)
+	require.NotNil(t, cmd)
+	assert.True(t, m.completionVisible, "popup should remain visible while debounce request is pending")
+}
+
+func TestCompletionOverlayLayoutAppliesOffsets(t *testing.T) {
+	evaluator := &fakeCompleterEvaluator{}
+	m := newAutocompleteTestModel(t, evaluator)
+	m.width = 80
+	m.height = 24
+	m.completionVisible = true
+	m.completionLastResult = CompletionResult{
+		Show: true,
+		Suggestions: []autocomplete.Suggestion{
+			{Id: "1", Value: "console", DisplayText: "console"},
+		},
+	}
+	m.textInput.SetValue("cons")
+	m.textInput.SetCursor(4)
+
+	baseLayout, ok := m.computeCompletionOverlayLayout("title", "timeline")
+	require.True(t, ok)
+
+	m.completionOffsetX = 3
+	m.completionOffsetY = 2
+	shiftedLayout, ok := m.computeCompletionOverlayLayout("title", "timeline")
+	require.True(t, ok)
+	assert.Equal(t, baseLayout.PopupX+3, shiftedLayout.PopupX)
+	assert.Equal(t, baseLayout.PopupY+2, shiftedLayout.PopupY)
+}
+
+func TestCompletionPopupStyleNoBorderRemovesFrame(t *testing.T) {
+	evaluator := &fakeCompleterEvaluator{}
+	m := newAutocompleteTestModel(t, evaluator)
+
+	defaultStyle := m.completionPopupStyle()
+	assert.Greater(t, defaultStyle.GetHorizontalFrameSize(), 0)
+	assert.Greater(t, defaultStyle.GetVerticalFrameSize(), 0)
+
+	m.completionNoBorder = true
+	noBorder := m.completionPopupStyle()
+	assert.Equal(t, 0, noBorder.GetHorizontalFrameSize())
+	assert.Equal(t, 0, noBorder.GetVerticalFrameSize())
+}

@@ -28,6 +28,12 @@ type AutocompleteConfig struct {
 	OverlayMargin int
 	// OverlayPageSize controls page up/down steps; 0 means visible rows.
 	OverlayPageSize int
+	// OverlayOffsetX shifts popup horizontally before clamping to terminal bounds.
+	OverlayOffsetX int
+	// OverlayOffsetY shifts popup vertically before clamping to terminal bounds.
+	OverlayOffsetY int
+	// OverlayNoBorder renders completion popup without border chrome.
+	OverlayNoBorder bool
 }
 
 // DefaultAutocompleteConfig returns default autocomplete settings.
@@ -45,6 +51,9 @@ func DefaultAutocompleteConfig() AutocompleteConfig {
 		OverlayMinWidth:  24,
 		OverlayMargin:    1,
 		OverlayPageSize:  0,
+		OverlayOffsetX:   0,
+		OverlayOffsetY:   0,
+		OverlayNoBorder:  false,
 	}
 }
 

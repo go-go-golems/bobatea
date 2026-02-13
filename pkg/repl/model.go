@@ -72,6 +72,9 @@ type Model struct {
 	completionMaxHeight   int
 	completionMinWidth    int
 	completionMargin      int
+	completionOffsetX     int
+	completionOffsetY     int
+	completionNoBorder    bool
 	completionLastResult  CompletionResult
 	completionLastError   error
 	completionLastReqID   uint64
@@ -142,6 +145,9 @@ func NewModel(evaluator Evaluator, config Config, pub message.Publisher) *Model 
 		completionMaxHeight:  autocompleteCfg.OverlayMaxHeight,
 		completionMinWidth:   autocompleteCfg.OverlayMinWidth,
 		completionMargin:     autocompleteCfg.OverlayMargin,
+		completionOffsetX:    autocompleteCfg.OverlayOffsetX,
+		completionOffsetY:    autocompleteCfg.OverlayOffsetY,
+		completionNoBorder:   autocompleteCfg.OverlayNoBorder,
 	}
 	ret.updateKeyBindings()
 	return ret
@@ -440,7 +446,6 @@ func (m *Model) scheduleDebouncedCompletionIfNeeded(prevValue string, prevCursor
 	if prevValue == m.textInput.Value() && prevCursor == m.textInput.Position() {
 		return nil
 	}
-	m.hideCompletionPopup()
 
 	m.completionReqSeq++
 	reqID := m.completionReqSeq
@@ -638,8 +643,9 @@ func (m *Model) computeCompletionOverlayLayout(header, timelineView string) (com
 	}
 
 	inputY := lipgloss.Height(header) + 1 + lipgloss.Height(timelineView)
-	frameWidth := m.styles.CompletionPopup.GetHorizontalFrameSize()
-	frameHeight := m.styles.CompletionPopup.GetVerticalFrameSize()
+	popupStyle := m.completionPopupStyle()
+	frameWidth := popupStyle.GetHorizontalFrameSize()
+	frameHeight := popupStyle.GetVerticalFrameSize()
 
 	contentWidth := 1
 	for _, suggestion := range suggestions {
@@ -697,7 +703,9 @@ func (m *Model) computeCompletionOverlayLayout(header, timelineView string) (com
 	}
 
 	anchorX := m.completionAnchorColumn()
-	popupX := clampInt(anchorX, 0, max(0, m.width-popupWidth))
+	popupX := anchorX + m.completionOffsetX
+	popupY += m.completionOffsetY
+	popupX = clampInt(popupX, 0, max(0, m.width-popupWidth))
 	popupY = clampInt(popupY, 0, max(0, m.height-1))
 
 	return completionOverlayLayout{
@@ -734,7 +742,7 @@ func (m *Model) renderCompletionPopup(layout completionOverlayLayout) string {
 		}
 		lines = append(lines, itemStyle.Render(itemText))
 	}
-	return m.styles.CompletionPopup.Width(layout.PopupWidth).Render(strings.Join(lines, "\n"))
+	return m.completionPopupStyle().Width(layout.PopupWidth).Render(strings.Join(lines, "\n"))
 }
 
 func (m *Model) completionAnchorColumn() int {
@@ -742,6 +750,15 @@ func (m *Model) completionAnchorColumn() int {
 	cursor := clampInt(m.textInput.Position(), 0, len(runes))
 	prefix := string(runes[:cursor])
 	return runewidth.StringWidth(m.textInput.Prompt + prefix)
+}
+
+func (m *Model) completionPopupStyle() lipgloss.Style {
+	if !m.completionNoBorder {
+		return m.styles.CompletionPopup
+	}
+	return m.styles.CompletionPopup.
+		Border(lipgloss.HiddenBorder(), false, false, false, false).
+		Padding(0, 0)
 }
 
 func clampInt(v, low, high int) int {
@@ -806,6 +823,9 @@ func normalizeAutocompleteConfig(cfg AutocompleteConfig) AutocompleteConfig {
 		cfg.OverlayMinWidth == 0 &&
 		cfg.OverlayMargin == 0 &&
 		cfg.OverlayPageSize == 0 &&
+		cfg.OverlayOffsetX == 0 &&
+		cfg.OverlayOffsetY == 0 &&
+		!cfg.OverlayNoBorder &&
 		!cfg.Enabled {
 		return DefaultAutocompleteConfig()
 	}
@@ -844,6 +864,15 @@ func normalizeAutocompleteConfig(cfg AutocompleteConfig) AutocompleteConfig {
 	}
 	if cfg.OverlayPageSize > 0 {
 		merged.OverlayPageSize = cfg.OverlayPageSize
+	}
+	if cfg.OverlayOffsetX != 0 {
+		merged.OverlayOffsetX = cfg.OverlayOffsetX
+	}
+	if cfg.OverlayOffsetY != 0 {
+		merged.OverlayOffsetY = cfg.OverlayOffsetY
+	}
+	if cfg.OverlayNoBorder {
+		merged.OverlayNoBorder = true
 	}
 	return merged
 }
