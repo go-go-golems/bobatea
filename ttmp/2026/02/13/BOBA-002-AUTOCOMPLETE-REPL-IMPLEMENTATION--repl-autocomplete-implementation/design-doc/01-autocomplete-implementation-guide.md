@@ -124,6 +124,22 @@ Non-goals:
 - No deep refactor of evaluator streaming pipeline.
 - No requirement to always use `pkg/autocomplete.Model` unchanged.
 
+## Implementation Path Decision (Task 2)
+
+Decision: proceed with a **fresh-cutover rewrite for REPL integration**, not a compatibility-preserving extension of the existing `pkg/autocomplete.Model`.
+
+Concretely:
+
+- REPL autocomplete behavior will be implemented in a new REPL-first path (state/messages/rendering/contracts in `pkg/repl`).
+- Existing `pkg/autocomplete` can be reused selectively (types/list handling ideas) but is not an API compatibility constraint.
+- No migration shims are required for this ticket; callers should move to the new REPL path directly.
+
+Rationale:
+
+- The old widget couples trigger and debounce policy to widget internals.
+- This ticket requires trigger ownership in the input completer and debounce ownership in REPL.
+- A clean cut avoids hidden behavior conflicts and enables faster iteration.
+
 ## Proposed Solution
 
 ### 1) Add an Optional Completer Contract in `pkg/repl`
