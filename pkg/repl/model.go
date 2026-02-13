@@ -50,6 +50,8 @@ type Model struct {
 	// bus publisher
 	pub     message.Publisher
 	turnSeq int
+	appCtx  context.Context
+	appStop context.CancelFunc
 
 	// refresh scheduling
 	refreshPending   bool
@@ -209,6 +211,7 @@ func NewModel(evaluator Evaluator, config Config, pub message.Publisher) *Model 
 		helpDrawerHeightPercent: helpDrawerCfg.HeightPercent,
 		helpDrawerMargin:        helpDrawerCfg.Margin,
 	}
+	ret.appCtx, ret.appStop = context.WithCancel(context.Background())
 	if ret.helpDrawerProvider == nil {
 		ret.keyMap.HelpDrawerToggle.SetEnabled(false)
 		ret.keyMap.HelpDrawerClose.SetEnabled(false)
@@ -244,6 +247,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch {
 		case key.Matches(v, m.keyMap.Quit):
+			m.cancelAppContext()
 			return m, tea.Quit
 		case key.Matches(v, m.keyMap.ToggleHelp):
 			m.help.ShowAll = !m.help.ShowAll
@@ -1595,6 +1599,12 @@ func normalizeOverlayHorizontalGrow(v CompletionOverlayHorizontalGrow) Completio
 }
 
 func (m *Model) ctrl() *timeline.Controller { return m.sh.Controller() }
+
+func (m *Model) cancelAppContext() {
+	if m.appStop != nil {
+		m.appStop()
+	}
+}
 
 func newTurnID(seq int) string {
 	return timeNow().Format("20060102-150405.000000000") + ":" + fmt.Sprintf("%d", seq)
