@@ -757,7 +757,7 @@ func (m *Model) completionCmd(req CompletionRequest) tea.Cmd {
 				}
 			}()
 
-			ctx, cancel := context.WithTimeout(context.Background(), m.completionReqTimeout)
+			ctx, cancel := context.WithTimeout(m.appContext(), m.completionReqTimeout)
 			defer cancel()
 
 			result, err = m.completer.CompleteInput(ctx, req)
@@ -800,7 +800,7 @@ func (m *Model) helpBarCmd(req HelpBarRequest) tea.Cmd {
 				}
 			}()
 
-			ctx, cancel := context.WithTimeout(context.Background(), m.helpBarReqTimeout)
+			ctx, cancel := context.WithTimeout(m.appContext(), m.helpBarReqTimeout)
 			defer cancel()
 
 			payload, err = m.helpBarProvider.GetHelpBar(ctx, req)
@@ -843,7 +843,7 @@ func (m *Model) helpDrawerCmd(req HelpDrawerRequest) tea.Cmd {
 				}
 			}()
 
-			ctx, cancel := context.WithTimeout(context.Background(), m.helpDrawerReqTimeout)
+			ctx, cancel := context.WithTimeout(m.appContext(), m.helpDrawerReqTimeout)
 			defer cancel()
 
 			doc, err = m.helpDrawerProvider.GetHelpDrawer(ctx, req)
@@ -1616,6 +1616,13 @@ func (m *Model) cancelAppContext() {
 	if m.appStop != nil {
 		m.appStop()
 	}
+}
+
+func (m *Model) appContext() context.Context {
+	if m.appCtx != nil {
+		return m.appCtx
+	}
+	return context.Background()
 }
 
 func newTurnID(seq int) string {
