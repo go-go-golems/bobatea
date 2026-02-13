@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/go-go-golems/bobatea/pkg/eventbus"
 	"github.com/stretchr/testify/assert"
 )
@@ -103,6 +104,83 @@ func TestModelWithContext(t *testing.T) {
 	case <-model.appCtx.Done():
 	case <-time.After(100 * time.Millisecond):
 		t.Fatal("model app context should be canceled when parent context is canceled")
+	}
+}
+
+type cancellableProviderEvaluator struct{}
+
+func (e *cancellableProviderEvaluator) Evaluate(ctx context.Context, code string) (string, error) {
+	<-ctx.Done()
+	return "", ctx.Err()
+}
+
+func (e *cancellableProviderEvaluator) EvaluateStream(ctx context.Context, _ string, _ func(Event)) error {
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func (e *cancellableProviderEvaluator) GetPrompt() string        { return "> " }
+func (e *cancellableProviderEvaluator) GetName() string          { return "cancellable" }
+func (e *cancellableProviderEvaluator) SupportsMultiline() bool  { return false }
+func (e *cancellableProviderEvaluator) GetFileExtension() string { return ".txt" }
+
+func (e *cancellableProviderEvaluator) CompleteInput(ctx context.Context, _ CompletionRequest) (CompletionResult, error) {
+	<-ctx.Done()
+	return CompletionResult{}, ctx.Err()
+}
+
+func (e *cancellableProviderEvaluator) GetHelpBar(ctx context.Context, _ HelpBarRequest) (HelpBarPayload, error) {
+	<-ctx.Done()
+	return HelpBarPayload{}, ctx.Err()
+}
+
+func (e *cancellableProviderEvaluator) GetHelpDrawer(ctx context.Context, _ HelpDrawerRequest) (HelpDrawerDocument, error) {
+	<-ctx.Done()
+	return HelpDrawerDocument{}, ctx.Err()
+}
+
+func TestProviderCommandsUseAppContextCancellation(t *testing.T) {
+	bus, err := eventbus.NewInMemoryBus()
+	assert.NoError(t, err)
+
+	cfg := DefaultConfig()
+	cfg.Autocomplete.Enabled = true
+	cfg.HelpBar.Enabled = true
+	cfg.HelpDrawer.Enabled = true
+	cfg.Autocomplete.RequestTimeout = 2 * time.Second
+	cfg.HelpBar.RequestTimeout = 2 * time.Second
+	cfg.HelpDrawer.RequestTimeout = 2 * time.Second
+
+	parentCtx, cancel := context.WithCancel(context.Background())
+	model := NewModelWithContext(parentCtx, &cancellableProviderEvaluator{}, cfg, bus.Publisher)
+	cancel()
+
+	compMsg, ok := model.completionCmd(CompletionRequest{RequestID: 1})().(completionResultMsg)
+	assert.True(t, ok)
+	assert.ErrorIs(t, compMsg.Err, context.Canceled)
+
+	helpBarMsg, ok := model.helpBarCmd(HelpBarRequest{RequestID: 1})().(helpBarResultMsg)
+	assert.True(t, ok)
+	assert.ErrorIs(t, helpBarMsg.Err, context.Canceled)
+
+	helpDrawerMsg, ok := model.helpDrawerCmd(HelpDrawerRequest{RequestID: 1})().(helpDrawerResultMsg)
+	assert.True(t, ok)
+	assert.ErrorIs(t, helpDrawerMsg.Err, context.Canceled)
+}
+
+func TestQuitCancelsModelAppContext(t *testing.T) {
+	evaluator := NewExampleEvaluator()
+	config := DefaultConfig()
+	bus, err := eventbus.NewInMemoryBus()
+	assert.NoError(t, err)
+	model := NewModel(evaluator, config, bus.Publisher)
+
+	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+
+	select {
+	case <-model.appCtx.Done():
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("expected app context to be canceled after quit")
 	}
 }
 
