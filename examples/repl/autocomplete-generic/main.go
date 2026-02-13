@@ -166,6 +166,57 @@ func (e *GenericEvaluator) GetHelpBar(_ context.Context, req repl.HelpBarRequest
 	}, nil
 }
 
+func (e *GenericEvaluator) GetHelpDrawer(_ context.Context, req repl.HelpDrawerRequest) (repl.HelpDrawerDocument, error) {
+	token, _, _ := currentToken(req.Input, req.CursorByte)
+	token = strings.ToLower(strings.TrimSpace(token))
+
+	if token == "" {
+		return repl.HelpDrawerDocument{
+			Show:       true,
+			Title:      "Generic REPL Help",
+			Subtitle:   "Type to explore symbol docs",
+			Markdown:   "Try `co` to see autocomplete/help updates. Use `ctrl+h` to toggle this drawer and `ctrl+r` to refresh.",
+			VersionTag: fmt.Sprintf("trigger=%s", req.Trigger),
+		}, nil
+	}
+
+	if h, ok := e.help[token]; ok {
+		return repl.HelpDrawerDocument{
+			Show:       true,
+			Title:      token,
+			Subtitle:   "Exact symbol help",
+			Markdown:   fmt.Sprintf("%s\n\nSuggestions: `%s`", h, token),
+			VersionTag: fmt.Sprintf("trigger=%s", req.Trigger),
+		}, nil
+	}
+
+	matches := make([]string, 0, len(e.symbols))
+	for _, symbol := range e.symbols {
+		if strings.HasPrefix(strings.ToLower(symbol), token) {
+			matches = append(matches, symbol)
+		}
+	}
+	sort.Strings(matches)
+	if len(matches) == 0 {
+		return repl.HelpDrawerDocument{
+			Show:        true,
+			Title:       token,
+			Subtitle:    "No symbol help found",
+			Markdown:    "No matching symbol in the generic evaluator catalog.",
+			Diagnostics: []string{"Try: console, const, context, continue, count, contains, concat"},
+			VersionTag:  fmt.Sprintf("trigger=%s", req.Trigger),
+		}, nil
+	}
+
+	return repl.HelpDrawerDocument{
+		Show:       true,
+		Title:      token,
+		Subtitle:   fmt.Sprintf("%d matching symbols", len(matches)),
+		Markdown:   fmt.Sprintf("Matches:\n- %s", strings.Join(matches, "\n- ")),
+		VersionTag: fmt.Sprintf("trigger=%s", req.Trigger),
+	}, nil
+}
+
 func currentToken(input string, cursor int) (string, int, int) {
 	if cursor < 0 {
 		cursor = 0
@@ -205,12 +256,13 @@ func main() {
 	evaluator := newGenericEvaluator()
 	config := repl.DefaultConfig()
 	config.Title = "Generic Autocomplete REPL"
-	config.Placeholder = "Type 'co' and wait for completion + help bar, or press Tab for explicit trigger"
+	config.Placeholder = "Type 'co' and use Tab (completion), ctrl+h (help drawer), ctrl+r (drawer refresh)"
 	config.Autocomplete.Enabled = true
 	config.Autocomplete.TriggerKeys = []string{"tab"}
 	config.Autocomplete.AcceptKeys = []string{"enter", "tab"}
 	config.Autocomplete.FocusToggleKey = "ctrl+t"
 	config.HelpBar.Enabled = true
+	config.HelpDrawer.Enabled = true
 
 	bus, err := eventbus.NewInMemoryBus()
 	if err != nil {
