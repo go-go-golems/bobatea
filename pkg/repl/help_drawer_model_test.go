@@ -2,10 +2,12 @@ package repl
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/go-go-golems/bobatea/pkg/eventbus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -147,4 +149,89 @@ func TestHelpDrawerCloseKey(t *testing.T) {
 	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	drainModelCmds(m, cmd)
 	assert.False(t, m.helpDrawerVisible)
+}
+
+func TestHelpDrawerPinPreventsTypingRefresh(t *testing.T) {
+	evaluator := &fakeHelpDrawerEvaluator{
+		doc: HelpDrawerDocument{
+			Show:     true,
+			Title:    "console",
+			Subtitle: "object",
+		},
+	}
+	m := newHelpDrawerTestModel(t, evaluator)
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlH})
+	drainModelCmds(m, cmd)
+	require.Len(t, evaluator.requests, 1)
+
+	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyCtrlG})
+	drainModelCmds(m, cmd)
+	require.True(t, m.helpDrawerPinned)
+
+	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
+	drainModelCmds(m, cmd)
+	assert.Len(t, evaluator.requests, 1, "pinned drawer should skip typing-triggered refreshes")
+}
+
+func TestHelpDrawerDefaultDockAboveRepl(t *testing.T) {
+	m := newHelpDrawerTestModel(t, &fakeHelpDrawerEvaluator{})
+	m.helpDrawerVisible = true
+	m.helpDrawerDock = HelpDrawerDockAboveRepl
+	m.width = 100
+	m.height = 40
+	header := "Header"
+	timelineView := strings.Repeat("line\n", 30)
+
+	layout, ok := m.computeHelpDrawerOverlayLayout(header, timelineView)
+	require.True(t, ok)
+	inputY := lipgloss.Height(header) + 1 + lipgloss.Height(timelineView)
+	assert.LessOrEqual(t, layout.PanelY+layout.PanelHeight, inputY, "default dock should place drawer above input row")
+	assert.LessOrEqual(t, layout.PanelX+layout.PanelWidth, m.width, "drawer must remain within width bounds")
+}
+
+func TestHelpDrawerDockRightNoCutoff(t *testing.T) {
+	m := newHelpDrawerTestModel(t, &fakeHelpDrawerEvaluator{})
+	m.helpDrawerVisible = true
+	m.helpDrawerDock = HelpDrawerDockRight
+	m.width = 80
+	m.height = 20
+
+	layout, ok := m.computeHelpDrawerOverlayLayout("H", "timeline")
+	require.True(t, ok)
+	assert.GreaterOrEqual(t, layout.PanelX, 0)
+	assert.LessOrEqual(t, layout.PanelX+layout.PanelWidth, m.width, "right dock must be clamped inside terminal width")
+	assert.LessOrEqual(t, layout.PanelY+layout.PanelHeight, m.height, "drawer must fit vertically")
+}
+
+func TestHelpDrawerRenderKeepsLastDocWhileRefreshing(t *testing.T) {
+	m := newHelpDrawerTestModel(t, &fakeHelpDrawerEvaluator{})
+	m.helpDrawerVisible = true
+	m.helpDrawerLoading = true
+	m.helpDrawerDoc = HelpDrawerDocument{
+		Show:     true,
+		Title:    "console.log",
+		Subtitle: "function",
+		Markdown: "Writes to stdout.",
+	}
+	layout, ok := m.computeHelpDrawerOverlayLayout("Header", "timeline")
+	require.True(t, ok)
+
+	panel := m.renderHelpDrawerPanel(layout)
+	assert.Contains(t, panel, "console.log")
+	assert.NotContains(t, panel, "No contextual help provider content yet")
+}
+
+func TestHelpDrawerPinShortcutConfigurable(t *testing.T) {
+	bus, err := eventbus.NewInMemoryBus()
+	require.NoError(t, err)
+
+	cfg := DefaultConfig()
+	cfg.Autocomplete.Enabled = false
+	cfg.HelpBar.Enabled = false
+	cfg.HelpDrawer.PinShortcuts = []string{"f2"}
+	m := NewModel(&fakeHelpDrawerEvaluator{}, cfg, bus.Publisher)
+
+	keyName := m.keyMap.HelpDrawerPin.Help().Key
+	assert.Equal(t, "f2", keyName)
 }

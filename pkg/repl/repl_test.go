@@ -124,10 +124,13 @@ func TestConfig(t *testing.T) {
 	assert.Equal(t, []string{"ctrl+h"}, config.HelpDrawer.ToggleKeys)
 	assert.Equal(t, []string{"esc", "ctrl+h"}, config.HelpDrawer.CloseKeys)
 	assert.Equal(t, []string{"ctrl+r"}, config.HelpDrawer.RefreshShortcuts)
+	assert.Equal(t, []string{"ctrl+g"}, config.HelpDrawer.PinShortcuts)
 	assert.Equal(t, 140*time.Millisecond, config.HelpDrawer.Debounce)
 	assert.Equal(t, 500*time.Millisecond, config.HelpDrawer.RequestTimeout)
+	assert.Equal(t, HelpDrawerDockAboveRepl, config.HelpDrawer.Dock)
 	assert.Equal(t, 52, config.HelpDrawer.WidthPercent)
 	assert.Equal(t, 46, config.HelpDrawer.HeightPercent)
+	assert.Equal(t, 1, config.HelpDrawer.Margin)
 	assert.False(t, config.HelpDrawer.PrefetchWhenHidden)
 }
 

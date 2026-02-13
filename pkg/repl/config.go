@@ -68,6 +68,15 @@ type HelpBarConfig struct {
 	RequestTimeout time.Duration
 }
 
+type HelpDrawerDock string
+
+const (
+	HelpDrawerDockAboveRepl HelpDrawerDock = "above-repl"
+	HelpDrawerDockRight     HelpDrawerDock = "right"
+	HelpDrawerDockLeft      HelpDrawerDock = "left"
+	HelpDrawerDockBottom    HelpDrawerDock = "bottom"
+)
+
 // HelpDrawerConfig controls keyboard-toggled contextual help drawer behavior.
 type HelpDrawerConfig struct {
 	// Enabled toggles REPL help drawer integration.
@@ -78,14 +87,21 @@ type HelpDrawerConfig struct {
 	CloseKeys []string
 	// RefreshShortcuts trigger an immediate drawer refresh while visible.
 	RefreshShortcuts []string
+	// PinShortcuts toggle pin mode (freeze typing-triggered refresh).
+	PinShortcuts []string
 	// Debounce is the delay after input edits before a drawer refresh is sent.
 	Debounce time.Duration
 	// RequestTimeout bounds a single drawer request.
 	RequestTimeout time.Duration
+	// Dock controls where the drawer is anchored.
+	// Supported values: above-repl, right, left, bottom.
+	Dock HelpDrawerDock
 	// WidthPercent controls drawer width as percentage of terminal width.
 	WidthPercent int
 	// HeightPercent controls drawer height as percentage of terminal height.
 	HeightPercent int
+	// Margin keeps space between the drawer and the terminal edge/anchor.
+	Margin int
 	// PrefetchWhenHidden keeps requests running while drawer is hidden.
 	PrefetchWhenHidden bool
 }
@@ -129,10 +145,13 @@ func DefaultHelpDrawerConfig() HelpDrawerConfig {
 		ToggleKeys:         []string{"ctrl+h"},
 		CloseKeys:          []string{"esc", "ctrl+h"},
 		RefreshShortcuts:   []string{"ctrl+r"},
+		PinShortcuts:       []string{"ctrl+g"},
 		Debounce:           140 * time.Millisecond,
 		RequestTimeout:     500 * time.Millisecond,
+		Dock:               HelpDrawerDockAboveRepl,
 		WidthPercent:       52,
 		HeightPercent:      46,
+		Margin:             1,
 		PrefetchWhenHidden: false,
 	}
 }
