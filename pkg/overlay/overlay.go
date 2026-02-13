@@ -2,6 +2,8 @@ package overlay
 
 import (
 	"bytes"
+	"math"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -91,7 +93,7 @@ func PlaceOverlay(
 
 		pos := 0
 		if x > 0 {
-			left := truncate.String(bgLine, uint(x))
+			left := truncate.String(bgLine, safePositiveIntToUint(x))
 			pos = ansi.PrintableRuneWidth(left)
 			b.WriteString(left)
 			if pos < x {
@@ -160,6 +162,17 @@ func cutLeft(s string, cutWidth int) string {
 
 func clamp(v, lower, upper int) int {
 	return min(max(v, lower), upper)
+}
+
+func safePositiveIntToUint(v int) uint {
+	if v <= 0 {
+		return 0
+	}
+	uv := uint64(v)
+	if strconv.IntSize == 32 && uv > uint64(math.MaxUint32) {
+		return uint(math.MaxUint32)
+	}
+	return uint(uv)
 }
 
 type whitespace struct {

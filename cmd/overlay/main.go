@@ -5,6 +5,7 @@ package main
 import (
 	"fmt"
 	"github.com/go-go-golems/bobatea/pkg/overlay"
+	"math"
 	"os"
 	"strings"
 
@@ -188,7 +189,10 @@ var (
 )
 
 func main() {
-	physicalWidth, _, _ := term.GetSize(int(os.Stdout.Fd()))
+	physicalWidth := 0
+	if fd, ok := stdoutFD(); ok {
+		physicalWidth, _, _ = term.GetSize(fd)
+	}
 	doc := strings.Builder{}
 
 	// Tabs
@@ -345,6 +349,14 @@ func main() {
 
 	// Okay, let's print it
 	fmt.Println(output)
+}
+
+func stdoutFD() (int, bool) {
+	fd := os.Stdout.Fd()
+	if fd > uintptr(math.MaxInt) {
+		return 0, false
+	}
+	return int(fd), true
 }
 
 func colorGrid(xSteps, ySteps int) [][]string {

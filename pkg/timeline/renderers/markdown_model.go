@@ -1,7 +1,6 @@
 package renderers
 
 import (
-	"os"
 	"regexp"
 	"strings"
 
@@ -13,7 +12,6 @@ import (
 	chatstyle "github.com/go-go-golems/bobatea/pkg/timeline/chatstyle"
 	"github.com/muesli/termenv"
 	"github.com/rs/zerolog/log"
-	"golang.org/x/term"
 )
 
 // MarkdownModel renders markdown with glamour.
@@ -130,7 +128,7 @@ func (f MarkdownFactory) NewEntityModel(initialProps map[string]any) timeline.En
 // NewMarkdownFactory constructs a factory with a shared glamour renderer.
 func NewMarkdownFactory() *MarkdownFactory {
 	var style string
-	if !term.IsTerminal(int(os.Stdout.Fd())) {
+	if !stdoutIsTerminal() {
 		style = "notty"
 	} else if termenv.HasDarkBackground() {
 		style = "dark"
