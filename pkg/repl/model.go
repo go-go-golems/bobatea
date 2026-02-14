@@ -174,6 +174,7 @@ func NewModel(evaluator Evaluator, config Config, pub message.Publisher) *Model 
 		ret.keyMap.HelpDrawerClose.SetEnabled(false)
 		ret.keyMap.HelpDrawerRefresh.SetEnabled(false)
 	}
+	ret.help.Width = max(0, ret.width)
 	ret.updateKeyBindings()
 	return ret
 }
@@ -202,6 +203,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch v := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = v.Width, v.Height
+		m.help.Width = max(0, v.Width)
 		m.textInput.Width = max(10, v.Width-10)
 		m.palette.ui.SetSize(v.Width, v.Height)
 		helpHeight := lipgloss.Height(m.help.View(m.keyMap))

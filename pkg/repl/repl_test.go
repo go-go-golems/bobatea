@@ -87,6 +87,18 @@ func TestModel(t *testing.T) {
 	// Test initialization
 	assert.Equal(t, evaluator, model.evaluator)
 	assert.Equal(t, config, model.config)
+	assert.Equal(t, config.Width, model.help.Width)
+}
+
+func TestModelWindowSizeUpdatesHelpWidth(t *testing.T) {
+	evaluator := NewExampleEvaluator()
+	config := DefaultConfig()
+	bus, err := eventbus.NewInMemoryBus()
+	require.NoError(t, err)
+	model := NewModel(evaluator, config, bus.Publisher)
+
+	_, _ = model.Update(tea.WindowSizeMsg{Width: 42, Height: 16})
+	assert.Equal(t, 42, model.help.Width)
 }
 
 func TestNewModelWiresFeatureSubmodelsFromConfig(t *testing.T) {
