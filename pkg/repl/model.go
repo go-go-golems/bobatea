@@ -332,9 +332,9 @@ func (m *Model) View() string {
 		}
 	}
 
-	paletteLayerView := m.renderCommandPaletteOverlay()
+	paletteLayout, paletteOK := m.computeCommandPaletteOverlayLayout()
 
-	if !completionOK && !drawerOK && paletteLayerView == "" {
+	if !completionOK && !drawerOK && !paletteOK {
 		return base
 	}
 
@@ -351,9 +351,9 @@ func (m *Model) View() string {
 			lipglossv2.NewLayer(completionPopup).X(completionLayout.PopupX).Y(completionLayout.PopupY).Z(20).ID("completion-overlay"),
 		)
 	}
-	if paletteLayerView != "" {
+	if paletteOK {
 		layers = append(layers,
-			lipglossv2.NewLayer(paletteLayerView).X(0).Y(0).Z(30).ID("command-palette-overlay"),
+			lipglossv2.NewLayer(paletteLayout.View).X(paletteLayout.PanelX).Y(paletteLayout.PanelY).Z(30).ID("command-palette-overlay"),
 		)
 	}
 
