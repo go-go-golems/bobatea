@@ -332,7 +332,23 @@ func (m *Model) View() string {
 		}
 	}
 
-	if !completionOK && !drawerOK {
+	paletteVisible := m.palette.enabled && m.palette.ui.IsVisible()
+	paletteLayerView := ""
+	if paletteVisible {
+		paletteView := m.palette.ui.View()
+		if paletteView != "" {
+			paletteLayerView = lipgloss.Place(
+				max(1, m.width),
+				max(1, m.height),
+				lipgloss.Center,
+				lipgloss.Center,
+				paletteView,
+				lipgloss.WithWhitespaceChars(" "),
+			)
+		}
+	}
+
+	if !completionOK && !drawerOK && paletteLayerView == "" {
 		return base
 	}
 
@@ -347,6 +363,11 @@ func (m *Model) View() string {
 	if completionOK {
 		layers = append(layers,
 			lipglossv2.NewLayer(completionPopup).X(completionLayout.PopupX).Y(completionLayout.PopupY).Z(20).ID("completion-overlay"),
+		)
+	}
+	if paletteLayerView != "" {
+		layers = append(layers,
+			lipglossv2.NewLayer(paletteLayerView).X(0).Y(0).Z(30).ID("command-palette-overlay"),
 		)
 	}
 
