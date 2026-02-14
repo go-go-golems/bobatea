@@ -1,6 +1,9 @@
 package repl
 
-import "github.com/go-go-golems/bobatea/pkg/tui/widgets/contextbar"
+import (
+	"github.com/go-go-golems/bobatea/pkg/tui/widgets/contextbar"
+	"github.com/go-go-golems/bobatea/pkg/tui/widgets/contextpanel"
+)
 
 func ensureAppendPatch(props map[string]any) map[string]any {
 	if props == nil {
@@ -31,15 +34,8 @@ type completionResultMsg struct {
 type helpBarDebounceMsg = contextbar.DebounceMsg
 type helpBarResultMsg = contextbar.ResultMsg
 
-type helpDrawerDebounceMsg struct {
-	RequestID uint64
-}
-
-type helpDrawerResultMsg struct {
-	RequestID uint64
-	Doc       HelpDrawerDocument
-	Err       error
-}
+type helpDrawerDebounceMsg = contextpanel.DebounceMsg
+type helpDrawerResultMsg = contextpanel.ResultMsg
 
 type completionOverlayLayout struct {
 	PopupX       int
@@ -49,11 +45,4 @@ type completionOverlayLayout struct {
 	ContentWidth int
 }
 
-type helpDrawerOverlayLayout struct {
-	PanelX        int
-	PanelY        int
-	PanelWidth    int
-	PanelHeight   int
-	ContentWidth  int
-	ContentHeight int
-}
+type helpDrawerOverlayLayout = contextpanel.OverlayLayout

@@ -27,24 +27,3 @@ func (m *Model) completionCmd(req CompletionRequest) tea.Cmd {
 		}
 	}
 }
-
-func (m *Model) helpDrawerCmd(req HelpDrawerRequest) tea.Cmd {
-	return func() tea.Msg {
-		doc, err := asyncprovider.Run(
-			m.appContext(),
-			req.RequestID,
-			m.helpDrawer.reqTimeout,
-			"help-drawer-provider",
-			"help drawer provider",
-			func(ctx context.Context) (HelpDrawerDocument, error) {
-				return m.helpDrawer.provider.GetHelpDrawer(ctx, req)
-			},
-		)
-
-		return helpDrawerResultMsg{
-			RequestID: req.RequestID,
-			Doc:       doc,
-			Err:       err,
-		}
-	}
-}

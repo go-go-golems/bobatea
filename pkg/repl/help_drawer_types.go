@@ -1,33 +1,25 @@
 package repl
 
-import "context"
+import (
+	"context"
+
+	"github.com/go-go-golems/bobatea/pkg/tui/widgets/contextpanel"
+)
 
 // HelpDrawerTrigger describes why a help drawer request was triggered.
-type HelpDrawerTrigger string
+type HelpDrawerTrigger = contextpanel.Trigger
 
 const (
-	HelpDrawerTriggerToggleOpen    HelpDrawerTrigger = "toggle-open"
-	HelpDrawerTriggerTyping        HelpDrawerTrigger = "typing"
-	HelpDrawerTriggerManualRefresh HelpDrawerTrigger = "manual-refresh"
+	HelpDrawerTriggerToggleOpen    HelpDrawerTrigger = contextpanel.TriggerToggleOpen
+	HelpDrawerTriggerTyping        HelpDrawerTrigger = contextpanel.TriggerTyping
+	HelpDrawerTriggerManualRefresh HelpDrawerTrigger = contextpanel.TriggerManualRefresh
 )
 
 // HelpDrawerRequest captures current input context for rich help drawer lookup.
-type HelpDrawerRequest struct {
-	Input      string
-	CursorByte int
-	RequestID  uint64
-	Trigger    HelpDrawerTrigger
-}
+type HelpDrawerRequest = contextpanel.Request
 
 // HelpDrawerDocument describes what the REPL help drawer should render.
-type HelpDrawerDocument struct {
-	Show        bool
-	Title       string
-	Subtitle    string
-	Markdown    string
-	Diagnostics []string
-	VersionTag  string
-}
+type HelpDrawerDocument = contextpanel.Document
 
 // HelpDrawerProvider resolves contextual rich help for REPL input snapshots.
 type HelpDrawerProvider interface {
