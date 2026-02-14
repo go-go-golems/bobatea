@@ -192,3 +192,76 @@ I also added tests to lock default values and normalization behavior before wiri
 
 - Task tracking:
   - BOBA-005 task 3 checked complete.
+
+## Step 3: Task 4 - Command Descriptor and Evaluator Provider Contracts
+
+I implemented the command palette contract layer in `pkg/repl` so the REPL can represent commands consistently and evaluators can optionally contribute their own command entries. This step intentionally kept runtime wiring out, matching task scope.
+
+There was one failed commit attempt due pre-commit lint catching unused interim registry helpers. I removed the unreferenced helpers and kept this step contract-only.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 2)
+
+**Assistant interpretation:** Continue with the next BOBA-005 task and commit completed work incrementally.
+
+**Inferred user intent:** Keep momentum with strict task boundaries and immediate, auditable commits.
+
+**Commit (code):** a9d3f24 — "repl: add command palette command contracts"
+
+### What I did
+
+- Added `pkg/repl/command_palette_types.go` with:
+  - `PaletteCommand`
+  - `PaletteCommandProvider` (evaluator hook)
+  - `PaletteCommandRegistry` (registry contract)
+- Ran validation:
+  - `go test ./pkg/repl/... -count=1` (pass)
+  - pre-commit hooks passed on final commit.
+
+### Why
+
+- Palette wiring needs a stable command contract before model/update/view integration.
+- Evaluator command extensibility should be capability-based and optional.
+
+### What worked
+
+- Contract definitions compile cleanly and integrate without touching existing evaluator implementations.
+
+### What didn't work
+
+- First commit attempt failed because I briefly added unreferenced registry helper methods, triggering:
+  - `unused: func (*Model).listPaletteCommands is unused`
+  - `unused: func (*Model).builtinPaletteCommands is unused`
+  - `unused: func mergePaletteCommands is unused`
+- Resolution:
+  - removed the interim helper file from this step
+  - committed only contract definitions.
+
+### What I learned
+
+- For task-by-task commits under strict linting, introduce only symbols that are either used immediately or exported contract types.
+
+### What was tricky to build
+
+- Balancing “registry contracts” scope without prematurely adding runtime helper code that would fail lint until later tasks.
+
+### What warrants a second pair of eyes
+
+- Confirm `PaletteCommand` function signatures (`Enabled func(*Model) bool`, `Action func(*Model) tea.Cmd`) match expected long-term API ergonomics.
+
+### What should be done in the future
+
+- Implement task 5 next: model-level palette state and initialization wiring, then attach registry runtime behavior there.
+
+### Code review instructions
+
+- Review:
+  - `pkg/repl/command_palette_types.go`
+- Validate:
+  - `go test ./pkg/repl/... -count=1`
+
+### Technical details
+
+- Task tracking:
+  - BOBA-005 task 4 checked complete.
