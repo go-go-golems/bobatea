@@ -2,50 +2,14 @@ package repl
 
 import (
 	"context"
-	"fmt"
-	"runtime/debug"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/rs/zerolog/log"
+	"github.com/go-go-golems/bobatea/pkg/tui/asyncprovider"
 )
-
-func runProvider[T any](
-	baseCtx context.Context,
-	requestID uint64,
-	timeout time.Duration,
-	providerName string,
-	panicPrefix string,
-	fn func(context.Context) (T, error),
-) (T, error) {
-	ctx, cancel := context.WithTimeout(baseCtx, timeout)
-	defer cancel()
-
-	var (
-		out T
-		err error
-	)
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				log.Error().
-					Interface("panic", r).
-					Str("stack", string(debug.Stack())).
-					Uint64("request_id", requestID).
-					Str("provider", providerName).
-					Msg("provider panicked")
-				err = fmt.Errorf("%s panic: %v", panicPrefix, r)
-			}
-		}()
-		out, err = fn(ctx)
-	}()
-
-	return out, err
-}
 
 func (m *Model) completionCmd(req CompletionRequest) tea.Cmd {
 	return func() tea.Msg {
-		result, err := runProvider(
+		result, err := asyncprovider.Run(
 			m.appContext(),
 			req.RequestID,
 			m.completion.reqTimeout,
@@ -66,7 +30,7 @@ func (m *Model) completionCmd(req CompletionRequest) tea.Cmd {
 
 func (m *Model) helpBarCmd(req HelpBarRequest) tea.Cmd {
 	return func() tea.Msg {
-		payload, err := runProvider(
+		payload, err := asyncprovider.Run(
 			m.appContext(),
 			req.RequestID,
 			m.helpBar.reqTimeout,
@@ -87,7 +51,7 @@ func (m *Model) helpBarCmd(req HelpBarRequest) tea.Cmd {
 
 func (m *Model) helpDrawerCmd(req HelpDrawerRequest) tea.Cmd {
 	return func() tea.Msg {
-		doc, err := runProvider(
+		doc, err := asyncprovider.Run(
 			m.appContext(),
 			req.RequestID,
 			m.helpDrawer.reqTimeout,
