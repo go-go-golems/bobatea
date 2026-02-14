@@ -22,7 +22,7 @@
   - key routing precedence (palette open > drawer/completion navigation)
   - slash policy behavior (`empty-input`, `column-zero`, `provider`)
   - command execution dispatch and close semantics
-- [ ] Run validation: `go test ./pkg/repl/... -count=1`
+- [x] Run validation: `go test ./pkg/repl/... -count=1`
 - [ ] Run validation: `golangci-lint run -v --max-same-issues=100 ./pkg/repl/...`
 - [ ] Smoke test examples with PTY wrapping:
   - `script -q -c "timeout 7s go run ./examples/repl/autocomplete-generic" /dev/null`
