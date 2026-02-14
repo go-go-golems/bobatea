@@ -169,6 +169,38 @@ func normalizeAutocompleteConfig(cfg AutocompleteConfig) AutocompleteConfig {
 	return merged
 }
 
+func normalizeCommandPaletteConfig(cfg CommandPaletteConfig) CommandPaletteConfig {
+	if len(cfg.OpenKeys) == 0 &&
+		len(cfg.CloseKeys) == 0 &&
+		!cfg.SlashOpenEnabled &&
+		cfg.SlashPolicy == "" &&
+		cfg.MaxVisibleItems == 0 &&
+		!cfg.Enabled {
+		return DefaultCommandPaletteConfig()
+	}
+
+	merged := DefaultCommandPaletteConfig()
+	merged.Enabled = cfg.Enabled
+	if len(cfg.OpenKeys) > 0 {
+		merged.OpenKeys = cfg.OpenKeys
+	}
+	if len(cfg.CloseKeys) > 0 {
+		merged.CloseKeys = cfg.CloseKeys
+	}
+	if cfg.SlashOpenEnabled {
+		merged.SlashOpenEnabled = true
+	}
+	if cfg.SlashPolicy != "" {
+		merged.SlashPolicy = cfg.SlashPolicy
+	}
+	if cfg.MaxVisibleItems > 0 {
+		merged.MaxVisibleItems = cfg.MaxVisibleItems
+	}
+	merged.SlashPolicy = normalizeCommandPaletteSlashPolicy(merged.SlashPolicy)
+	merged.MaxVisibleItems = clampInt(merged.MaxVisibleItems, 1, 50)
+	return merged
+}
+
 func normalizeOverlayPlacement(v CompletionOverlayPlacement) CompletionOverlayPlacement {
 	switch v {
 	case CompletionOverlayPlacementAuto,
@@ -187,5 +219,16 @@ func normalizeOverlayHorizontalGrow(v CompletionOverlayHorizontalGrow) Completio
 		return v
 	default:
 		return CompletionOverlayHorizontalGrowRight
+	}
+}
+
+func normalizeCommandPaletteSlashPolicy(v CommandPaletteSlashPolicy) CommandPaletteSlashPolicy {
+	switch v {
+	case CommandPaletteSlashPolicyEmptyInput,
+		CommandPaletteSlashPolicyColumnZero,
+		CommandPaletteSlashPolicyProvider:
+		return v
+	default:
+		return CommandPaletteSlashPolicyEmptyInput
 	}
 }

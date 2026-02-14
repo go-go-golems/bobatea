@@ -106,6 +106,31 @@ type HelpDrawerConfig struct {
 	PrefetchWhenHidden bool
 }
 
+type CommandPaletteSlashPolicy string
+
+const (
+	CommandPaletteSlashPolicyEmptyInput CommandPaletteSlashPolicy = "empty-input"
+	CommandPaletteSlashPolicyColumnZero CommandPaletteSlashPolicy = "column-zero"
+	CommandPaletteSlashPolicyProvider   CommandPaletteSlashPolicy = "provider"
+)
+
+// CommandPaletteConfig controls REPL command palette behavior.
+type CommandPaletteConfig struct {
+	// Enabled toggles command palette integration.
+	Enabled bool
+	// OpenKeys open the palette from input mode.
+	OpenKeys []string
+	// CloseKeys close the palette while it is open.
+	CloseKeys []string
+	// SlashOpenEnabled enables slash-triggered palette open behavior.
+	SlashOpenEnabled bool
+	// SlashPolicy decides when slash should open the palette.
+	// Supported values: empty-input, column-zero, provider.
+	SlashPolicy CommandPaletteSlashPolicy
+	// MaxVisibleItems limits visible rows rendered by the palette model.
+	MaxVisibleItems int
+}
+
 // DefaultAutocompleteConfig returns default autocomplete settings.
 func DefaultAutocompleteConfig() AutocompleteConfig {
 	return AutocompleteConfig{
@@ -156,6 +181,18 @@ func DefaultHelpDrawerConfig() HelpDrawerConfig {
 	}
 }
 
+// DefaultCommandPaletteConfig returns default command palette settings.
+func DefaultCommandPaletteConfig() CommandPaletteConfig {
+	return CommandPaletteConfig{
+		Enabled:          true,
+		OpenKeys:         []string{"ctrl+p"},
+		CloseKeys:        []string{"esc", "ctrl+p"},
+		SlashOpenEnabled: true,
+		SlashPolicy:      CommandPaletteSlashPolicyEmptyInput,
+		MaxVisibleItems:  8,
+	}
+}
+
 // Config holds REPL shell configuration.
 type Config struct {
 	Title                string
@@ -172,6 +209,8 @@ type Config struct {
 	HelpBar HelpBarConfig
 	// HelpDrawer controls keyboard-toggle contextual panel behavior.
 	HelpDrawer HelpDrawerConfig
+	// CommandPalette controls command discovery/dispatch overlay behavior.
+	CommandPalette CommandPaletteConfig
 }
 
 // DefaultConfig returns a sensible default configuration.
@@ -188,5 +227,6 @@ func DefaultConfig() Config {
 		Autocomplete:         DefaultAutocompleteConfig(),
 		HelpBar:              DefaultHelpBarConfig(),
 		HelpDrawer:           DefaultHelpDrawerConfig(),
+		CommandPalette:       DefaultCommandPaletteConfig(),
 	}
 }

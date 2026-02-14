@@ -289,6 +289,35 @@ func TestConfig(t *testing.T) {
 	assert.Equal(t, 46, config.HelpDrawer.HeightPercent)
 	assert.Equal(t, 1, config.HelpDrawer.Margin)
 	assert.False(t, config.HelpDrawer.PrefetchWhenHidden)
+	assert.True(t, config.CommandPalette.Enabled)
+	assert.Equal(t, []string{"ctrl+p"}, config.CommandPalette.OpenKeys)
+	assert.Equal(t, []string{"esc", "ctrl+p"}, config.CommandPalette.CloseKeys)
+	assert.True(t, config.CommandPalette.SlashOpenEnabled)
+	assert.Equal(t, CommandPaletteSlashPolicyEmptyInput, config.CommandPalette.SlashPolicy)
+	assert.Equal(t, 8, config.CommandPalette.MaxVisibleItems)
+}
+
+func TestNormalizeCommandPaletteConfigDefaults(t *testing.T) {
+	normalized := normalizeCommandPaletteConfig(CommandPaletteConfig{})
+	assert.Equal(t, DefaultCommandPaletteConfig(), normalized)
+}
+
+func TestNormalizeCommandPaletteConfigSanitizesValues(t *testing.T) {
+	cfg := CommandPaletteConfig{
+		Enabled:          true,
+		OpenKeys:         []string{"f1"},
+		CloseKeys:        []string{"esc"},
+		SlashOpenEnabled: true,
+		SlashPolicy:      CommandPaletteSlashPolicy("unknown"),
+		MaxVisibleItems:  200,
+	}
+	normalized := normalizeCommandPaletteConfig(cfg)
+	assert.True(t, normalized.Enabled)
+	assert.Equal(t, []string{"f1"}, normalized.OpenKeys)
+	assert.Equal(t, []string{"esc"}, normalized.CloseKeys)
+	assert.True(t, normalized.SlashOpenEnabled)
+	assert.Equal(t, CommandPaletteSlashPolicyEmptyInput, normalized.SlashPolicy)
+	assert.Equal(t, 50, normalized.MaxVisibleItems)
 }
 
 func TestStyles(t *testing.T) {
