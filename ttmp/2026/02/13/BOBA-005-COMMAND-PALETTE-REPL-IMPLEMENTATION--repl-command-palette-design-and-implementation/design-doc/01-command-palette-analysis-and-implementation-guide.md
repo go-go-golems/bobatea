@@ -31,7 +31,7 @@ RelatedFiles:
       Note: Input-mode key routing precedence and slash handling
 ExternalSources: []
 Summary: Implementation guide for command palette integration and remaining BOBA-008-aligned follow-up tasks.
-LastUpdated: 2026-02-14T11:40:00-05:00
+LastUpdated: 2026-02-14T12:20:00-05:00
 WhatFor: Build a command palette that unifies slash commands and keyboard-launched command execution in REPL.
 WhenToUse: Use when implementing command discoverability and action dispatch in REPL.
 ---
@@ -116,7 +116,7 @@ Target file ownership:
 Current status:
 
 - Config/contracts/routing/dispatch are in place.
-- Remaining BOBA-008 alignment work is mainly overlay extraction + focused tests + validation/doc closure.
+- Overlay extraction, focused tests, and validation/doc closure tasks are complete.
 
 ## UX and Behavior Contract
 
@@ -339,7 +339,7 @@ Status: not required for v1; incremental adaptation preferred.
 - Entry points: keyboard open/close and slash-open guard rails.
 - Layering: palette rendered as top lipgloss v2 overlay.
 
-### Phase B (remaining): BOBA-008 alignment and hardening
+### Phase B (completed): BOBA-008 alignment and hardening
 
 1. Extract palette overlay geometry/rendering from `model.go` into `command_palette_overlay.go`.
 2. Add focused tests for:
@@ -442,12 +442,12 @@ Risk: command action side effects during active async operations.
 - [x] Implement keyboard open/close and command dispatch.
 - [x] Implement slash open policy and guard rails.
 - [x] Implement command actions and evaluator command extension hooks.
-- [ ] Move palette overlay render/layout helpers into `pkg/repl/command_palette_overlay.go`.
-- [ ] Add tests for key routing, slash policy, and action dispatch.
-- [ ] Run `go test ./pkg/repl/... -count=1`.
-- [ ] Run `golangci-lint run -v --max-same-issues=100 ./pkg/repl/...`.
-- [ ] Run PTY smoke tests for `examples/repl/autocomplete-generic` and `examples/js-repl`.
-- [ ] Update BOBA-005 changelog/diary with final validation output and closure notes.
+- [x] Move palette overlay render/layout helpers into `pkg/repl/command_palette_overlay.go`.
+- [x] Add tests for key routing, slash policy, and action dispatch.
+- [x] Run `go test ./pkg/repl/... -count=1`.
+- [x] Run `golangci-lint run -v --max-same-issues=100 ./pkg/repl/...`.
+- [x] Run PTY smoke tests for `examples/repl/autocomplete-generic` and `examples/js-repl`.
+- [x] Update BOBA-005 changelog/diary with final validation output and closure notes.
 
 ## References
 
