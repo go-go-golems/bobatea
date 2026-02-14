@@ -11,19 +11,21 @@ DocType: design-doc
 Intent: long-term
 Owners: []
 RelatedFiles:
-    - Path: bobatea/pkg/commandpalette/model.go
+    - Path: pkg/commandpalette/model.go
       Note: Existing palette UI model and filtering/navigation behavior
-    - Path: bobatea/pkg/overlay/overlay.go
-      Note: Overlay placement helper for palette presentation
-    - Path: bobatea/pkg/repl/config.go
+    - Path: pkg/repl/config.go
       Note: Palette config and slash policy options
-    - Path: bobatea/pkg/repl/messages.go
-      Note: Existing slash command message context
-    - Path: bobatea/pkg/repl/model.go
-      Note: Key routing and action dispatch integration surface
+    - Path: pkg/repl/config_normalize.go
+      Note: Normalization rules for command palette defaults and slash policy
+    - Path: pkg/repl/keymap.go
+      Note: Bobatea key bindings and help model integration surface for command palette
+    - Path: pkg/repl/model.go
+      Note: Root orchestration and lipgloss v2 overlay composition order
+    - Path: pkg/repl/model_input.go
+      Note: Input-mode key routing precedence and slash handling
 ExternalSources: []
-Summary: Detailed analysis and implementation plan for an integrated REPL command palette with slash entry and keyboard launch.
-LastUpdated: 2026-02-13T10:43:00-05:00
+Summary: Implementation guide for integrating REPL command palette into the BOBA-008 split model architecture with keyboard and slash entry.
+LastUpdated: 2026-02-13T19:36:00-05:00
 WhatFor: Build a command palette that unifies slash commands and keyboard-launched command execution in REPL.
 WhenToUse: Use when implementing command discoverability and action dispatch in REPL.
 ---
@@ -33,12 +35,19 @@ WhenToUse: Use when implementing command discoverability and action dispatch in 
 
 ## Executive Summary
 
-This document defines how to integrate a command palette into `bobatea/pkg/repl` with two entry paths:
+This document defines how to integrate a command palette into `pkg/repl` with two entry paths:
 
 - keyboard shortcut (`ctrl+p` recommended default),
 - slash-driven entry (`/`) when enabled.
 
 The palette should provide fuzzy command discovery, quick execution, and clean coexistence with input editing, autocomplete, help bar, and help drawer.
+
+Post BOBA-008, the REPL is split across orchestration and feature files. Command palette integration should follow the same shape:
+
+- root orchestration in `pkg/repl/model.go`,
+- input routing in `pkg/repl/model_input.go`,
+- config/defaults in `pkg/repl/config.go` and `pkg/repl/config_normalize.go`,
+- dedicated command-palette feature files in `pkg/repl`.
 
 > [!NOTE]
 > It is acceptable to replace or rewrite current `pkg/autocomplete` or `pkg/commandpalette` internals as long as REPL contracts remain stable.
@@ -58,7 +67,7 @@ Missing palette integration increases hidden functionality and inconsistent comm
 
 ### Existing component
 
-- `bobatea/pkg/commandpalette/model.go`
+- `pkg/commandpalette/model.go`
 - includes command registration, visibility, query filtering, selection, execution.
 
 ### Gaps for REPL use
@@ -67,6 +76,23 @@ Missing palette integration increases hidden functionality and inconsistent comm
 - no action catalog abstraction for REPL + evaluator commands,
 - no robust slash-entry policy in input mode,
 - no central overlay z-order policy with future help drawer/autocomplete.
+
+## BOBA-008 Architecture Alignment
+
+Command palette should be integrated as a first-class feature model, not bolted into root state.
+
+Target file ownership:
+
+- `pkg/repl/command_palette_types.go`:
+  - `CommandPaletteConfig`, slash policy enum, command descriptor/provider contracts.
+- `pkg/repl/command_palette_model.go`:
+  - palette state, built-in command registry, open/close/dispatch helpers.
+- `pkg/repl/command_palette_overlay.go`:
+  - palette overlay geometry + rendering for lipgloss v2 canvas layers.
+- `pkg/repl/model_input.go`:
+  - key routing precedence and slash-open guard rails.
+- `pkg/repl/model.go`:
+  - layer composition policy and update dispatch integration.
 
 ## UX and Behavior Contract
 
@@ -125,7 +151,7 @@ Status: recommended medium-term; start with Policy A.
 
 ## Command Model Proposal
 
-Define REPL command descriptor in new file (for example `bobatea/pkg/repl/commands.go`):
+Define REPL command descriptor in dedicated palette types file:
 
 ```go
 type PaletteCommand struct {
@@ -154,24 +180,41 @@ Command sources:
 ### `repl.Model` additions
 
 ```go
-paletteEnabled bool
-palette        commandpalette.Model
-paletteVisible bool
-palettePolicy  SlashPolicy
+palette commandPaletteModel
+```
 
-commandIndex   []PaletteCommand
+where internal feature state is owned by:
+
+```go
+type commandPaletteModel struct {
+    ui            commandpalette.Model
+    enabled       bool
+    slashEnabled  bool
+    slashPolicy   CommandPaletteSlashPolicy
+    openKeys      []string
+    closeKeys     []string
+    maxVisible    int
+    commands      []PaletteCommand
+}
+
+type CommandPaletteSlashPolicy string
+const (
+    CommandPaletteSlashPolicyEmptyInput CommandPaletteSlashPolicy = "empty-input"
+    CommandPaletteSlashPolicyColumnZero CommandPaletteSlashPolicy = "column-zero"
+    CommandPaletteSlashPolicyProvider   CommandPaletteSlashPolicy = "provider"
+)
 ```
 
 ### update path
 
-- If palette visible, route key events to palette first.
+- If palette visible, route key events to palette first (before help drawer and completion navigation).
 - If closed, check open triggers (`ctrl+p`, slash policy) before normal input editing.
 - On selection, execute mapped action command.
 
 ### view path
 
 - render base REPL view,
-- overlay palette when visible (current `overlay.PlaceOverlay` or lipgloss v2 layer).
+- overlay palette when visible as highest `lipgloss v2` layer.
 
 ## Message Flow Diagram
 
@@ -264,7 +307,7 @@ Status: not required for v1; incremental adaptation preferred.
 
 ## Implementation Plan
 
-### Phase 1: Config and Contracts
+### Step 1: Config and Contracts
 
 Extend `Config` with:
 
@@ -274,31 +317,32 @@ type CommandPaletteConfig struct {
     OpenKeys          []string // default: ["ctrl+p"]
     CloseKeys         []string // default: ["esc", "ctrl+p"]
     SlashOpenEnabled  bool
-    SlashPolicy       string   // empty-input|column-zero|provider
+    SlashPolicy       CommandPaletteSlashPolicy
     MaxVisibleItems   int
 }
 ```
 
 Add command provider capability for evaluator-specific commands.
 
-### Phase 2: REPL Wiring
+### Step 2: REPL Wiring
 
-- Initialize `commandpalette.Model` in `NewModel` when enabled.
+- Initialize palette feature state in `NewModel` using normalized config.
 - Add command registry builder for built-ins + evaluator extensions.
-- Add key routing branch for visible palette.
+- Add explicit key routing branch for visible palette.
 
-### Phase 3: Slash Entry
+### Step 3: Keyboard + Slash Entry
 
+- Implement keyboard open/close with bobatea `key.Binding` integration.
 - Implement conservative slash policy (`empty-input`) first.
 - Ensure slash insertion still works when policy says no-open.
 
-### Phase 4: Overlay and Coexistence
+### Step 4: Overlay and Coexistence
 
 - Render palette overlay above base view.
 - Define z-order policy across overlays:
-- `palette > help drawer > autocomplete popup > help bar`.
+- `palette > completion popup > help drawer > base`.
 
-### Phase 5: Tests
+### Step 5: Tests and Validation
 
 Add tests for:
 
@@ -306,37 +350,52 @@ Add tests for:
 - slash-open policy behavior,
 - command execution dispatch,
 - non-interference with standard input when palette hidden,
-- overlay priority behavior (if central overlay manager is added).
+- overlay priority behavior.
+- add focused validation gates:
+  - `go test ./pkg/repl/... -count=1`
+  - `golangci-lint run -v --max-same-issues=100 ./pkg/repl/...`
 
 ## Pseudocode
 
 ```go
 func (m *Model) updateInput(k tea.KeyMsg) (tea.Model, tea.Cmd) {
-    if m.paletteVisible {
-        return m.updatePalette(k)
+    if handled, cmd := m.handleCommandPaletteInput(k); handled {
+        return m, cmd
     }
 
-    if m.isPaletteOpenKey(k.String()) {
-        m.openPalette("")
-        return m, nil
-    }
-
-    if k.String() == "/" && m.shouldOpenSlashPalette() {
-        m.openPalette("")
-        return m, nil // consume slash
-    }
-
-    // normal input handling
+    // existing precedence (help drawer shortcuts, completion nav, etc)
     ...
 }
 
-func (m *Model) updatePalette(k tea.KeyMsg) (tea.Model, tea.Cmd) {
-    var cmd tea.Cmd
-    m.palette, cmd = m.palette.Update(k)
-    if !m.palette.IsVisible() {
-        m.paletteVisible = false
+func (m *Model) handleCommandPaletteInput(k tea.KeyMsg) (bool, tea.Cmd) {
+    if !m.palette.enabled {
+        return false, nil
     }
-    return m, cmd
+
+    if m.palette.ui.IsVisible() {
+        // route key to palette first
+        var cmd tea.Cmd
+        m.palette.ui, cmd = m.palette.ui.Update(k)
+        return true, cmd
+    }
+
+    if key.Matches(k, m.keyMap.CommandPaletteOpen) {
+        m.openCommandPalette()
+        return true, nil
+    }
+
+    if k.String() == "/" && m.shouldOpenSlashPalette() {
+        m.openCommandPalette()
+        return true, nil // consume slash
+    }
+    return false, nil
+}
+
+func (m *Model) openCommandPalette() {
+    m.rebuildCommandPalette()
+    var cmd tea.Cmd
+    _ = cmd
+    m.palette.ui.Show()
 }
 ```
 
@@ -381,15 +440,16 @@ Risk: command action side effects during active async operations.
 - [ ] Add command palette config block.
 - [ ] Add command descriptor/registry contracts.
 - [ ] Wire palette model into REPL update/view loops.
+- [ ] Implement keyboard open/close and command dispatch.
 - [ ] Implement slash open policy and guard rails.
 - [ ] Implement command actions and evaluator command extension hooks.
 - [ ] Add tests for key routing, slash policy, and action dispatch.
 
 ## References
 
-- `bobatea/pkg/repl/model.go`
-- `bobatea/pkg/repl/config.go`
-- `bobatea/pkg/repl/messages.go`
-- `bobatea/pkg/commandpalette/model.go`
-- `bobatea/pkg/overlay/overlay.go`
-- `bobatea/pkg/autocomplete/autocomplete.go`
+- `pkg/repl/model.go`
+- `pkg/repl/model_input.go`
+- `pkg/repl/config.go`
+- `pkg/repl/config_normalize.go`
+- `pkg/repl/keymap.go`
+- `pkg/commandpalette/model.go`
