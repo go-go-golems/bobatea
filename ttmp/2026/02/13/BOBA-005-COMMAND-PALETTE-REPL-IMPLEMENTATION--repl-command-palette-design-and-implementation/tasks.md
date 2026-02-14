@@ -27,4 +27,4 @@
 - [x] Smoke test examples with PTY wrapping:
   - `script -q -c "timeout 7s go run ./examples/repl/autocomplete-generic" /dev/null`
   - `script -q -c "timeout 7s go run ./examples/js-repl" /dev/null`
-- [ ] Update BOBA-005 changelog and diary with task-by-task commits, failures, and validation output
+- [x] Update BOBA-005 changelog and diary with task-by-task commits, failures, and validation output
