@@ -4,45 +4,57 @@ import (
 	"context"
 	"fmt"
 	"runtime/debug"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/rs/zerolog/log"
 )
 
+func runProvider[T any](
+	baseCtx context.Context,
+	requestID uint64,
+	timeout time.Duration,
+	providerName string,
+	panicPrefix string,
+	fn func(context.Context) (T, error),
+) (T, error) {
+	ctx, cancel := context.WithTimeout(baseCtx, timeout)
+	defer cancel()
+
+	var (
+		out T
+		err error
+	)
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Error().
+					Interface("panic", r).
+					Str("stack", string(debug.Stack())).
+					Uint64("request_id", requestID).
+					Str("provider", providerName).
+					Msg("provider panicked")
+				err = fmt.Errorf("%s panic: %v", panicPrefix, r)
+			}
+		}()
+		out, err = fn(ctx)
+	}()
+
+	return out, err
+}
+
 func (m *Model) completionCmd(req CompletionRequest) tea.Cmd {
 	return func() tea.Msg {
-		var (
-			result    CompletionResult
-			err       error
-			recovered any
-			stack     string
+		result, err := runProvider(
+			m.appContext(),
+			req.RequestID,
+			m.completion.reqTimeout,
+			"input-completer",
+			"input completer",
+			func(ctx context.Context) (CompletionResult, error) {
+				return m.completion.provider.CompleteInput(ctx, req)
+			},
 		)
-
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					recovered = r
-					stack = string(debug.Stack())
-				}
-			}()
-
-			ctx, cancel := context.WithTimeout(m.appContext(), m.completion.reqTimeout)
-			defer cancel()
-
-			result, err = m.completion.provider.CompleteInput(ctx, req)
-		}()
-
-		if recovered != nil {
-			log.Error().
-				Interface("panic", recovered).
-				Str("stack", stack).
-				Uint64("request_id", req.RequestID).
-				Msg("input completer panicked")
-			return completionResultMsg{
-				RequestID: req.RequestID,
-				Err:       fmt.Errorf("input completer panic: %v", recovered),
-			}
-		}
 
 		return completionResultMsg{
 			RequestID: req.RequestID,
@@ -54,38 +66,16 @@ func (m *Model) completionCmd(req CompletionRequest) tea.Cmd {
 
 func (m *Model) helpBarCmd(req HelpBarRequest) tea.Cmd {
 	return func() tea.Msg {
-		var (
-			payload   HelpBarPayload
-			err       error
-			recovered any
-			stack     string
+		payload, err := runProvider(
+			m.appContext(),
+			req.RequestID,
+			m.helpBar.reqTimeout,
+			"help-bar-provider",
+			"help bar provider",
+			func(ctx context.Context) (HelpBarPayload, error) {
+				return m.helpBar.provider.GetHelpBar(ctx, req)
+			},
 		)
-
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					recovered = r
-					stack = string(debug.Stack())
-				}
-			}()
-
-			ctx, cancel := context.WithTimeout(m.appContext(), m.helpBar.reqTimeout)
-			defer cancel()
-
-			payload, err = m.helpBar.provider.GetHelpBar(ctx, req)
-		}()
-
-		if recovered != nil {
-			log.Error().
-				Interface("panic", recovered).
-				Str("stack", stack).
-				Uint64("request_id", req.RequestID).
-				Msg("help bar provider panicked")
-			return helpBarResultMsg{
-				RequestID: req.RequestID,
-				Err:       fmt.Errorf("help bar provider panic: %v", recovered),
-			}
-		}
 
 		return helpBarResultMsg{
 			RequestID: req.RequestID,
@@ -97,38 +87,16 @@ func (m *Model) helpBarCmd(req HelpBarRequest) tea.Cmd {
 
 func (m *Model) helpDrawerCmd(req HelpDrawerRequest) tea.Cmd {
 	return func() tea.Msg {
-		var (
-			doc       HelpDrawerDocument
-			err       error
-			recovered any
-			stack     string
+		doc, err := runProvider(
+			m.appContext(),
+			req.RequestID,
+			m.helpDrawer.reqTimeout,
+			"help-drawer-provider",
+			"help drawer provider",
+			func(ctx context.Context) (HelpDrawerDocument, error) {
+				return m.helpDrawer.provider.GetHelpDrawer(ctx, req)
+			},
 		)
-
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					recovered = r
-					stack = string(debug.Stack())
-				}
-			}()
-
-			ctx, cancel := context.WithTimeout(m.appContext(), m.helpDrawer.reqTimeout)
-			defer cancel()
-
-			doc, err = m.helpDrawer.provider.GetHelpDrawer(ctx, req)
-		}()
-
-		if recovered != nil {
-			log.Error().
-				Interface("panic", recovered).
-				Str("stack", stack).
-				Uint64("request_id", req.RequestID).
-				Msg("help drawer provider panicked")
-			return helpDrawerResultMsg{
-				RequestID: req.RequestID,
-				Err:       fmt.Errorf("help drawer provider panic: %v", recovered),
-			}
-		}
 
 		return helpDrawerResultMsg{
 			RequestID: req.RequestID,
