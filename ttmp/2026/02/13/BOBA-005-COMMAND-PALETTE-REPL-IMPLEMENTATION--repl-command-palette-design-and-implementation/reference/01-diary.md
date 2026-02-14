@@ -575,3 +575,82 @@ This keeps command palette behavior unchanged while reducing layout noise in `mo
 
 - Task tracking:
   - BOBA-005 overlay extraction task checked complete.
+
+## Step 8: Task 9 - Add Focused Command Palette Test Coverage
+
+I added a dedicated command palette test suite to validate the behavior that was previously untested: precedence in input routing, slash-policy correctness, and command execution close semantics. This closes the largest correctness gap remaining in BOBA-005.
+
+I kept the tests evaluator-agnostic by using a fake evaluator implementing optional palette/help-drawer interfaces, so behavior can be validated without JS runtime dependencies.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 7)
+
+**Assistant interpretation:** Continue the next BOBA-005 task in sequence, committing and documenting each step.
+
+**Inferred user intent:** Finish remaining command palette tasks with concrete automated coverage before final closure.
+
+**Commit (code):** 77faeed — "repl: add focused command palette behavior tests"
+
+### What I did
+
+- Added `pkg/repl/command_palette_model_test.go` with focused tests:
+  - `TestCommandPaletteConfigNormalizationBounds`
+  - `TestCommandPaletteRoutingTakesPrecedenceOverCompletionNavigation`
+  - `TestCommandPaletteRoutingTakesPrecedenceOverHelpDrawerShortcuts`
+  - `TestCommandPaletteSlashPolicyEmptyInputOpensAndConsumesSlash`
+  - `TestCommandPaletteSlashPolicyEmptyInputFallsThroughWhenInputNotEmpty`
+  - `TestCommandPaletteSlashPolicyColumnZeroOpensAtStart`
+  - `TestCommandPaletteSlashPolicyProviderDelegates`
+  - `TestCommandPaletteExecutesSelectedCommandAndCloses`
+- Ran validation:
+  - `go test ./pkg/repl/... -count=1` (pass)
+- Pre-commit gates on initial commit attempt failed due formatting, then passed after fix:
+  - first failure: `pkg/repl/command_palette_model_test.go: File is not properly formatted (gofmt)`
+  - fix: `gofmt -w pkg/repl/command_palette_model_test.go`
+  - second commit attempt passed full test/lint/security hooks.
+
+### Why
+
+- BOBA-005 required focused tests for palette-specific behavior, not just generic REPL tests.
+- Routing precedence and slash policy are easy to regress without explicit tests.
+
+### What worked
+
+- The new tests pass and exercise the expected key interaction surfaces.
+- Test setup stayed lightweight by reusing existing helper patterns from `pkg/repl` tests.
+
+### What didn't work
+
+- First commit attempt failed lint due missing `gofmt`.
+- Root cause: newly added test file was not formatted before commit.
+
+### What I learned
+
+- With strict pre-commit hooks, run `gofmt` on any newly added test file before commit to avoid a full hook cycle rerun.
+
+### What was tricky to build
+
+- Asserting routing precedence without directly reading unexported state in `pkg/commandpalette`.
+- Approach used: assert side effects on competing subsystems (completion selection and help drawer visibility) do not occur while palette is visible.
+
+### What warrants a second pair of eyes
+
+- Confirm that provider-based slash policy tests cover all intended edge behavior when provider errors (currently not opening on error by design).
+
+### What should be done in the future
+
+- Run and record remaining BOBA-005 validation/smoke tasks, then close ticket docs.
+
+### Code review instructions
+
+- Review:
+  - `pkg/repl/command_palette_model_test.go`
+- Validate:
+  - `go test ./pkg/repl/... -count=1`
+  - `golangci-lint run -v --max-same-issues=100 ./pkg/repl/...`
+
+### Technical details
+
+- Task tracking:
+  - BOBA-005 focused command palette tests task checked complete.

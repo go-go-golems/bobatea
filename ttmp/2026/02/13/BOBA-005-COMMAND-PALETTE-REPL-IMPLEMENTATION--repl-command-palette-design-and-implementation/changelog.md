@@ -87,3 +87,13 @@ Completed task: moved command palette overlay rendering from `pkg/repl/model.go`
 - /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/command_palette_overlay.go — New command palette overlay renderer and centering placement helper
 - /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/model.go — Root view now calls `renderCommandPaletteOverlay()` and keeps compositor layering only
 - /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-005-COMMAND-PALETTE-REPL-IMPLEMENTATION--repl-command-palette-design-and-implementation/tasks.md — Marked overlay extraction task complete
+
+
+## 2026-02-13
+
+Completed task: added focused command palette tests for config normalization bounds, input routing precedence, slash policy variants, and command execution/close semantics. (commit 77faeed)
+
+### Related Files
+
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/command_palette_model_test.go — New focused command palette test suite
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-005-COMMAND-PALETTE-REPL-IMPLEMENTATION--repl-command-palette-design-and-implementation/tasks.md — Marked focused test task complete
