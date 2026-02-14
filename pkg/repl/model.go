@@ -332,21 +332,7 @@ func (m *Model) View() string {
 		}
 	}
 
-	paletteVisible := m.palette.enabled && m.palette.ui.IsVisible()
-	paletteLayerView := ""
-	if paletteVisible {
-		paletteView := m.palette.ui.View()
-		if paletteView != "" {
-			paletteLayerView = lipgloss.Place(
-				max(1, m.width),
-				max(1, m.height),
-				lipgloss.Center,
-				lipgloss.Center,
-				paletteView,
-				lipgloss.WithWhitespaceChars(" "),
-			)
-		}
-	}
+	paletteLayerView := m.renderCommandPaletteOverlay()
 
 	if !completionOK && !drawerOK && paletteLayerView == "" {
 		return base
