@@ -61,19 +61,29 @@ func (m *Model) handleHelpBarResult(msg helpBarResultMsg) tea.Cmd {
 	if msg.RequestID != m.helpBar.reqSeq {
 		return nil
 	}
+	prevVisible := m.helpBar.visible
 	m.helpBar.lastReqID = msg.RequestID
 	m.helpBar.lastErr = msg.Err
 	if msg.Err != nil {
 		m.helpBar.visible = false
+		if prevVisible != m.helpBar.visible {
+			m.applyLayoutAndRefresh()
+		}
 		return nil
 	}
 	if !msg.Payload.Show || strings.TrimSpace(msg.Payload.Text) == "" {
 		m.helpBar.visible = false
+		if prevVisible != m.helpBar.visible {
+			m.applyLayoutAndRefresh()
+		}
 		return nil
 	}
 
 	m.helpBar.payload = msg.Payload
 	m.helpBar.visible = true
+	if prevVisible != m.helpBar.visible {
+		m.applyLayoutAndRefresh()
+	}
 	return nil
 }
 

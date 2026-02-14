@@ -37,6 +37,7 @@ func (m *Model) updateInput(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.textInput.Blur()
 		m.sh.SetSelectionVisible(true)
 		m.updateKeyBindings()
+		m.applyLayoutAndRefresh()
 		return m, nil
 	case key.Matches(k, m.keyMap.Submit):
 		input := m.textInput.Value()
@@ -44,7 +45,10 @@ func (m *Model) updateInput(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.textInput.Reset()
-		m.helpBar.visible = false
+		if m.helpBar.visible {
+			m.helpBar.visible = false
+			m.applyLayoutAndRefresh()
+		}
 		if m.config.EnableHistory {
 			m.history.Add(input, "", false)
 			m.history.ResetNavigation()
@@ -89,6 +93,7 @@ func (m *Model) updateTimeline(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.textInput.Focus()
 		m.sh.SetSelectionVisible(false)
 		m.updateKeyBindings()
+		m.applyLayoutAndRefresh()
 		return m, nil
 	case key.Matches(k, m.keyMap.TimelinePrev):
 		m.sh.SelectPrev()

@@ -29,7 +29,9 @@ type Model struct {
 	textInput textinput.Model
 
 	// layout
-	width, height int
+	width, height  int
+	timelineWidth  int
+	timelineHeight int
 
 	// timeline shell (viewport + controller)
 	reg    *timeline.Registry
@@ -203,15 +205,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch v := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = v.Width, v.Height
-		m.help.Width = max(0, v.Width)
-		m.textInput.Width = max(10, v.Width-10)
-		m.palette.ui.SetSize(v.Width, v.Height)
-		helpHeight := lipgloss.Height(m.help.View(m.keyMap))
-		// reserve room for title, input, and help rows
-		tlHeight := max(0, v.Height-helpHeight-4)
-		m.sh.SetSize(v.Width, tlHeight)
-		// initial refresh to fit new size
-		m.sh.RefreshView(false)
+		m.applyLayoutAndRefresh()
 		var cmd tea.Cmd
 		m.textInput, cmd = m.textInput.Update(msg)
 		return m, cmd
@@ -223,6 +217,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case key.Matches(v, m.keyMap.ToggleHelp):
 			m.help.ShowAll = !m.help.ShowAll
+			m.applyLayoutAndRefresh()
 			return m, nil
 		}
 

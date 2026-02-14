@@ -2,6 +2,7 @@ package repl
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -99,6 +100,46 @@ func TestModelWindowSizeUpdatesHelpWidth(t *testing.T) {
 
 	_, _ = model.Update(tea.WindowSizeMsg{Width: 42, Height: 16})
 	assert.Equal(t, 42, model.help.Width)
+}
+
+func TestModelToggleHelpReflowsTimelineHeight(t *testing.T) {
+	evaluator := NewExampleEvaluator()
+	config := DefaultConfig()
+	bus, err := eventbus.NewInMemoryBus()
+	require.NoError(t, err)
+	model := NewModel(evaluator, config, bus.Publisher)
+
+	_, _ = model.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	baseTimelineHeight := model.timelineHeight
+	baseHelpLines := strings.Count(model.help.View(model.keyMap), "\n") + 1
+
+	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlH})
+
+	fullHelp := model.help.View(model.keyMap)
+	fullHelpLines := strings.Count(fullHelp, "\n") + 1
+	assert.True(t, model.help.ShowAll)
+	assert.Greater(t, fullHelpLines, baseHelpLines)
+	assert.Less(t, model.timelineHeight, baseTimelineHeight)
+}
+
+func TestLayoutAccountsForHelpBarHeight(t *testing.T) {
+	evaluator := NewExampleEvaluator()
+	config := DefaultConfig()
+	bus, err := eventbus.NewInMemoryBus()
+	require.NoError(t, err)
+	model := NewModel(evaluator, config, bus.Publisher)
+
+	_, _ = model.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	baseTimelineHeight := model.timelineHeight
+
+	model.helpBar.visible = true
+	model.helpBar.payload = HelpBarPayload{
+		Show: true,
+		Text: "symbol: fn(x): y",
+	}
+	model.applyLayoutFromState()
+
+	assert.Less(t, model.timelineHeight, baseTimelineHeight)
 }
 
 func TestNewModelWiresFeatureSubmodelsFromConfig(t *testing.T) {
