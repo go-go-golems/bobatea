@@ -17,7 +17,7 @@ func (m *Model) applyLayoutFromState() bool {
 		return false
 	}
 
-	helpHeight := lipgloss.Height(m.help.View(m.keyMap))
+	helpHeight := lipgloss.Height(m.renderHelp())
 	helpBarHeight := 0
 	if helpBarView := m.renderHelpBar(); helpBarView != "" {
 		helpBarHeight = lipgloss.Height(helpBarView)

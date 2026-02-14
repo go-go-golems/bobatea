@@ -553,6 +553,56 @@ func TestEvaluator_GetHelpBar(t *testing.T) {
 	})
 }
 
+func TestEvaluator_GetHelpDrawer(t *testing.T) {
+	evaluator, err := NewWithDefaults()
+	require.NoError(t, err)
+
+	ctx := context.Background()
+
+	t.Run("property context returns rich drawer document", func(t *testing.T) {
+		doc, helpErr := evaluator.GetHelpDrawer(ctx, repl.HelpDrawerRequest{
+			Input:      "console.lo",
+			CursorByte: len("console.lo"),
+			RequestID:  7,
+			Trigger:    repl.HelpDrawerTriggerTyping,
+		})
+		require.NoError(t, helpErr)
+		require.True(t, doc.Show)
+		assert.Contains(t, doc.Title, "console")
+		assert.Contains(t, doc.Subtitle, "kind: property")
+		assert.Contains(t, doc.Markdown, "Completion Candidates")
+		assert.Contains(t, doc.Markdown, "`log`")
+		assert.Contains(t, doc.VersionTag, "request-7")
+	})
+
+	t.Run("empty input still returns helpful drawer content", func(t *testing.T) {
+		doc, helpErr := evaluator.GetHelpDrawer(ctx, repl.HelpDrawerRequest{
+			Input:      "",
+			CursorByte: 0,
+			RequestID:  8,
+			Trigger:    repl.HelpDrawerTriggerToggleOpen,
+		})
+		require.NoError(t, helpErr)
+		require.True(t, doc.Show)
+		assert.Contains(t, doc.Subtitle, "trigger: toggle-open")
+		assert.Contains(t, doc.Markdown, "Start typing JavaScript")
+	})
+
+	t.Run("require aliases are surfaced", func(t *testing.T) {
+		input := "const fs = require(\"fs\");\nfs.re"
+		doc, helpErr := evaluator.GetHelpDrawer(ctx, repl.HelpDrawerRequest{
+			Input:      input,
+			CursorByte: len(input),
+			RequestID:  9,
+			Trigger:    repl.HelpDrawerTriggerManualRefresh,
+		})
+		require.NoError(t, helpErr)
+		require.True(t, doc.Show)
+		assert.Contains(t, doc.Markdown, "require() Aliases")
+		assert.Contains(t, doc.Markdown, "`fs` -> `fs`")
+	})
+}
+
 func hasSuggestion(result repl.CompletionResult, label string) bool {
 	for _, suggestion := range result.Suggestions {
 		if suggestion.Value == label {

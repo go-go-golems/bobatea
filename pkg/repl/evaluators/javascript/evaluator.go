@@ -3,6 +3,7 @@ package javascript
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 
@@ -225,6 +226,13 @@ func (e *Evaluator) CompleteInput(_ context.Context, req repl.CompletionRequest)
 
 	input := req.Input
 	cursor := clampCursor(req.CursorByte, len(input))
+	if strings.TrimSpace(input) == "" {
+		return repl.CompletionResult{
+			Show:        false,
+			ReplaceFrom: cursor,
+			ReplaceTo:   cursor,
+		}, nil
+	}
 
 	e.tsMu.Lock()
 	root := e.tsParser.Parse([]byte(input))
@@ -312,6 +320,9 @@ func (e *Evaluator) GetHelpBar(_ context.Context, req repl.HelpBarRequest) (repl
 	}
 
 	input := req.Input
+	if strings.TrimSpace(input) == "" {
+		return repl.HelpBarPayload{Show: false}, nil
+	}
 	cursor := clampCursor(req.CursorByte, len(input))
 
 	e.tsMu.Lock()
@@ -351,6 +362,151 @@ func (e *Evaluator) GetHelpBar(_ context.Context, req repl.HelpBarRequest) (repl
 	}
 
 	return e.helpBarFromTokenFallback(token), nil
+}
+
+// GetHelpDrawer resolves rich contextual help for the JS REPL input.
+func (e *Evaluator) GetHelpDrawer(ctx context.Context, req repl.HelpDrawerRequest) (repl.HelpDrawerDocument, error) {
+	select {
+	case <-ctx.Done():
+		return repl.HelpDrawerDocument{}, ctx.Err()
+	default:
+	}
+
+	doc := repl.HelpDrawerDocument{
+		Show:       true,
+		Title:      "JavaScript Context",
+		Subtitle:   describeHelpDrawerTrigger(req.Trigger),
+		Markdown:   "Start typing JavaScript to inspect contextual symbol help.",
+		VersionTag: fmt.Sprintf("request-%d", req.RequestID),
+	}
+	if strings.TrimSpace(req.Input) == "" {
+		return doc, nil
+	}
+
+	if e.tsParser == nil {
+		doc.Diagnostics = []string{"jsparse parser not available"}
+		return doc, nil
+	}
+
+	input := req.Input
+	cursor := clampCursor(req.CursorByte, len(input))
+
+	e.tsMu.Lock()
+	root := e.tsParser.Parse([]byte(input))
+	e.tsMu.Unlock()
+	if root == nil {
+		doc.Diagnostics = []string{"failed to parse input"}
+		return doc, nil
+	}
+
+	analysis := jsparse.Analyze("repl-input.js", input, nil)
+	row, col := byteOffsetToRowCol(input, cursor)
+	completionCtx := analysis.CompletionContextAt(root, row, col)
+
+	token, _, _ := tokenAtCursor(input, cursor)
+	token = strings.TrimSpace(token)
+
+	aliases := jsparse.ExtractRequireAliases(input)
+	candidates := []jsparse.CompletionCandidate{}
+	if completionCtx.Kind != jsparse.CompletionNone {
+		candidates = jsparse.ResolveCandidates(completionCtx, analysis.Index, root)
+		if completionCtx.Kind == jsparse.CompletionProperty {
+			if moduleName, ok := aliases[completionCtx.BaseExpr]; ok {
+				candidates = append(
+					candidates,
+					jsparse.FilterCandidatesByPrefix(jsparse.NodeModuleCandidates(moduleName), completionCtx.PartialText)...,
+				)
+			}
+		}
+	}
+	candidates = jsparse.DedupeAndSortCandidates(candidates)
+
+	payload, ok := e.helpBarFromContext(completionCtx, candidates, aliases)
+	if !ok {
+		payload = e.helpBarFromTokenFallback(token)
+	}
+
+	if payload.Show {
+		doc.Title = payload.Text
+	}
+
+	doc.Subtitle = fmt.Sprintf(
+		"%s | kind: %s | cursor: %d",
+		describeHelpDrawerTrigger(req.Trigger),
+		describeCompletionKind(completionCtx.Kind),
+		cursor,
+	)
+
+	var md strings.Builder
+	if strings.TrimSpace(input) == "" {
+		md.WriteString("Type a symbol such as `console.lo` or `Math.ma` to inspect context.\n")
+	} else {
+		md.WriteString("```javascript\n")
+		md.WriteString(clipForDrawer(input, 320))
+		md.WriteString("\n```\n")
+	}
+
+	if payload.Show {
+		md.WriteString("\n### Symbol\n")
+		md.WriteString("- ")
+		md.WriteString(payload.Text)
+		md.WriteString("\n")
+	}
+
+	if completionCtx.Kind == jsparse.CompletionProperty {
+		base := strings.TrimSpace(completionCtx.BaseExpr)
+		if base != "" {
+			md.WriteString("\n### Property Context\n")
+			md.WriteString("- Base expression: `")
+			md.WriteString(base)
+			md.WriteString("`\n")
+			if partial := strings.TrimSpace(completionCtx.PartialText); partial != "" {
+				md.WriteString("- Typed prefix: `")
+				md.WriteString(partial)
+				md.WriteString("`\n")
+			}
+		}
+	}
+
+	if len(candidates) > 0 {
+		md.WriteString("\n### Completion Candidates\n")
+		limit := min(8, len(candidates))
+		for i := 0; i < limit; i++ {
+			candidate := candidates[i]
+			md.WriteString("- `")
+			md.WriteString(candidate.Label)
+			md.WriteString("`")
+			if detail := normalizeCandidateDetail(candidate.Detail); detail != "symbol" {
+				md.WriteString(" - ")
+				md.WriteString(detail)
+			}
+			md.WriteString("\n")
+		}
+		if len(candidates) > limit {
+			md.WriteString("- ...")
+			md.WriteString(fmt.Sprintf(" %d more", len(candidates)-limit))
+			md.WriteString("\n")
+		}
+	}
+
+	if len(aliases) > 0 {
+		md.WriteString("\n### require() Aliases\n")
+		keys := make([]string, 0, len(aliases))
+		for alias := range aliases {
+			keys = append(keys, alias)
+		}
+		sort.Strings(keys)
+		for _, alias := range keys {
+			md.WriteString("- `")
+			md.WriteString(alias)
+			md.WriteString("` -> `")
+			md.WriteString(aliases[alias])
+			md.WriteString("`\n")
+		}
+	}
+
+	doc.Markdown = strings.TrimSpace(md.String())
+	return doc, nil
 }
 
 // GetPrompt returns the prompt string for JavaScript evaluation
@@ -697,6 +853,41 @@ func makeHelpBarPayload(text, kind string) repl.HelpBarPayload {
 		Kind:     kind,
 		Severity: "info",
 	}
+}
+
+func describeHelpDrawerTrigger(trigger repl.HelpDrawerTrigger) string {
+	switch trigger {
+	case repl.HelpDrawerTriggerToggleOpen:
+		return "trigger: toggle-open"
+	case repl.HelpDrawerTriggerManualRefresh:
+		return "trigger: manual-refresh"
+	case repl.HelpDrawerTriggerTyping:
+		return "trigger: typing"
+	default:
+		return "trigger: unknown"
+	}
+}
+
+func describeCompletionKind(kind jsparse.CompletionKind) string {
+	switch kind {
+	case jsparse.CompletionIdentifier:
+		return "identifier"
+	case jsparse.CompletionProperty:
+		return "property"
+	case jsparse.CompletionArgument:
+		return "argument"
+	case jsparse.CompletionNone:
+		return "none"
+	default:
+		return "unknown"
+	}
+}
+
+func clipForDrawer(s string, limit int) string {
+	if limit <= 0 || len(s) <= limit {
+		return s
+	}
+	return s[:limit] + "\n// ...truncated"
 }
 
 // IsValidCode checks if the given code is syntactically valid JavaScript

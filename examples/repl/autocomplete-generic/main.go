@@ -256,7 +256,7 @@ func main() {
 	evaluator := newGenericEvaluator()
 	config := repl.DefaultConfig()
 	config.Title = "Generic Autocomplete REPL"
-	config.Placeholder = "Type 'co' and use Tab (completion), ctrl+h (help drawer), ctrl+r (drawer refresh)"
+	config.Placeholder = "Type 'co' and use Tab (completion), alt+h (help drawer), ctrl+h (full help), ctrl+r (drawer refresh)"
 	config.Autocomplete.Enabled = true
 	config.Autocomplete.TriggerKeys = []string{"tab"}
 	config.Autocomplete.AcceptKeys = []string{"enter", "tab"}
