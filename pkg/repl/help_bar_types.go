@@ -1,33 +1,25 @@
 package repl
 
-import "context"
+import (
+	"context"
+
+	"github.com/go-go-golems/bobatea/pkg/tui/widgets/contextbar"
+)
 
 // HelpBarReason describes why a help bar request was triggered.
-type HelpBarReason string
+type HelpBarReason = contextbar.Reason
 
 const (
-	HelpBarReasonDebounce HelpBarReason = "debounce"
-	HelpBarReasonShortcut HelpBarReason = "shortcut"
-	HelpBarReasonManual   HelpBarReason = "manual"
+	HelpBarReasonDebounce HelpBarReason = contextbar.ReasonDebounce
+	HelpBarReasonShortcut HelpBarReason = contextbar.ReasonShortcut
+	HelpBarReasonManual   HelpBarReason = contextbar.ReasonManual
 )
 
 // HelpBarRequest captures current input context for help bar lookup.
-type HelpBarRequest struct {
-	Input      string
-	CursorByte int
-	Reason     HelpBarReason
-	Shortcut   string
-	RequestID  uint64
-}
+type HelpBarRequest = contextbar.Request
 
 // HelpBarPayload describes what the REPL help bar should render.
-type HelpBarPayload struct {
-	Show      bool
-	Text      string
-	Kind      string
-	Severity  string
-	Ephemeral bool
-}
+type HelpBarPayload = contextbar.Payload
 
 // HelpBarProvider resolves contextual help bar text for REPL input snapshots.
 type HelpBarProvider interface {

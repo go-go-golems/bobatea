@@ -105,7 +105,7 @@ func (m *Model) builtinPaletteCommands() []PaletteCommand {
 			Keywords:    []string{"reset", "line"},
 			Action: func(m *Model) tea.Cmd {
 				m.textInput.Reset()
-				m.helpBar.visible = false
+				m.hideHelpBar()
 				return nil
 			},
 		},

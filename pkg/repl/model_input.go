@@ -45,10 +45,7 @@ func (m *Model) updateInput(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.textInput.Reset()
-		if m.helpBar.visible {
-			m.helpBar.visible = false
-			m.applyLayoutAndRefresh()
-		}
+		m.hideHelpBar()
 		if m.config.EnableHistory {
 			m.history.Add(input, "", false)
 			m.history.ResetNavigation()

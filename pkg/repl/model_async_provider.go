@@ -28,27 +28,6 @@ func (m *Model) completionCmd(req CompletionRequest) tea.Cmd {
 	}
 }
 
-func (m *Model) helpBarCmd(req HelpBarRequest) tea.Cmd {
-	return func() tea.Msg {
-		payload, err := asyncprovider.Run(
-			m.appContext(),
-			req.RequestID,
-			m.helpBar.reqTimeout,
-			"help-bar-provider",
-			"help bar provider",
-			func(ctx context.Context) (HelpBarPayload, error) {
-				return m.helpBar.provider.GetHelpBar(ctx, req)
-			},
-		)
-
-		return helpBarResultMsg{
-			RequestID: req.RequestID,
-			Payload:   payload,
-			Err:       err,
-		}
-	}
-}
-
 func (m *Model) helpDrawerCmd(req HelpDrawerRequest) tea.Cmd {
 	return func() tea.Msg {
 		doc, err := asyncprovider.Run(

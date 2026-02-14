@@ -91,53 +91,55 @@ func TestHelpBarDebounceCoalescesToLatestRequest(t *testing.T) {
 func TestHelpBarResultDropsStaleResponse(t *testing.T) {
 	evaluator := &fakeHelpBarEvaluator{}
 	m := newHelpBarTestModel(t, evaluator)
-	m.helpBar.reqSeq = 2
+	m.helpBar.widget.SetRequestSeq(2)
 
 	stale := helpBarResultMsg{
 		RequestID: 1,
 		Payload:   HelpBarPayload{Show: true, Text: "stale"},
 	}
 	_ = m.handleHelpBarResult(stale)
-	assert.False(t, m.helpBar.visible)
+	assert.False(t, m.helpBar.widget.Visible())
 
 	current := helpBarResultMsg{
 		RequestID: 2,
 		Payload:   HelpBarPayload{Show: true, Text: "active", Severity: "info"},
 	}
 	_ = m.handleHelpBarResult(current)
-	assert.True(t, m.helpBar.visible)
-	assert.Equal(t, "active", m.helpBar.payload.Text)
+	assert.True(t, m.helpBar.widget.Visible())
+	assert.Equal(t, "active", m.helpBar.widget.Payload().Text)
 }
 
 func TestHelpBarResultHidesOnShowFalseOrEmptyText(t *testing.T) {
 	evaluator := &fakeHelpBarEvaluator{}
 	m := newHelpBarTestModel(t, evaluator)
-	m.helpBar.reqSeq = 1
+	m.helpBar.widget.SetRequestSeq(1)
 
 	_ = m.handleHelpBarResult(helpBarResultMsg{
 		RequestID: 1,
 		Payload:   HelpBarPayload{Show: true, Text: "signature foo(x)"},
 	})
-	assert.True(t, m.helpBar.visible)
+	assert.True(t, m.helpBar.widget.Visible())
 
 	_ = m.handleHelpBarResult(helpBarResultMsg{
 		RequestID: 1,
 		Payload:   HelpBarPayload{Show: false, Text: "hidden"},
 	})
-	assert.False(t, m.helpBar.visible)
+	assert.False(t, m.helpBar.widget.Visible())
 
 	_ = m.handleHelpBarResult(helpBarResultMsg{
 		RequestID: 1,
 		Payload:   HelpBarPayload{Show: true, Text: "   "},
 	})
-	assert.False(t, m.helpBar.visible)
+	assert.False(t, m.helpBar.widget.Visible())
 }
 
 func TestHelpBarDebounceInputChangeKeepsBarVisible(t *testing.T) {
 	evaluator := &fakeHelpBarEvaluator{}
 	m := newHelpBarTestModel(t, evaluator)
-	m.helpBar.visible = true
-	m.helpBar.payload = HelpBarPayload{Show: true, Text: "old context"}
+	_ = m.helpBar.widget.HandleResult(helpBarResultMsg{
+		RequestID: m.helpBar.widget.RequestSeq(),
+		Payload:   HelpBarPayload{Show: true, Text: "old context"},
+	})
 	m.textInput.SetValue("co")
 	m.textInput.SetCursor(2)
 
@@ -145,7 +147,7 @@ func TestHelpBarDebounceInputChangeKeepsBarVisible(t *testing.T) {
 	m.textInput.SetCursor(3)
 	cmd := m.scheduleDebouncedHelpBarIfNeeded("co", 2)
 	require.NotNil(t, cmd)
-	assert.True(t, m.helpBar.visible, "help bar should remain visible while debounce request is pending")
+	assert.True(t, m.helpBar.widget.Visible(), "help bar should remain visible while debounce request is pending")
 }
 
 func TestHelpBarStyleSeverityMapping(t *testing.T) {
@@ -174,8 +176,8 @@ func TestHelpBarEndToEndTypingFlow(t *testing.T) {
 
 	require.Len(t, evaluator.requests, 1)
 	assert.Equal(t, HelpBarReasonDebounce, evaluator.requests[0].Reason)
-	assert.True(t, m.helpBar.visible)
-	assert.Equal(t, "console.log(...args): void", m.helpBar.payload.Text)
+	assert.True(t, m.helpBar.widget.Visible())
+	assert.Equal(t, "console.log(...args): void", m.helpBar.widget.Payload().Text)
 }
 
 func TestHelpBarCmdRecoversFromProviderPanic(t *testing.T) {
@@ -192,7 +194,7 @@ func TestHelpBarCmdRecoversFromProviderPanic(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, req.RequestID, msg.RequestID)
 	require.Error(t, msg.Err)
-	assert.Contains(t, msg.Err.Error(), "help bar provider panic")
+	assert.Contains(t, msg.Err.Error(), "context bar provider panic")
 }
 
 func TestHelpBarCmdTimesOutSlowProvider(t *testing.T) {
@@ -201,7 +203,7 @@ func TestHelpBarCmdTimesOutSlowProvider(t *testing.T) {
 		payload: HelpBarPayload{Show: true, Text: "late"},
 	}
 	m := newHelpBarTestModel(t, evaluator)
-	m.helpBar.reqTimeout = time.Millisecond
+	m.helpBar.widget.SetRequestTimeout(time.Millisecond)
 
 	req := HelpBarRequest{
 		Input:      "co",
@@ -238,6 +240,6 @@ func TestHelpBarNoProviderIsInert(t *testing.T) {
 	m.textInput.SetCursor(1)
 	cmd := m.scheduleDebouncedHelpBarIfNeeded(prevValue, prevCursor)
 	assert.Nil(t, cmd)
-	assert.False(t, m.helpBar.visible)
-	assert.Equal(t, uint64(0), m.helpBar.reqSeq)
+	assert.False(t, m.helpBar.widget.Visible())
+	assert.Equal(t, uint64(0), m.helpBar.widget.RequestSeq())
 }
