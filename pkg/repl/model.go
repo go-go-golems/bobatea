@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/go-go-golems/bobatea/pkg/commandpalette"
 	"github.com/go-go-golems/bobatea/pkg/timeline"
 	renderers "github.com/go-go-golems/bobatea/pkg/timeline/renderers"
 	"github.com/rs/zerolog/log"
@@ -50,6 +51,7 @@ type Model struct {
 	completion completionModel
 	helpBar    helpBarModel
 	helpDrawer helpDrawerModel
+	palette    commandPaletteModel
 }
 
 // NewModel constructs a new REPL shell with timeline transcript.
@@ -97,6 +99,7 @@ func NewModel(evaluator Evaluator, config Config, pub message.Publisher) *Model 
 	if !helpDrawerCfg.Enabled {
 		helpDrawerProvider = nil
 	}
+	commandPaletteCfg := normalizeCommandPaletteConfig(config.CommandPalette)
 
 	focusToggleKey := autocompleteCfg.FocusToggleKey
 	if focusToggleKey == "" {
@@ -151,6 +154,15 @@ func NewModel(evaluator Evaluator, config Config, pub message.Publisher) *Model 
 			heightPercent: helpDrawerCfg.HeightPercent,
 			margin:        helpDrawerCfg.Margin,
 		},
+		palette: commandPaletteModel{
+			ui:           commandpalette.New(),
+			enabled:      commandPaletteCfg.Enabled,
+			openKeys:     commandPaletteCfg.OpenKeys,
+			closeKeys:    commandPaletteCfg.CloseKeys,
+			slashEnabled: commandPaletteCfg.SlashOpenEnabled,
+			slashPolicy:  commandPaletteCfg.SlashPolicy,
+			maxVisible:   commandPaletteCfg.MaxVisibleItems,
+		},
 	}
 	ret.appCtx, ret.appStop = context.WithCancel(context.Background())
 	if ret.helpDrawer.provider == nil {
@@ -187,6 +199,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = v.Width, v.Height
 		m.textInput.Width = max(10, v.Width-10)
+		m.palette.ui.SetSize(v.Width, v.Height)
 		helpHeight := lipgloss.Height(m.help.View(m.keyMap))
 		// reserve room for title, input, and help rows
 		tlHeight := max(0, v.Height-helpHeight-4)
