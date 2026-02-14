@@ -425,3 +425,83 @@ This step also introduced built-in REPL commands and evaluator command contribut
 
 - Task tracking:
   - BOBA-005 task 6 checked complete.
+
+## Step 6: Task 7 - Conservative Slash-Open Guard Rails
+
+I implemented slash-trigger opening under explicit policy checks and guard rails. The slash key now opens the palette only when policy returns true; otherwise it falls through to normal text input behavior.
+
+This preserves conservative defaults while allowing future evaluator-specific policy via an optional provider contract.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 2)
+
+**Assistant interpretation:** Continue with the next task in order, committing each step and documenting outcomes.
+
+**Inferred user intent:** Ensure slash behavior is safe by default and does not interfere with normal REPL typing.
+
+**Commit (code):** 4640706 — "repl: add guarded slash-open policy for command palette"
+
+### What I did
+
+- Updated `pkg/repl/command_palette_model.go`:
+  - added slash key detection helper (`isSlashOpenKey`)
+  - added `shouldOpenCommandPaletteFromSlash` policy guard
+  - integrated slash-open branch into `handleCommandPaletteInput`
+  - policy behavior:
+    - `empty-input`: open only when input is empty and cursor at column 0
+    - `column-zero`: open when cursor is at column 0
+    - `provider`: delegate decision to optional evaluator provider
+  - added completion-popup guard so slash-open does not fire while completion is visible
+- Updated `pkg/repl/command_palette_types.go`:
+  - added `CommandPaletteSlashRequest`
+  - added optional `CommandPaletteSlashOpenProvider` contract
+- Validation:
+  - `go test ./pkg/repl/... -count=1` (pass)
+  - pre-commit full test/lint/security gates passed on final commit.
+
+### Why
+
+- Slash-open behavior must be conservative to avoid syntax collisions in language REPL input.
+- Provider delegation offers extension without hardcoding language-specific slash heuristics.
+
+### What worked
+
+- Slash behavior now opens palette only under policy approval and otherwise behaves as normal input.
+- Default policy is conservative and explicit.
+
+### What didn't work
+
+- Initial compile failed because interface name collided with existing enum constant:
+  - `CommandPaletteSlashPolicyProvider redeclared in this block`
+- Resolution:
+  - renamed interface to `CommandPaletteSlashOpenProvider`.
+
+### What I learned
+
+- With enum-style constant names, provider contract names should avoid repeating the same token pattern to prevent redeclaration collisions.
+
+### What was tricky to build
+
+- Preserving exact input semantics: slash must be consumed only on policy-approved opens; otherwise it must still be inserted by standard input update flow.
+
+### What warrants a second pair of eyes
+
+- Confirm whether completion-visible guard is sufficient, or if additional guards should consider help-drawer pinned/visible states.
+
+### What should be done in the future
+
+- Implement task 8 next: render command palette as top lipgloss v2 layer above existing overlays.
+
+### Code review instructions
+
+- Review:
+  - `pkg/repl/command_palette_model.go`
+  - `pkg/repl/command_palette_types.go`
+- Validate:
+  - `go test ./pkg/repl/... -count=1`
+
+### Technical details
+
+- Task tracking:
+  - BOBA-005 task 7 checked complete.
