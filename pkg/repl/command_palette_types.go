@@ -26,3 +26,14 @@ type PaletteCommandProvider interface {
 type PaletteCommandRegistry interface {
 	List(ctx context.Context, m *Model) ([]PaletteCommand, error)
 }
+
+// CommandPaletteSlashRequest captures input context for provider-based slash-open decisions.
+type CommandPaletteSlashRequest struct {
+	Input      string
+	CursorByte int
+}
+
+// CommandPaletteSlashOpenProvider allows evaluators to decide slash-open behavior.
+type CommandPaletteSlashOpenProvider interface {
+	ShouldOpenCommandPaletteOnSlash(ctx context.Context, req CommandPaletteSlashRequest) (bool, error)
+}

@@ -40,6 +40,10 @@ func (m *Model) handleCommandPaletteInput(k tea.KeyMsg) (bool, tea.Cmd) {
 		m.openCommandPalette()
 		return true, nil
 	}
+	if isSlashOpenKey(k) && m.shouldOpenCommandPaletteFromSlash() {
+		m.openCommandPalette()
+		return true, nil
+	}
 
 	return false, nil
 }
@@ -203,4 +207,46 @@ func mergePaletteCommands(base, extra []PaletteCommand) []PaletteCommand {
 	}
 
 	return ret
+}
+
+func isSlashOpenKey(k tea.KeyMsg) bool {
+	if k.Paste || k.Alt {
+		return false
+	}
+	return k.Type == tea.KeyRunes && len(k.Runes) == 1 && k.Runes[0] == '/'
+}
+
+func (m *Model) shouldOpenCommandPaletteFromSlash() bool {
+	if !m.palette.enabled || !m.palette.slashEnabled {
+		return false
+	}
+	if m.completion.visible {
+		return false
+	}
+
+	input := m.textInput.Value()
+	cursor := m.textInput.Position()
+
+	switch m.palette.slashPolicy {
+	case CommandPaletteSlashPolicyEmptyInput:
+		return cursor == 0 && strings.TrimSpace(input) == ""
+	case CommandPaletteSlashPolicyColumnZero:
+		return cursor == 0
+	case CommandPaletteSlashPolicyProvider:
+		provider, ok := m.evaluator.(CommandPaletteSlashOpenProvider)
+		if !ok {
+			return false
+		}
+		okOpen, err := provider.ShouldOpenCommandPaletteOnSlash(m.appContext(), CommandPaletteSlashRequest{
+			Input:      input,
+			CursorByte: cursor,
+		})
+		if err != nil {
+			log.Warn().Err(err).Msg("slash policy provider failed")
+			return false
+		}
+		return okOpen
+	default:
+		return false
+	}
 }
