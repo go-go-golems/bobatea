@@ -3,8 +3,6 @@ package javascript
 import (
 	"context"
 	"fmt"
-	"regexp"
-	"sort"
 	"strings"
 	"sync"
 
@@ -17,29 +15,6 @@ import (
 )
 
 var (
-	requireAliasPattern = regexp.MustCompile(`(?m)\b(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*require\(\s*['"]([^'"]+)['"]\s*\)`)
-
-	nodeModuleCandidates = map[string][]jsparse.CompletionCandidate{
-		"fs": {
-			{Label: "readFile", Kind: jsparse.CandidateMethod, Detail: "fs method"},
-			{Label: "writeFile", Kind: jsparse.CandidateMethod, Detail: "fs method"},
-			{Label: "existsSync", Kind: jsparse.CandidateMethod, Detail: "fs method"},
-			{Label: "mkdirSync", Kind: jsparse.CandidateMethod, Detail: "fs method"},
-		},
-		"path": {
-			{Label: "join", Kind: jsparse.CandidateMethod, Detail: "path method"},
-			{Label: "resolve", Kind: jsparse.CandidateMethod, Detail: "path method"},
-			{Label: "dirname", Kind: jsparse.CandidateMethod, Detail: "path method"},
-			{Label: "basename", Kind: jsparse.CandidateMethod, Detail: "path method"},
-			{Label: "extname", Kind: jsparse.CandidateMethod, Detail: "path method"},
-		},
-		"url": {
-			{Label: "URL", Kind: jsparse.CandidateFunction, Detail: "constructor"},
-			{Label: "URLSearchParams", Kind: jsparse.CandidateFunction, Detail: "constructor"},
-			{Label: "parse", Kind: jsparse.CandidateMethod, Detail: "url method"},
-		},
-	}
-
 	helpBarSymbolSignatures = map[string]string{
 		"console":        "console: object (log, error, warn, info, debug, table)",
 		"console.log":    "console.log(...args): void",
@@ -77,10 +52,13 @@ var (
 
 // Evaluator implements the REPL evaluator interface for JavaScript
 type Evaluator struct {
-	runtime  *goja.Runtime
-	tsParser *jsparse.TSParser
-	tsMu     sync.Mutex
-	config   Config
+	runtime            *goja.Runtime
+	runtimeMu          sync.Mutex
+	tsParser           *jsparse.TSParser
+	tsMu               sync.Mutex
+	runtimeDeclaredMu  sync.RWMutex
+	runtimeDeclaredIDs map[string]jsparse.CompletionCandidate
+	config             Config
 }
 
 // Config holds configuration for the JavaScript evaluator
@@ -114,8 +92,9 @@ func New(config Config) (*Evaluator, error) {
 	}
 
 	evaluator := &Evaluator{
-		runtime: runtime,
-		config:  config,
+		runtime:            runtime,
+		runtimeDeclaredIDs: map[string]jsparse.CompletionCandidate{},
+		config:             config,
 	}
 	if parser, parserErr := jsparse.NewTSParser(); parserErr == nil {
 		evaluator.tsParser = parser
@@ -203,8 +182,10 @@ func (e *Evaluator) Evaluate(ctx context.Context, code string) (string, error) {
 	}
 
 	// Execute the JavaScript code
+	e.runtimeMu.Lock()
 	result, err := e.runtime.RunString(code)
 	if err != nil {
+		e.runtimeMu.Unlock()
 		return "", errors.Wrap(err, "JavaScript execution failed")
 	}
 
@@ -215,6 +196,8 @@ func (e *Evaluator) Evaluate(ctx context.Context, code string) (string, error) {
 	} else {
 		output = "undefined"
 	}
+	e.runtimeMu.Unlock()
+	e.observeRuntimeDeclarations(code)
 
 	return output, nil
 }
@@ -253,15 +236,15 @@ func (e *Evaluator) CompleteInput(_ context.Context, req repl.CompletionRequest)
 		return repl.CompletionResult{Show: false}, nil
 	}
 
-	candidates := jsparse.ResolveCandidates(ctx, analysis.Index, root)
-	if ctx.Kind == jsparse.CompletionProperty {
-		aliases := extractRequireAliases(input)
-		if moduleName, ok := aliases[ctx.BaseExpr]; ok {
-			if moduleCandidates, ok := nodeModuleCandidates[moduleName]; ok {
-				candidates = append(candidates, moduleCandidates...)
-			}
-		}
-	}
+	e.runtimeMu.Lock()
+	candidates := jsparse.AugmentREPLCandidates(
+		e.runtime,
+		input,
+		ctx,
+		jsparse.ResolveCandidates(ctx, analysis.Index, root),
+		e.runtimeIdentifierHints(),
+	)
+	e.runtimeMu.Unlock()
 	if len(candidates) == 0 {
 		return repl.CompletionResult{
 			Show:        false,
@@ -302,10 +285,6 @@ func (e *Evaluator) CompleteInput(_ context.Context, req repl.CompletionRequest)
 			DisplayText: display,
 		})
 	}
-
-	sort.SliceStable(suggestions, func(i, j int) bool {
-		return suggestions[i].Value < suggestions[j].Value
-	})
 
 	show := len(suggestions) > 0
 	if req.Reason == repl.CompletionReasonDebounce {
@@ -351,19 +330,17 @@ func (e *Evaluator) GetHelpBar(_ context.Context, req repl.HelpBarRequest) (repl
 		return repl.HelpBarPayload{Show: false}, nil
 	}
 
-	aliases := extractRequireAliases(input)
+	aliases := jsparse.ExtractRequireAliases(input)
 	candidates := []jsparse.CompletionCandidate{}
 	if ctx.Kind != jsparse.CompletionNone {
 		candidates = jsparse.ResolveCandidates(ctx, analysis.Index, root)
 		if ctx.Kind == jsparse.CompletionProperty {
 			if moduleName, ok := aliases[ctx.BaseExpr]; ok {
-				if moduleCandidates, ok := nodeModuleCandidates[moduleName]; ok {
-					candidates = append(candidates, moduleCandidates...)
-				}
+				candidates = append(candidates, jsparse.FilterCandidatesByPrefix(jsparse.NodeModuleCandidates(moduleName), ctx.PartialText)...)
 			}
 		}
 	}
-	candidates = dedupeAndSortCandidates(candidates)
+	candidates = jsparse.DedupeAndSortCandidates(candidates)
 
 	if payload, ok := e.helpBarFromContext(ctx, candidates, aliases); ok {
 		return payload, nil
@@ -399,11 +376,15 @@ func (e *Evaluator) GetRuntime() *goja.Runtime {
 
 // SetVariable sets a variable in the JavaScript runtime
 func (e *Evaluator) SetVariable(name string, value interface{}) error {
+	e.runtimeMu.Lock()
+	defer e.runtimeMu.Unlock()
 	return e.runtime.Set(name, value)
 }
 
 // GetVariable gets a variable from the JavaScript runtime
 func (e *Evaluator) GetVariable(name string) (interface{}, error) {
+	e.runtimeMu.Lock()
+	defer e.runtimeMu.Unlock()
 	val := e.runtime.Get(name)
 	if val == nil {
 		return nil, fmt.Errorf("variable %s not found", name)
@@ -419,7 +400,9 @@ func (e *Evaluator) LoadScript(ctx context.Context, filename string, content str
 	default:
 	}
 
+	e.runtimeMu.Lock()
 	_, err := e.runtime.RunString(content)
+	e.runtimeMu.Unlock()
 	if err != nil {
 		return errors.Wrapf(err, "failed to load script %s", filename)
 	}
@@ -437,6 +420,9 @@ func (e *Evaluator) Reset() error {
 
 	e.runtime = newEvaluator.runtime
 	e.tsParser = newEvaluator.tsParser
+	e.runtimeDeclaredMu.Lock()
+	e.runtimeDeclaredIDs = map[string]jsparse.CompletionCandidate{}
+	e.runtimeDeclaredMu.Unlock()
 	return nil
 }
 
@@ -490,18 +476,32 @@ func byteOffsetToRowCol(input string, cursor int) (int, int) {
 	return row, col
 }
 
-func extractRequireAliases(input string) map[string]string {
-	aliases := make(map[string]string)
-	matches := requireAliasPattern.FindAllStringSubmatch(input, -1)
-	for _, match := range matches {
-		if len(match) != 3 {
+func (e *Evaluator) observeRuntimeDeclarations(code string) {
+	candidates := jsparse.ExtractTopLevelBindingCandidates(code)
+	if len(candidates) == 0 {
+		return
+	}
+	e.runtimeDeclaredMu.Lock()
+	defer e.runtimeDeclaredMu.Unlock()
+	for _, candidate := range candidates {
+		if strings.TrimSpace(candidate.Label) == "" {
 			continue
 		}
-		alias := match[1]
-		moduleName := match[2]
-		aliases[alias] = moduleName
+		e.runtimeDeclaredIDs[candidate.Label] = candidate
 	}
-	return aliases
+}
+
+func (e *Evaluator) runtimeIdentifierHints() []jsparse.CompletionCandidate {
+	e.runtimeDeclaredMu.RLock()
+	defer e.runtimeDeclaredMu.RUnlock()
+	if len(e.runtimeDeclaredIDs) == 0 {
+		return nil
+	}
+	out := make([]jsparse.CompletionCandidate, 0, len(e.runtimeDeclaredIDs))
+	for _, candidate := range e.runtimeDeclaredIDs {
+		out = append(out, candidate)
+	}
+	return out
 }
 
 func (e *Evaluator) helpBarFromContext(
@@ -523,7 +523,7 @@ func (e *Evaluator) helpBarFromContext(
 			}
 		}
 
-		exact := findExactCandidate(candidates, ctx.PartialText)
+		exact := jsparse.FindExactCandidate(candidates, ctx.PartialText)
 		if exact != nil {
 			if txt, ok := e.helpBarSignatureFor(base, exact.Label, aliases); ok {
 				return makeHelpBarPayload(txt, "signature"), true
@@ -538,7 +538,7 @@ func (e *Evaluator) helpBarFromContext(
 			return makeHelpBarPayload(fmt.Sprintf("%s.%s - %s", base, c.Label, normalizeCandidateDetail(c.Detail)), "info"), true
 		}
 	case jsparse.CompletionIdentifier:
-		exact := findExactCandidate(candidates, ctx.PartialText)
+		exact := jsparse.FindExactCandidate(candidates, ctx.PartialText)
 		if exact != nil {
 			if txt, ok := e.helpBarSignatureFor(exact.Label, "", nil); ok {
 				return makeHelpBarPayload(txt, "signature"), true
@@ -617,6 +617,9 @@ func (e *Evaluator) runtimeHelpForIdentifier(name string) (string, bool) {
 		return "", false
 	}
 
+	e.runtimeMu.Lock()
+	defer e.runtimeMu.Unlock()
+
 	v := e.runtime.Get(name)
 	if v == nil || goja.IsUndefined(v) || goja.IsNull(v) {
 		return "", false
@@ -673,41 +676,6 @@ func isTokenByte(b byte) bool {
 		b == '_' ||
 		b == '$' ||
 		b == '.'
-}
-
-func dedupeAndSortCandidates(candidates []jsparse.CompletionCandidate) []jsparse.CompletionCandidate {
-	if len(candidates) == 0 {
-		return nil
-	}
-	seen := make(map[string]struct{}, len(candidates))
-	out := make([]jsparse.CompletionCandidate, 0, len(candidates))
-	for _, c := range candidates {
-		if strings.TrimSpace(c.Label) == "" {
-			continue
-		}
-		if _, ok := seen[c.Label]; ok {
-			continue
-		}
-		seen[c.Label] = struct{}{}
-		out = append(out, c)
-	}
-	sort.SliceStable(out, func(i, j int) bool {
-		return out[i].Label < out[j].Label
-	})
-	return out
-}
-
-func findExactCandidate(candidates []jsparse.CompletionCandidate, partial string) *jsparse.CompletionCandidate {
-	partial = strings.TrimSpace(partial)
-	if partial == "" {
-		return nil
-	}
-	for i := range candidates {
-		if strings.EqualFold(candidates[i].Label, partial) {
-			return &candidates[i]
-		}
-	}
-	return nil
 }
 
 func normalizeCandidateDetail(detail string) string {

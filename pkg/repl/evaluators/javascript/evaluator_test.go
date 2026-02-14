@@ -395,6 +395,49 @@ func TestEvaluator_CompleteInput(t *testing.T) {
 		assert.True(t, hasSuggestion(result, "readFile"))
 	})
 
+	t.Run("runtime-defined function appears in identifier completion", func(t *testing.T) {
+		_, evalErr := evaluator.Evaluate(ctx, "function greetUser(name) { return 'hi ' + name; }")
+		require.NoError(t, evalErr)
+
+		result, err := evaluator.CompleteInput(ctx, repl.CompletionRequest{
+			Input:      "gre",
+			CursorByte: len("gre"),
+			Reason:     repl.CompletionReasonShortcut,
+			Shortcut:   "tab",
+		})
+		require.NoError(t, err)
+		assert.True(t, result.Show)
+		assert.True(t, hasSuggestion(result, "greetUser"))
+	})
+
+	t.Run("runtime-defined const appears in identifier completion", func(t *testing.T) {
+		_, evalErr := evaluator.Evaluate(ctx, "const dataBucket = { count: 1, label: 'demo' }")
+		require.NoError(t, evalErr)
+
+		result, err := evaluator.CompleteInput(ctx, repl.CompletionRequest{
+			Input:      "dataB",
+			CursorByte: len("dataB"),
+			Reason:     repl.CompletionReasonShortcut,
+			Shortcut:   "tab",
+		})
+		require.NoError(t, err)
+		assert.True(t, result.Show)
+		assert.True(t, hasSuggestion(result, "dataBucket"))
+	})
+
+	t.Run("runtime-defined object properties appear on dot completion", func(t *testing.T) {
+		result, err := evaluator.CompleteInput(ctx, repl.CompletionRequest{
+			Input:      "dataBucket.",
+			CursorByte: len("dataBucket."),
+			Reason:     repl.CompletionReasonShortcut,
+			Shortcut:   "tab",
+		})
+		require.NoError(t, err)
+		assert.True(t, result.Show)
+		assert.True(t, hasSuggestion(result, "count"))
+		assert.True(t, hasSuggestion(result, "label"))
+	})
+
 	t.Run("incomplete input after dot still yields candidates", func(t *testing.T) {
 		input := "console."
 		result, err := evaluator.CompleteInput(ctx, repl.CompletionRequest{
