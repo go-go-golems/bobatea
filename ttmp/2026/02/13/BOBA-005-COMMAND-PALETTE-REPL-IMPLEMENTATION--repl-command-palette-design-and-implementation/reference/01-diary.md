@@ -340,3 +340,88 @@ I also hooked window-size updates so the palette model tracks terminal dimension
 
 - Task tracking:
   - BOBA-005 task 5 checked complete.
+
+## Step 5: Task 6 - Keyboard Open/Close and Command Dispatch
+
+I implemented input-mode command palette routing and action dispatch. The palette now opens via configured key binding, closes via configured close/open key toggles when visible, and executes selected actions through the commandpalette model command callback path.
+
+This step also introduced built-in REPL commands and evaluator command contribution merging, so palette command content is ready before slash behavior and overlay layering tasks.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 2)
+
+**Assistant interpretation:** Continue task-by-task implementation with commits and diary updates after each completed task.
+
+**Inferred user intent:** Deliver fully integrated behavior in small, testable increments while preserving strict quality gates.
+
+**Commit (code):** a944fdc — "repl: route command palette keys and dispatch actions"
+
+### What I did
+
+- Updated `pkg/repl/keymap.go`:
+  - added input-mode bindings:
+    - `CommandPaletteOpen`
+    - `CommandPaletteClose`
+  - included palette bindings in short/full help models.
+  - updated `NewKeyMap` signature to receive `CommandPaletteConfig`.
+- Updated `pkg/repl/model.go`:
+  - passed normalized command palette config into keymap construction.
+- Updated `pkg/repl/model_input.go`:
+  - inserted `handleCommandPaletteInput` at highest input precedence.
+- Updated `pkg/repl/command_palette_model.go`:
+  - implemented palette open/close key routing
+  - implemented `openCommandPalette`
+  - added built-in command catalog and evaluator provider merge logic
+  - mapped REPL palette contracts to `commandpalette.Command` callbacks.
+- Updated `pkg/commandpalette/model.go`:
+  - added `SetCommands` to reset/replace palette command list on open.
+- Validation:
+  - `go test ./pkg/repl/... -count=1` (pass)
+  - final pre-commit run passed full repo test/lint/gosec/govulncheck.
+
+### Why
+
+- Routing and dispatch are core command palette behavior; without this the feature has state but no interaction path.
+- Replacing commands on open avoids duplicate command registration from repeated opens.
+
+### What worked
+
+- Palette key routing now coexists with existing input features by explicit precedence.
+- Action callbacks correctly mutate REPL state and can return `tea.Cmd` (including quit).
+
+### What didn't work
+
+- Intermediate commit attempts failed previously due strict unused-symbol lint while building incrementally; this was resolved by only adding active fields/functions and sequencing implementation tightly.
+
+### What I learned
+
+- Under strict lint + pre-commit gates, command-catalog wiring and routing should land in one cohesive step to avoid temporary unused artifacts.
+
+### What was tricky to build
+
+- Ensuring palette routing preempts other input handlers when visible, while still allowing a consistent close/toggle behavior through key bindings.
+
+### What warrants a second pair of eyes
+
+- Confirm whether close behavior should be exclusively config-driven or also keep hardcoded escape handling in commandpalette model as fallback.
+- Confirm whether built-in command ordering should remain static or become category-sorted.
+
+### What should be done in the future
+
+- Implement task 7 next: slash-open policy with guard rails (default empty-input).
+
+### Code review instructions
+
+- Review:
+  - `pkg/repl/command_palette_model.go`
+  - `pkg/repl/model_input.go`
+  - `pkg/repl/keymap.go`
+  - `pkg/commandpalette/model.go`
+- Validate:
+  - `go test ./pkg/repl/... -count=1`
+
+### Technical details
+
+- Task tracking:
+  - BOBA-005 task 6 checked complete.

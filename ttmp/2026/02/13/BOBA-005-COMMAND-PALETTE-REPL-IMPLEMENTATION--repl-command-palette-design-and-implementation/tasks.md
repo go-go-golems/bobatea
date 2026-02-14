@@ -10,7 +10,7 @@
 - [x] Extend `repl.Config` with `CommandPaletteConfig` + slash policy enum + normalization defaults
 - [x] Add REPL command descriptor/registry contracts and evaluator command provider hook
 - [x] Add command-palette state wiring in `repl.Model` and initialize `commandpalette.Model` in `NewModel`
-- [ ] Implement keyboard open/close routing and command dispatch in input mode
+- [x] Implement keyboard open/close routing and command dispatch in input mode
 - [ ] Implement conservative slash-open behavior with guard rails (default: empty-input policy)
 - [ ] Render command palette as top lipgloss v2 layer over existing overlays
 - [ ] Add tests for config normalization, key routing precedence, slash policy, and command execution behavior
