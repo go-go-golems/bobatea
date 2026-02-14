@@ -26,8 +26,6 @@ type Model struct {
 	// input & history
 	history   *History
 	textInput textinput.Model
-	multiline bool
-	lines     []string
 
 	// layout
 	width, height int
@@ -115,8 +113,6 @@ func NewModel(evaluator Evaluator, config Config, pub message.Publisher) *Model 
 		styles:    DefaultStyles(),
 		history:   NewHistory(config.MaxHistorySize),
 		textInput: ti,
-		multiline: config.StartMultiline,
-		lines:     []string{},
 		width:     config.Width,
 		reg:       reg,
 		sh:        sh,

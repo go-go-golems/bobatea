@@ -11,7 +11,7 @@
 - [x] Introduce internal `completionModel`, `helpBarModel`, and `helpDrawerModel` structs and migrate feature state from root `Model`
 - [x] Refactor root `Model` to orchestration-only responsibilities (`Update` routing + `View` layer composition)
 - [x] Replace duplicated provider panic/timeout boilerplate with a shared async helper
-- [ ] Remove old transitional paths and dead helpers from `model.go`
+- [x] Remove old transitional paths and dead helpers from `model.go`
 
 ## Cutover Validation
 

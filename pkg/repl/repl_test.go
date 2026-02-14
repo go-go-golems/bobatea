@@ -86,8 +86,6 @@ func TestModel(t *testing.T) {
 	// Test initialization
 	assert.Equal(t, evaluator, model.evaluator)
 	assert.Equal(t, config, model.config)
-	// multiline should mirror config
-	assert.Equal(t, config.StartMultiline, model.multiline)
 }
 
 func TestModelWithContext(t *testing.T) {
