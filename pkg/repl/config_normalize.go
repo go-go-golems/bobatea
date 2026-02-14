@@ -191,9 +191,7 @@ func normalizeCommandPaletteConfig(cfg CommandPaletteConfig) CommandPaletteConfi
 	if len(cfg.CloseKeys) > 0 {
 		merged.CloseKeys = cfg.CloseKeys
 	}
-	if cfg.SlashOpenEnabled {
-		merged.SlashOpenEnabled = true
-	}
+	merged.SlashOpenEnabled = cfg.SlashOpenEnabled
 	if cfg.SlashPolicy != "" {
 		merged.SlashPolicy = cfg.SlashPolicy
 	}

@@ -111,15 +111,64 @@ func TestModelToggleHelpReflowsTimelineHeight(t *testing.T) {
 
 	_, _ = model.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	baseTimelineHeight := model.timelineHeight
-	baseHelpLines := strings.Count(model.help.View(model.keyMap), "\n") + 1
+	baseHelpLines := strings.Count(model.renderHelp(), "\n") + 1
 
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlH})
 
-	fullHelp := model.help.View(model.keyMap)
+	fullHelp := model.renderHelp()
 	fullHelpLines := strings.Count(fullHelp, "\n") + 1
 	assert.True(t, model.help.ShowAll)
 	assert.Greater(t, fullHelpLines, baseHelpLines)
 	assert.Less(t, model.timelineHeight, baseTimelineHeight)
+}
+
+func TestModelFullHelpUsesAvailableWidth(t *testing.T) {
+	evaluator := NewExampleEvaluator()
+	config := DefaultConfig()
+	bus, err := eventbus.NewInMemoryBus()
+	require.NoError(t, err)
+	model := NewModel(evaluator, config, bus.Publisher)
+
+	_, _ = model.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlH})
+	narrowHelp := model.renderHelp()
+	narrowLines := strings.Count(narrowHelp, "\n") + 1
+
+	_, _ = model.Update(tea.WindowSizeMsg{Width: 140, Height: 24})
+	wideHelp := model.renderHelp()
+	wideLines := strings.Count(wideHelp, "\n") + 1
+
+	assert.NotContains(t, narrowHelp, "…")
+	assert.NotContains(t, wideHelp, "…")
+	assert.Less(t, wideLines, narrowLines)
+}
+
+func TestModelFullHelpDoesNotDropBindingsAtMediumWidth(t *testing.T) {
+	evaluator := &fakeCompleterEvaluator{}
+	config := DefaultConfig()
+	bus, err := eventbus.NewInMemoryBus()
+	require.NoError(t, err)
+	model := NewModel(evaluator, config, bus.Publisher)
+
+	_, _ = model.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
+	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlH})
+	fullHelp := model.renderHelp()
+
+	assert.NotContains(t, fullHelp, "…")
+	assert.Contains(t, fullHelp, "open palette")
+	assert.Contains(t, fullHelp, "completion page down")
+}
+
+func TestModelShortHelpShowsHelpDrawerToggle(t *testing.T) {
+	evaluator := NewExampleEvaluator()
+	config := DefaultConfig()
+	bus, err := eventbus.NewInMemoryBus()
+	require.NoError(t, err)
+	model := NewModel(evaluator, config, bus.Publisher)
+
+	_, _ = model.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	shortHelp := model.renderHelp()
+	assert.Contains(t, shortHelp, "toggle drawer")
 }
 
 func TestLayoutAccountsForHelpBarHeight(t *testing.T) {
@@ -132,11 +181,13 @@ func TestLayoutAccountsForHelpBarHeight(t *testing.T) {
 	_, _ = model.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	baseTimelineHeight := model.timelineHeight
 
-	model.helpBar.visible = true
-	model.helpBar.payload = HelpBarPayload{
-		Show: true,
-		Text: "symbol: fn(x): y",
-	}
+	_ = model.helpBar.widget.HandleResult(helpBarResultMsg{
+		RequestID: model.helpBar.widget.RequestSeq(),
+		Payload: HelpBarPayload{
+			Show: true,
+			Text: "symbol: fn(x): y",
+		},
+	})
 	model.applyLayoutFromState()
 
 	assert.Less(t, model.timelineHeight, baseTimelineHeight)
@@ -383,6 +434,14 @@ func TestNormalizeCommandPaletteConfigSanitizesValues(t *testing.T) {
 	assert.Equal(t, 1, normalized.OverlayMargin)
 	assert.Equal(t, 7, normalized.OverlayOffsetX)
 	assert.Equal(t, -3, normalized.OverlayOffsetY)
+}
+
+func TestNormalizeCommandPaletteConfigHonorsSlashOpenDisabled(t *testing.T) {
+	cfg := DefaultCommandPaletteConfig()
+	cfg.SlashOpenEnabled = false
+
+	normalized := normalizeCommandPaletteConfig(cfg)
+	assert.False(t, normalized.SlashOpenEnabled)
 }
 
 func TestStyles(t *testing.T) {

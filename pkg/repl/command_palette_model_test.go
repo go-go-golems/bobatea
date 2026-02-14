@@ -212,3 +212,64 @@ func TestCommandPaletteExecutesSelectedCommandAndCloses(t *testing.T) {
 	assert.False(t, m.palette.ui.IsVisible(), "palette should close after command execution")
 	assert.Equal(t, "custom-action-ran", m.textInput.Value())
 }
+
+func TestCommandPaletteListCommandsDoesNotTruncateByVisibleLimit(t *testing.T) {
+	evaluator := &fakeCommandPaletteEvaluator{
+		commands: []PaletteCommand{
+			{
+				ID:          "custom.alpha",
+				Name:        "Alpha Command",
+				Description: "alpha",
+				Action: func(m *Model) tea.Cmd {
+					return nil
+				},
+			},
+			{
+				ID:          "custom.beta",
+				Name:        "Beta Command",
+				Description: "beta",
+				Action: func(m *Model) tea.Cmd {
+					return nil
+				},
+			},
+			{
+				ID:          "custom.zzz",
+				Name:        "ZZZ Tail Command",
+				Description: "tail",
+				Action: func(m *Model) tea.Cmd {
+					return nil
+				},
+			},
+		},
+	}
+	m := newCommandPaletteTestModel(t, evaluator, func(cfg *Config) {
+		cfg.CommandPalette.MaxVisibleItems = 2
+	})
+
+	commands := m.listPaletteCommands(context.Background())
+	assert.Greater(t, len(commands), m.palette.maxVisible, "visible-row limit must not remove searchable commands")
+
+	foundTail := false
+	for _, cmd := range commands {
+		if cmd.Name == "ZZZ Tail Command" {
+			foundTail = true
+			break
+		}
+	}
+	assert.True(t, foundTail, "commands beyond visible rows must remain discoverable")
+}
+
+func TestCommandPaletteSlashOpenDisabledFallsThrough(t *testing.T) {
+	m := newCommandPaletteTestModel(t, &fakeCommandPaletteEvaluator{}, func(cfg *Config) {
+		cfg.CommandPalette.SlashOpenEnabled = false
+		cfg.CommandPalette.SlashPolicy = CommandPaletteSlashPolicyEmptyInput
+	})
+	m.textInput.SetValue("")
+	m.textInput.SetCursor(0)
+
+	_, cmd := m.updateInput(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	drainModelCmds(m, cmd)
+
+	assert.False(t, m.palette.ui.IsVisible())
+	assert.Equal(t, "/", m.textInput.Value())
+}

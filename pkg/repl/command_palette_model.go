@@ -87,11 +87,6 @@ func (m *Model) listPaletteCommands(ctx context.Context) []commandpalette.Comman
 			},
 		})
 	}
-
-	if m.palette.maxVisible > 0 && len(ret) > m.palette.maxVisible {
-		return ret[:m.palette.maxVisible]
-	}
-
 	return ret
 }
 

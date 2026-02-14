@@ -141,11 +141,7 @@ func NewModel(evaluator Evaluator, config Config, pub message.Publisher) *Model 
 			placement:  autocompleteCfg.OverlayPlacement,
 			horizontal: autocompleteCfg.OverlayHorizontalGrow,
 		},
-		helpBar: helpBarModel{
-			provider:   helpBarProvider,
-			debounce:   helpBarCfg.Debounce,
-			reqTimeout: helpBarCfg.RequestTimeout,
-		},
+		helpBar: newHelpBarModel(helpBarProvider, helpBarCfg),
 		helpDrawer: helpDrawerModel{
 			provider:      helpDrawerProvider,
 			debounce:      helpDrawerCfg.Debounce,
@@ -170,6 +166,7 @@ func NewModel(evaluator Evaluator, config Config, pub message.Publisher) *Model 
 			overlayOffsetY:   commandPaletteCfg.OverlayOffsetY,
 		},
 	}
+	ret.palette.ui.SetMaxVisible(ret.palette.maxVisible)
 	ret.appCtx, ret.appStop = context.WithCancel(context.Background())
 	if ret.helpDrawer.provider == nil {
 		ret.keyMap.HelpDrawerToggle.SetEnabled(false)
@@ -292,7 +289,7 @@ func (m *Model) View() string {
 		inputView = m.styles.HelpText.Render(inputView)
 	}
 
-	helpView := m.help.View(m.keyMap)
+	helpView := m.renderHelp()
 	baseSections := []string{
 		header,
 		"",

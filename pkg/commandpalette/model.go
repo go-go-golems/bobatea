@@ -22,6 +22,7 @@ type Model struct {
 	query        string
 	selected     int
 	visible      bool
+	maxVisible   int
 	width        int
 	height       int
 	styles       Styles
@@ -35,6 +36,7 @@ func New() Model {
 		query:        "",
 		selected:     0,
 		visible:      false,
+		maxVisible:   8,
 		styles:       DefaultStyles(),
 	}
 }
@@ -87,6 +89,15 @@ func (m Model) IsVisible() bool {
 func (m *Model) SetSize(width, height int) {
 	m.width = width
 	m.height = height
+}
+
+// SetMaxVisible sets the maximum number of commands rendered in the list.
+func (m *Model) SetMaxVisible(maxVisible int) {
+	if maxVisible <= 0 {
+		m.maxVisible = 8
+		return
+	}
+	m.maxVisible = maxVisible
 }
 
 // updateFiltered updates the filtered commands based on the current query
@@ -231,7 +242,10 @@ func (m Model) View() string {
 
 	// Commands list
 	var commandLines []string
-	maxCommands := 8 // Limit visible commands
+	maxCommands := m.maxVisible
+	if maxCommands <= 0 {
+		maxCommands = 8
+	}
 
 	for i, cmd := range m.filteredCmds {
 		if i >= maxCommands {
