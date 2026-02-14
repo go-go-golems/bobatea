@@ -112,6 +112,45 @@ func TestHelpDrawerAdaptiveTypingWhenVisible(t *testing.T) {
 	assert.Equal(t, HelpDrawerTriggerTyping, evaluator.requests[1].Trigger)
 }
 
+func TestHelpDrawerDebounceCoalescesToLatestRequest(t *testing.T) {
+	evaluator := &fakeHelpDrawerEvaluator{
+		doc: HelpDrawerDocument{
+			Show:     true,
+			Title:    "console",
+			Subtitle: "object",
+		},
+	}
+	m := newHelpDrawerTestModel(t, evaluator)
+	m.helpDrawer.visible = true
+
+	m.textInput.SetValue("c")
+	m.textInput.SetCursor(1)
+	cmd1 := m.scheduleDebouncedHelpDrawerIfNeeded("", 0)
+	require.NotNil(t, cmd1)
+	msg1, ok := cmd1().(helpDrawerDebounceMsg)
+	require.True(t, ok)
+
+	m.textInput.SetValue("co")
+	m.textInput.SetCursor(2)
+	cmd2 := m.scheduleDebouncedHelpDrawerIfNeeded("c", 1)
+	require.NotNil(t, cmd2)
+	msg2, ok := cmd2().(helpDrawerDebounceMsg)
+	require.True(t, ok)
+
+	staleCmd := m.handleDebouncedHelpDrawer(msg1)
+	assert.Nil(t, staleCmd, "stale debounce message must not trigger provider request")
+
+	activeCmd := m.handleDebouncedHelpDrawer(msg2)
+	require.NotNil(t, activeCmd)
+	resultMsg, ok := activeCmd().(helpDrawerResultMsg)
+	require.True(t, ok)
+	_ = m.handleHelpDrawerResult(resultMsg)
+
+	require.Len(t, evaluator.requests, 1)
+	assert.Equal(t, msg2.RequestID, evaluator.requests[0].RequestID)
+	assert.Equal(t, HelpDrawerTriggerTyping, evaluator.requests[0].Trigger)
+}
+
 func TestHelpDrawerResultDropsStaleResponse(t *testing.T) {
 	evaluator := &fakeHelpDrawerEvaluator{}
 	m := newHelpDrawerTestModel(t, evaluator)

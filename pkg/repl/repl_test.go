@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/go-go-golems/bobatea/pkg/eventbus"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestExampleEvaluator(t *testing.T) {
@@ -86,6 +87,69 @@ func TestModel(t *testing.T) {
 	// Test initialization
 	assert.Equal(t, evaluator, model.evaluator)
 	assert.Equal(t, config, model.config)
+}
+
+func TestNewModelWiresFeatureSubmodelsFromConfig(t *testing.T) {
+	bus, err := eventbus.NewInMemoryBus()
+	require.NoError(t, err)
+
+	cfg := DefaultConfig()
+	cfg.Autocomplete = DefaultAutocompleteConfig()
+	cfg.Autocomplete.Debounce = 75 * time.Millisecond
+	cfg.Autocomplete.RequestTimeout = 250 * time.Millisecond
+	cfg.Autocomplete.MaxSuggestions = 11
+	cfg.Autocomplete.OverlayPlacement = CompletionOverlayPlacementBottom
+	cfg.Autocomplete.OverlayHorizontalGrow = CompletionOverlayHorizontalGrowLeft
+	cfg.HelpBar = DefaultHelpBarConfig()
+	cfg.HelpBar.Debounce = 95 * time.Millisecond
+	cfg.HelpBar.RequestTimeout = 280 * time.Millisecond
+	cfg.HelpDrawer = DefaultHelpDrawerConfig()
+	cfg.HelpDrawer.Debounce = 105 * time.Millisecond
+	cfg.HelpDrawer.RequestTimeout = 350 * time.Millisecond
+	cfg.HelpDrawer.Dock = HelpDrawerDockRight
+	cfg.HelpDrawer.WidthPercent = 61
+	cfg.HelpDrawer.HeightPercent = 45
+	cfg.HelpDrawer.Margin = 2
+
+	model := NewModel(&cancellableProviderEvaluator{}, cfg, bus.Publisher)
+
+	require.NotNil(t, model.completion.provider)
+	assert.Equal(t, cfg.Autocomplete.Debounce, model.completion.debounce)
+	assert.Equal(t, cfg.Autocomplete.RequestTimeout, model.completion.reqTimeout)
+	assert.Equal(t, cfg.Autocomplete.MaxSuggestions, model.completion.maxVisible)
+	assert.Equal(t, cfg.Autocomplete.OverlayPlacement, model.completion.placement)
+	assert.Equal(t, cfg.Autocomplete.OverlayHorizontalGrow, model.completion.horizontal)
+
+	require.NotNil(t, model.helpBar.provider)
+	assert.Equal(t, cfg.HelpBar.Debounce, model.helpBar.debounce)
+	assert.Equal(t, cfg.HelpBar.RequestTimeout, model.helpBar.reqTimeout)
+
+	require.NotNil(t, model.helpDrawer.provider)
+	assert.Equal(t, cfg.HelpDrawer.Debounce, model.helpDrawer.debounce)
+	assert.Equal(t, cfg.HelpDrawer.RequestTimeout, model.helpDrawer.reqTimeout)
+	assert.Equal(t, cfg.HelpDrawer.Dock, model.helpDrawer.dock)
+	assert.Equal(t, cfg.HelpDrawer.WidthPercent, model.helpDrawer.widthPercent)
+	assert.Equal(t, cfg.HelpDrawer.HeightPercent, model.helpDrawer.heightPercent)
+	assert.Equal(t, cfg.HelpDrawer.Margin, model.helpDrawer.margin)
+}
+
+func TestNewModelDisablesFeatureProvidersWhenConfigDisabled(t *testing.T) {
+	bus, err := eventbus.NewInMemoryBus()
+	require.NoError(t, err)
+
+	cfg := DefaultConfig()
+	cfg.Autocomplete = DefaultAutocompleteConfig()
+	cfg.Autocomplete.Enabled = false
+	cfg.HelpBar = DefaultHelpBarConfig()
+	cfg.HelpBar.Enabled = false
+	cfg.HelpDrawer = DefaultHelpDrawerConfig()
+	cfg.HelpDrawer.Enabled = false
+
+	model := NewModel(&cancellableProviderEvaluator{}, cfg, bus.Publisher)
+
+	assert.Nil(t, model.completion.provider)
+	assert.Nil(t, model.helpBar.provider)
+	assert.Nil(t, model.helpDrawer.provider)
 }
 
 func TestModelWithContext(t *testing.T) {
