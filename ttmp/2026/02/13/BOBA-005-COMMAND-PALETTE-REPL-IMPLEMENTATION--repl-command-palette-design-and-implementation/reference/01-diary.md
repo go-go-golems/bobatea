@@ -25,7 +25,7 @@ RelatedFiles:
       Note: Updated implementation guide aligned to split model design
 ExternalSources: []
 Summary: Diary of BOBA-005 command palette implementation tasks, commits, and validation outcomes.
-LastUpdated: 2026-02-13T19:48:00-05:00
+LastUpdated: 2026-02-14T13:08:00-05:00
 WhatFor: Track task-by-task implementation and debugging details for command palette REPL integration.
 WhenToUse: Use during implementation/review of BOBA-005 changes.
 ---
@@ -918,3 +918,85 @@ The diary and changelog now contain task-by-task evidence, including the interme
 
 - Task tracking:
   - BOBA-005 final hygiene task checked complete.
+
+## Step 13: Follow-up - Overlay Placement Controls
+
+I implemented a follow-up polish pass to make command palette overlay placement configurable and deterministic. This was prompted by a UX issue where users wanted the palette docked differently (for example bottom-aligned or minimal offset tuning) while keeping it as a lipgloss v2 top layer.
+
+### Prompt Context
+
+**User prompt (verbatim):** "allow positioning the widget \"to the bottom\" as well, if desired." and "oh, also position/grow towards bottom or towards left"
+
+**Assistant interpretation:** Add configurable command palette docking/placement controls and verify behavior through tests and REPL package validation.
+
+**Inferred user intent:** Keep the command palette overlay architecture but make placement flexible without reintroducing inline rendering.
+
+**Commit (code):** pending at diary write time
+
+### What I did
+
+- Extended `CommandPaletteConfig` with:
+  - `OverlayPlacement` (`center|top|bottom|left|right`)
+  - `OverlayMargin`
+  - `OverlayOffsetX`, `OverlayOffsetY`
+- Updated config normalization:
+  - placement defaults to `center` when invalid/empty,
+  - margin clamped to non-negative values.
+- Wired normalized values into `commandPaletteModel` initialization.
+- Updated `computeCommandPaletteOverlayLayout()`:
+  - computes origin by placement,
+  - applies margin and XY offsets,
+  - clamps final panel position to viewport bounds.
+- Added placement tests for all placement modes and edge clamping.
+- Ran:
+  - `go test ./pkg/repl/... -count=1` (pass)
+  - `golangci-lint run -v --max-same-issues=100 ./pkg/repl/...` (pass)
+
+### Why
+
+- Default center placement is not ideal for every REPL layout.
+- Configurable placement allows docking without custom forks in examples/apps.
+
+### What worked
+
+- Placement modes now produce stable panel positions.
+- Viewport clamp prevents out-of-bounds origin even with oversized panel width or offsets.
+- Tests and lint passed after adjusting expectation logic for clamp behavior.
+
+### What didn't work
+
+- Initial placement test assumptions failed when panel width exceeded viewport and clamp forced `x=0`.
+- Fix: update test assertions to mirror clamp logic used in production layout.
+
+### What I learned
+
+- Placement tests must account for style width inflation from borders/padding, not just raw viewport fractions.
+
+### What was tricky to build
+
+- Keeping placement arithmetic readable while combining placement anchors, margin, explicit offsets, and final clamp.
+
+### What warrants a second pair of eyes
+
+- Whether to expose independent vertical/horizontal growth semantics for command palette, similar to autocomplete.
+
+### What should be done in the future
+
+- Optional: add app-level presets (`compact-top`, `dock-bottom`) as helper constructors for example programs.
+
+### Code review instructions
+
+- Review config + normalization changes:
+  - `pkg/repl/config.go`
+  - `pkg/repl/config_normalize.go`
+- Review layout behavior:
+  - `pkg/repl/command_palette_overlay.go`
+  - `pkg/repl/command_palette_overlay_test.go`
+- Re-run validations:
+  - `go test ./pkg/repl/... -count=1`
+  - `golangci-lint run -v --max-same-issues=100 ./pkg/repl/...`
+
+### Technical details
+
+- Follow-up task tracking:
+  - BOBA-005 placement-control follow-up tasks checked complete.

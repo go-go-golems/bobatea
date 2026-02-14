@@ -24,14 +24,14 @@ RelatedFiles:
     - Path: pkg/repl/keymap.go
       Note: Bobatea key bindings and help model integration surface for command palette
     - Path: pkg/repl/command_palette_overlay.go
-      Note: Planned extraction target for palette overlay geometry/rendering
+      Note: Palette-owned overlay geometry/rendering including configurable placement and viewport clamping
     - Path: pkg/repl/model.go
       Note: Root orchestration and current lipgloss v2 overlay composition order
     - Path: pkg/repl/model_input.go
       Note: Input-mode key routing precedence and slash handling
 ExternalSources: []
-Summary: Implementation guide for command palette integration and remaining BOBA-008-aligned follow-up tasks.
-LastUpdated: 2026-02-14T12:20:00-05:00
+Summary: Implementation guide for command palette integration and BOBA-008-aligned follow-ups, including overlay placement controls.
+LastUpdated: 2026-02-14T13:05:00-05:00
 WhatFor: Build a command palette that unifies slash commands and keyboard-launched command execution in REPL.
 WhenToUse: Use when implementing command discoverability and action dispatch in REPL.
 ---
@@ -60,7 +60,7 @@ Post BOBA-008, the REPL is split across orchestration and feature files. Command
 
 ## Problem Statement
 
-The first command palette integration now exists in `pkg/repl` (config, key routing, slash policy, top overlay, and built-in command dispatch), but it still needs BOBA-008-style finish work to keep ownership clean and behavior well-tested.
+The first command palette integration now exists in `pkg/repl` (config, key routing, slash policy, top overlay, and built-in command dispatch). This guide records the follow-up work to finish BOBA-008 alignment and then add placement controls so the overlay can be docked where each REPL wants it.
 
 We still need a complete, stable command hub for actions like:
 
@@ -90,9 +90,8 @@ Without the remaining cleanup and tests, command behavior may drift as REPL feat
 
 ### Remaining gaps
 
-- palette overlay layout/rendering still lives in `model.go` instead of a palette-owned overlay file,
-- command palette behavior tests are still missing for routing and slash policy edge cases,
-- ticket docs/changelog/diary need final sync with finished implementation and validation evidence.
+- none for BOBA-005 baseline scope,
+- optional future work: richer palette theming tokens and per-evaluator default placement presets.
 
 ## BOBA-008 Architecture Alignment
 
@@ -116,7 +115,7 @@ Target file ownership:
 Current status:
 
 - Config/contracts/routing/dispatch are in place.
-- Overlay extraction, focused tests, and validation/doc closure tasks are complete.
+- Overlay extraction, focused tests, validation/doc closure, and placement controls are complete.
 
 ## UX and Behavior Contract
 
@@ -218,6 +217,10 @@ type commandPaletteModel struct {
     slashEnabled  bool
     slashPolicy   CommandPaletteSlashPolicy
     maxVisible    int
+    overlayPlacement CommandPaletteOverlayPlacement
+    overlayMargin    int
+    overlayOffsetX   int
+    overlayOffsetY   int
 }
 
 type CommandPaletteSlashPolicy string
@@ -225,6 +228,15 @@ const (
     CommandPaletteSlashPolicyEmptyInput CommandPaletteSlashPolicy = "empty-input"
     CommandPaletteSlashPolicyColumnZero CommandPaletteSlashPolicy = "column-zero"
     CommandPaletteSlashPolicyProvider   CommandPaletteSlashPolicy = "provider"
+)
+
+type CommandPaletteOverlayPlacement string
+const (
+    CommandPaletteOverlayPlacementCenter CommandPaletteOverlayPlacement = "center"
+    CommandPaletteOverlayPlacementTop    CommandPaletteOverlayPlacement = "top"
+    CommandPaletteOverlayPlacementBottom CommandPaletteOverlayPlacement = "bottom"
+    CommandPaletteOverlayPlacementLeft   CommandPaletteOverlayPlacement = "left"
+    CommandPaletteOverlayPlacementRight  CommandPaletteOverlayPlacement = "right"
 )
 ```
 
@@ -238,7 +250,8 @@ const (
 ### view path
 
 - render base REPL view,
-- overlay palette when visible as highest `lipgloss v2` layer.
+- overlay palette when visible as highest `lipgloss v2` layer,
+- compute panel origin from placement (`center|top|bottom|left|right`) plus margin/offset and clamp to viewport bounds.
 
 ## Message Flow Diagram
 
@@ -337,7 +350,7 @@ Status: not required for v1; incremental adaptation preferred.
 - Contracts: palette command descriptors and evaluator provider hooks.
 - Wiring: `commandPaletteModel` state in `repl.Model` and key routing integration.
 - Entry points: keyboard open/close and slash-open guard rails.
-- Layering: palette rendered as top lipgloss v2 overlay.
+- Layering: palette rendered as top lipgloss v2 overlay with bounded canvas behavior.
 
 ### Phase B (completed): BOBA-008 alignment and hardening
 
@@ -354,6 +367,19 @@ Status: not required for v1; incremental adaptation preferred.
    - `script -q -c "timeout 7s go run ./examples/repl/autocomplete-generic" /dev/null`
    - `script -q -c "timeout 7s go run ./examples/js-repl" /dev/null`
 5. Finalize ticket hygiene: changelog + diary + task closure.
+
+### Phase C (completed): Placement controls and clamped positioning
+
+1. Extend `CommandPaletteConfig` with:
+   - `OverlayPlacement` (`center|top|bottom|left|right`)
+   - `OverlayMargin`
+   - `OverlayOffsetX`, `OverlayOffsetY`
+2. Normalize placement and margin in `config_normalize.go`.
+3. Update `commandPaletteModel` and `computeCommandPaletteOverlayLayout()` to apply placement, margin, offsets, then viewport clamp.
+4. Add placement tests in `command_palette_overlay_test.go`.
+5. Re-run:
+   - `go test ./pkg/repl/... -count=1`
+   - `golangci-lint run -v --max-same-issues=100 ./pkg/repl/...`
 
 ## Pseudocode
 
@@ -443,7 +469,9 @@ Risk: command action side effects during active async operations.
 - [x] Implement slash open policy and guard rails.
 - [x] Implement command actions and evaluator command extension hooks.
 - [x] Move palette overlay render/layout helpers into `pkg/repl/command_palette_overlay.go`.
+- [x] Add command palette overlay placement controls (`center|top|bottom|left|right`) with margin and offsets.
 - [x] Add tests for key routing, slash policy, and action dispatch.
+- [x] Add placement and viewport clamp tests for command palette overlay layout.
 - [x] Run `go test ./pkg/repl/... -count=1`.
 - [x] Run `golangci-lint run -v --max-same-issues=100 ./pkg/repl/...`.
 - [x] Run PTY smoke tests for `examples/repl/autocomplete-generic` and `examples/js-repl`.

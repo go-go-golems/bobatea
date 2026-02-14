@@ -175,6 +175,10 @@ func normalizeCommandPaletteConfig(cfg CommandPaletteConfig) CommandPaletteConfi
 		!cfg.SlashOpenEnabled &&
 		cfg.SlashPolicy == "" &&
 		cfg.MaxVisibleItems == 0 &&
+		cfg.OverlayPlacement == "" &&
+		cfg.OverlayMargin == 0 &&
+		cfg.OverlayOffsetX == 0 &&
+		cfg.OverlayOffsetY == 0 &&
 		!cfg.Enabled {
 		return DefaultCommandPaletteConfig()
 	}
@@ -196,8 +200,22 @@ func normalizeCommandPaletteConfig(cfg CommandPaletteConfig) CommandPaletteConfi
 	if cfg.MaxVisibleItems > 0 {
 		merged.MaxVisibleItems = cfg.MaxVisibleItems
 	}
+	if cfg.OverlayPlacement != "" {
+		merged.OverlayPlacement = cfg.OverlayPlacement
+	}
+	if cfg.OverlayMargin > 0 {
+		merged.OverlayMargin = cfg.OverlayMargin
+	}
+	if cfg.OverlayOffsetX != 0 {
+		merged.OverlayOffsetX = cfg.OverlayOffsetX
+	}
+	if cfg.OverlayOffsetY != 0 {
+		merged.OverlayOffsetY = cfg.OverlayOffsetY
+	}
 	merged.SlashPolicy = normalizeCommandPaletteSlashPolicy(merged.SlashPolicy)
 	merged.MaxVisibleItems = clampInt(merged.MaxVisibleItems, 1, 50)
+	merged.OverlayPlacement = normalizeCommandPaletteOverlayPlacement(merged.OverlayPlacement)
+	merged.OverlayMargin = max(0, merged.OverlayMargin)
 	return merged
 }
 
@@ -230,5 +248,18 @@ func normalizeCommandPaletteSlashPolicy(v CommandPaletteSlashPolicy) CommandPale
 		return v
 	default:
 		return CommandPaletteSlashPolicyEmptyInput
+	}
+}
+
+func normalizeCommandPaletteOverlayPlacement(v CommandPaletteOverlayPlacement) CommandPaletteOverlayPlacement {
+	switch v {
+	case CommandPaletteOverlayPlacementCenter,
+		CommandPaletteOverlayPlacementTop,
+		CommandPaletteOverlayPlacementBottom,
+		CommandPaletteOverlayPlacementLeft,
+		CommandPaletteOverlayPlacementRight:
+		return v
+	default:
+		return CommandPaletteOverlayPlacementCenter
 	}
 }

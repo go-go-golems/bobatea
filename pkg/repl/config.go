@@ -114,6 +114,16 @@ const (
 	CommandPaletteSlashPolicyProvider   CommandPaletteSlashPolicy = "provider"
 )
 
+type CommandPaletteOverlayPlacement string
+
+const (
+	CommandPaletteOverlayPlacementCenter CommandPaletteOverlayPlacement = "center"
+	CommandPaletteOverlayPlacementTop    CommandPaletteOverlayPlacement = "top"
+	CommandPaletteOverlayPlacementBottom CommandPaletteOverlayPlacement = "bottom"
+	CommandPaletteOverlayPlacementLeft   CommandPaletteOverlayPlacement = "left"
+	CommandPaletteOverlayPlacementRight  CommandPaletteOverlayPlacement = "right"
+)
+
 // CommandPaletteConfig controls REPL command palette behavior.
 type CommandPaletteConfig struct {
 	// Enabled toggles command palette integration.
@@ -129,6 +139,15 @@ type CommandPaletteConfig struct {
 	SlashPolicy CommandPaletteSlashPolicy
 	// MaxVisibleItems limits visible rows rendered by the palette model.
 	MaxVisibleItems int
+	// OverlayPlacement controls where the command palette panel is anchored.
+	// Supported values: center, top, bottom, left, right.
+	OverlayPlacement CommandPaletteOverlayPlacement
+	// OverlayMargin keeps space between the panel and viewport edge for docked placements.
+	OverlayMargin int
+	// OverlayOffsetX applies a horizontal shift before final viewport clamp.
+	OverlayOffsetX int
+	// OverlayOffsetY applies a vertical shift before final viewport clamp.
+	OverlayOffsetY int
 }
 
 // DefaultAutocompleteConfig returns default autocomplete settings.
@@ -190,6 +209,10 @@ func DefaultCommandPaletteConfig() CommandPaletteConfig {
 		SlashOpenEnabled: true,
 		SlashPolicy:      CommandPaletteSlashPolicyEmptyInput,
 		MaxVisibleItems:  8,
+		OverlayPlacement: CommandPaletteOverlayPlacementCenter,
+		OverlayMargin:    1,
+		OverlayOffsetX:   0,
+		OverlayOffsetY:   0,
 	}
 }
 

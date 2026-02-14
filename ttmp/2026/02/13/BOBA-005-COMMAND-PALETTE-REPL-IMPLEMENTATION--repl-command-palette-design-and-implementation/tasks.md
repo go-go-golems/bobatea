@@ -28,3 +28,11 @@
   - `script -q -c "timeout 7s go run ./examples/repl/autocomplete-generic" /dev/null`
   - `script -q -c "timeout 7s go run ./examples/js-repl" /dev/null`
 - [x] Update BOBA-005 changelog and diary with task-by-task commits, failures, and validation output
+
+## FOLLOW-UP (overlay placement controls)
+
+- [x] Add configurable command palette overlay placement (`center|top|bottom|left|right`) with margin and XY offsets
+- [x] Add placement-aware layout tests for all placement modes with viewport clamping
+- [x] Run validation: `go test ./pkg/repl/... -count=1`
+- [x] Run validation: `golangci-lint run -v --max-same-issues=100 ./pkg/repl/...`
+- [x] Update BOBA-005 implementation guide/changelog/diary with placement behavior and testing notes

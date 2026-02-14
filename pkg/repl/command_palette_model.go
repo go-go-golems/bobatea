@@ -13,12 +13,16 @@ import (
 type commandPaletteModel struct {
 	ui commandpalette.Model
 
-	enabled      bool
-	openKeys     []string
-	closeKeys    []string
-	slashEnabled bool
-	slashPolicy  CommandPaletteSlashPolicy
-	maxVisible   int
+	enabled          bool
+	openKeys         []string
+	closeKeys        []string
+	slashEnabled     bool
+	slashPolicy      CommandPaletteSlashPolicy
+	maxVisible       int
+	overlayPlacement CommandPaletteOverlayPlacement
+	overlayMargin    int
+	overlayOffsetX   int
+	overlayOffsetY   int
 }
 
 func (m *Model) handleCommandPaletteInput(k tea.KeyMsg) (bool, tea.Cmd) {

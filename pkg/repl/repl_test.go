@@ -295,6 +295,10 @@ func TestConfig(t *testing.T) {
 	assert.True(t, config.CommandPalette.SlashOpenEnabled)
 	assert.Equal(t, CommandPaletteSlashPolicyEmptyInput, config.CommandPalette.SlashPolicy)
 	assert.Equal(t, 8, config.CommandPalette.MaxVisibleItems)
+	assert.Equal(t, CommandPaletteOverlayPlacementCenter, config.CommandPalette.OverlayPlacement)
+	assert.Equal(t, 1, config.CommandPalette.OverlayMargin)
+	assert.Equal(t, 0, config.CommandPalette.OverlayOffsetX)
+	assert.Equal(t, 0, config.CommandPalette.OverlayOffsetY)
 }
 
 func TestNormalizeCommandPaletteConfigDefaults(t *testing.T) {
@@ -310,6 +314,10 @@ func TestNormalizeCommandPaletteConfigSanitizesValues(t *testing.T) {
 		SlashOpenEnabled: true,
 		SlashPolicy:      CommandPaletteSlashPolicy("unknown"),
 		MaxVisibleItems:  200,
+		OverlayPlacement: CommandPaletteOverlayPlacement("weird"),
+		OverlayMargin:    -5,
+		OverlayOffsetX:   7,
+		OverlayOffsetY:   -3,
 	}
 	normalized := normalizeCommandPaletteConfig(cfg)
 	assert.True(t, normalized.Enabled)
@@ -318,6 +326,10 @@ func TestNormalizeCommandPaletteConfigSanitizesValues(t *testing.T) {
 	assert.True(t, normalized.SlashOpenEnabled)
 	assert.Equal(t, CommandPaletteSlashPolicyEmptyInput, normalized.SlashPolicy)
 	assert.Equal(t, 50, normalized.MaxVisibleItems)
+	assert.Equal(t, CommandPaletteOverlayPlacementCenter, normalized.OverlayPlacement)
+	assert.Equal(t, 1, normalized.OverlayMargin)
+	assert.Equal(t, 7, normalized.OverlayOffsetX)
+	assert.Equal(t, -3, normalized.OverlayOffsetY)
 }
 
 func TestStyles(t *testing.T) {

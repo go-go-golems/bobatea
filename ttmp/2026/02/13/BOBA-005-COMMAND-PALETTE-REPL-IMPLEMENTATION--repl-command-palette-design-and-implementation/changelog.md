@@ -139,3 +139,18 @@ Completed BOBA-005 ticket hygiene closure: all remaining checklist items are now
 
 - /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-005-COMMAND-PALETTE-REPL-IMPLEMENTATION--repl-command-palette-design-and-implementation/tasks.md — Final checklist closure
 - /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-005-COMMAND-PALETTE-REPL-IMPLEMENTATION--repl-command-palette-design-and-implementation/reference/01-diary.md — Full implementation and validation diary record
+
+## 2026-02-14
+
+Completed follow-up polish for command palette overlay placement and configurability: added placement enum (`center|top|bottom|left|right`), margin/offset config, normalization, placement-aware layout math, and placement tests with viewport clamping. Validated with `go test ./pkg/repl/... -count=1` and `golangci-lint run -v --max-same-issues=100 ./pkg/repl/...`.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/config.go — Added command palette placement/margin/offset config fields and defaults
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/config_normalize.go — Added placement normalization and margin sanitization
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/command_palette_model.go — Added normalized placement state to command palette feature model
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/command_palette_overlay.go — Added placement-aware layout computation with viewport clamp
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/command_palette_overlay_test.go — Added placement-mode and clamp behavior tests
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-005-COMMAND-PALETTE-REPL-IMPLEMENTATION--repl-command-palette-design-and-implementation/tasks.md — Added and checked follow-up placement tasks
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-005-COMMAND-PALETTE-REPL-IMPLEMENTATION--repl-command-palette-design-and-implementation/design-doc/01-command-palette-analysis-and-implementation-guide.md — Updated implementation guide with placement controls and phase C
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-005-COMMAND-PALETTE-REPL-IMPLEMENTATION--repl-command-palette-design-and-implementation/reference/01-diary.md — Added follow-up implementation diary step
