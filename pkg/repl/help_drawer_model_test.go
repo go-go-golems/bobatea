@@ -67,6 +67,10 @@ func newHelpDrawerTestModel(t *testing.T, evaluator *fakeHelpDrawerEvaluator) *M
 	return m
 }
 
+func helpDrawerToggleKeyMsg() tea.KeyMsg {
+	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}, Alt: true}
+}
+
 func TestHelpDrawerToggleOpenClose(t *testing.T) {
 	evaluator := &fakeHelpDrawerEvaluator{
 		doc: HelpDrawerDocument{
@@ -78,7 +82,7 @@ func TestHelpDrawerToggleOpenClose(t *testing.T) {
 	}
 	m := newHelpDrawerTestModel(t, evaluator)
 
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlH})
+	_, cmd := m.Update(helpDrawerToggleKeyMsg())
 	drainModelCmds(m, cmd)
 
 	assert.True(t, m.helpDrawer.visible)
@@ -86,7 +90,7 @@ func TestHelpDrawerToggleOpenClose(t *testing.T) {
 	require.Len(t, evaluator.requests, 1)
 	assert.Equal(t, HelpDrawerTriggerToggleOpen, evaluator.requests[0].Trigger)
 
-	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyCtrlH})
+	_, cmd = m.Update(helpDrawerToggleKeyMsg())
 	drainModelCmds(m, cmd)
 	assert.False(t, m.helpDrawer.visible)
 }
@@ -102,7 +106,7 @@ func TestHelpDrawerAdaptiveTypingWhenVisible(t *testing.T) {
 	}
 	m := newHelpDrawerTestModel(t, evaluator)
 
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlH})
+	_, cmd := m.Update(helpDrawerToggleKeyMsg())
 	drainModelCmds(m, cmd)
 	require.Len(t, evaluator.requests, 1)
 
@@ -181,7 +185,7 @@ func TestHelpDrawerCloseKey(t *testing.T) {
 	}
 	m := newHelpDrawerTestModel(t, evaluator)
 
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlH})
+	_, cmd := m.Update(helpDrawerToggleKeyMsg())
 	drainModelCmds(m, cmd)
 	require.True(t, m.helpDrawer.visible)
 
@@ -200,7 +204,7 @@ func TestHelpDrawerPinPreventsTypingRefresh(t *testing.T) {
 	}
 	m := newHelpDrawerTestModel(t, evaluator)
 
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlH})
+	_, cmd := m.Update(helpDrawerToggleKeyMsg())
 	drainModelCmds(m, cmd)
 	require.Len(t, evaluator.requests, 1)
 

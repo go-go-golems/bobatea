@@ -119,7 +119,7 @@ func (m *Model) renderHelpDrawerPanel(layout helpDrawerOverlayLayout) string {
 		subtitle = strings.TrimSpace(subtitle + " [pinned]")
 	}
 
-	toggleKey := bindingPrimaryKey(m.keyMap.HelpDrawerToggle, "ctrl+h")
+	toggleKey := bindingPrimaryKey(m.keyMap.HelpDrawerToggle, "alt+h")
 	refreshKey := bindingPrimaryKey(m.keyMap.HelpDrawerRefresh, "ctrl+r")
 	pinKey := bindingPrimaryKey(m.keyMap.HelpDrawerPin, "ctrl+g")
 	footer := fmt.Sprintf("%s toggle • %s refresh • %s pin", toggleKey, refreshKey, pinKey)

@@ -186,8 +186,8 @@ func DefaultHelpBarConfig() HelpBarConfig {
 func DefaultHelpDrawerConfig() HelpDrawerConfig {
 	return HelpDrawerConfig{
 		Enabled:            true,
-		ToggleKeys:         []string{"ctrl+h"},
-		CloseKeys:          []string{"esc", "ctrl+h"},
+		ToggleKeys:         []string{"alt+h"},
+		CloseKeys:          []string{"esc", "alt+h"},
 		RefreshShortcuts:   []string{"ctrl+r"},
 		PinShortcuts:       []string{"ctrl+g"},
 		Debounce:           140 * time.Millisecond,

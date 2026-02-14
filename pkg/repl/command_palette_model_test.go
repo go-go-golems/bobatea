@@ -120,7 +120,7 @@ func TestCommandPaletteRoutingTakesPrecedenceOverHelpDrawerShortcuts(t *testing.
 	_, _ = m.updateInput(tea.KeyMsg{Type: tea.KeyCtrlP})
 	require.True(t, m.palette.ui.IsVisible())
 
-	_, drawerCmd := m.updateInput(tea.KeyMsg{Type: tea.KeyCtrlH})
+	_, drawerCmd := m.updateInput(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}, Alt: true})
 	require.Nil(t, drawerCmd)
 	assert.False(t, m.helpDrawer.visible, "drawer shortcut should be ignored while palette is open")
 }

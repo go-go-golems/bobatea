@@ -48,8 +48,8 @@ func NewKeyMap(
 	km := KeyMap{
 		Quit: binding([]string{"ctrl+c", "alt+q"}, "quit"),
 		ToggleHelp: key.NewBinding(
-			key.WithKeys("ctrl+?"),
-			key.WithHelp("ctrl+?", "help"),
+			key.WithKeys("ctrl+h"),
+			key.WithHelp("ctrl+h", "help"),
 		),
 		ToggleFocus: binding([]string{focusToggleKey}, "toggle focus"),
 
