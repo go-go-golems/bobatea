@@ -16,7 +16,7 @@
 
 ## REMAINING (new design completion)
 
-- [ ] Move command palette overlay geometry/rendering out of `pkg/repl/model.go` into `pkg/repl/command_palette_overlay.go` so feature ownership matches BOBA-008 decomposition style
+- [x] Move command palette overlay geometry/rendering out of `pkg/repl/model.go` into `pkg/repl/command_palette_overlay.go` so feature ownership matches BOBA-008 decomposition style
 - [ ] Add focused tests for command palette behavior:
   - config normalization and defaults
   - key routing precedence (palette open > drawer/completion navigation)

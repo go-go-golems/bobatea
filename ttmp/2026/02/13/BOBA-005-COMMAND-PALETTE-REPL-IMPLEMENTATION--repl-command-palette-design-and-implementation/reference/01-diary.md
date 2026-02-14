@@ -505,3 +505,73 @@ This preserves conservative defaults while allowing future evaluator-specific po
 
 - Task tracking:
   - BOBA-005 task 7 checked complete.
+
+## Step 7: Task 8 - Extract Command Palette Overlay Renderer
+
+I extracted command palette overlay rendering out of the root `View()` flow so ownership now matches the BOBA-008 feature split pattern. The root model keeps compositor/layer assembly, and the palette feature now owns how its overlay surface is produced.
+
+This keeps command palette behavior unchanged while reducing layout noise in `model.go` and making future palette placement/theming changes isolated.
+
+### Prompt Context
+
+**User prompt (verbatim):** "go ahead. Make it a lipgloss v2 overlay. Continue keeping a diary, task by task."
+
+**Assistant interpretation:** Continue BOBA-005 remaining tasks in order, ensure palette uses lipgloss v2 overlay composition, and keep explicit diary/task tracking for each step.
+
+**Inferred user intent:** Finish the remaining command palette implementation work with disciplined task-by-task commits and documentation evidence.
+
+**Commit (code):** 7be8bcc — "repl: extract command palette overlay renderer"
+
+### What I did
+
+- Added `pkg/repl/command_palette_overlay.go`:
+  - introduced `renderCommandPaletteOverlay()` that returns an empty string when palette is not visible/enabled or terminal bounds are invalid.
+  - kept palette placement centered using `lipgloss.Place(...)`.
+- Updated `pkg/repl/model.go`:
+  - removed inline palette overlay build block from `View()`.
+  - now calls `m.renderCommandPaletteOverlay()` and keeps lipgloss v2 compositor layering (`command-palette-overlay` on z=30).
+- Validation:
+  - ran `go test ./pkg/repl/... -count=1` (pass).
+
+### Why
+
+- BOBA-008 architecture expects feature-owned overlay rendering in dedicated files.
+- This separation keeps `model.go` focused on orchestration and layer composition.
+
+### What worked
+
+- No behavior regression in tests.
+- Palette remains a true lipgloss v2 overlay layer, now with cleaner ownership boundaries.
+
+### What didn't work
+
+- N/A in this step.
+
+### What I learned
+
+- The current palette overlay can be modularized without changing z-order semantics because compositor assembly already had a clean boundary.
+
+### What was tricky to build
+
+- Preserving exact runtime behavior while moving code: the helper had to keep the same visibility guards and centered placement so output and layering remain stable.
+
+### What warrants a second pair of eyes
+
+- Confirm whether future palette positioning options should be implemented inside `renderCommandPaletteOverlay()` or in config-driven layout primitives shared with other overlays.
+
+### What should be done in the future
+
+- Implement next remaining task: focused command palette tests for precedence, slash policy variants, and dispatch/close behavior.
+
+### Code review instructions
+
+- Review:
+  - `pkg/repl/command_palette_overlay.go`
+  - `pkg/repl/model.go`
+- Validate:
+  - `go test ./pkg/repl/... -count=1`
+
+### Technical details
+
+- Task tracking:
+  - BOBA-005 overlay extraction task checked complete.
