@@ -7,7 +7,7 @@
 ## TODO
 
 - [x] Update implementation guide to match BOBA-008 split architecture (`model.go` orchestration + feature files) and layer/z-order policy
-- [ ] Extend `repl.Config` with `CommandPaletteConfig` + slash policy enum + normalization defaults
+- [x] Extend `repl.Config` with `CommandPaletteConfig` + slash policy enum + normalization defaults
 - [ ] Add REPL command descriptor/registry contracts and evaluator command provider hook
 - [ ] Add command-palette state wiring in `repl.Model` and initialize `commandpalette.Model` in `NewModel`
 - [ ] Implement keyboard open/close routing and command dispatch in input mode

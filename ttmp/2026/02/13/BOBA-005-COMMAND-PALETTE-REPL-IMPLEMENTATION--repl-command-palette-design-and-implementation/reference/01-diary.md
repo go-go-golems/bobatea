@@ -110,3 +110,85 @@ This establishes a stable execution order before touching runtime behavior.
 ### Technical details
 
 - Next implementation task is config + normalization wiring (`Task 3` in updated checklist).
+
+## Step 2: Task 3 - Command Palette Config and Normalization
+
+I implemented the configuration substrate for command palette integration. This introduces a dedicated config block in `repl.Config`, a slash policy enum, defaults, and normalization/sanitization logic so later routing code can rely on bounded values.
+
+I also added tests to lock default values and normalization behavior before wiring runtime logic.
+
+### Prompt Context
+
+**User prompt (verbatim):** "ok, Now work on BOBA-005-COMMAND-PALETTE-REPL-IMPLEMENTATION, task by task, commiting when done, update your diary as you go and check them off."
+
+**Assistant interpretation:** Execute BOBA-005 tasks sequentially with focused commits and keep diary/task/changelog synchronized for each step.
+
+**Inferred user intent:** Move from planning to implementation with traceable, reviewable increments.
+
+**Commit (code):** 98c9f37 — "repl: add command palette config and slash policy normalization"
+
+### What I did
+
+- Updated `pkg/repl/config.go`:
+  - added `CommandPaletteSlashPolicy` enum:
+    - `empty-input`, `column-zero`, `provider`
+  - added `CommandPaletteConfig` with:
+    - `Enabled`, `OpenKeys`, `CloseKeys`, `SlashOpenEnabled`, `SlashPolicy`, `MaxVisibleItems`
+  - added `DefaultCommandPaletteConfig()`
+  - extended `Config` and `DefaultConfig()` with `CommandPalette`
+- Updated `pkg/repl/config_normalize.go`:
+  - added `normalizeCommandPaletteConfig`
+  - added `normalizeCommandPaletteSlashPolicy`
+  - clamped `MaxVisibleItems` to `[1, 50]`
+- Updated `pkg/repl/repl_test.go`:
+  - expanded `TestConfig` with command palette defaults
+  - added `TestNormalizeCommandPaletteConfigDefaults`
+  - added `TestNormalizeCommandPaletteConfigSanitizesValues`
+- Ran validation:
+  - `go test ./pkg/repl/... -count=1` (pass)
+  - pre-commit hooks also passed full repo test/lint/gosec/govulncheck during commit.
+
+### Why
+
+- Routing and overlay implementation needs stable, normalized config values.
+- Slash behavior should be controlled by explicit policy rather than hardcoded checks.
+
+### What worked
+
+- Config block and normalization compile cleanly and tests pass.
+- Sanitization behavior is now deterministic and test-covered.
+
+### What didn't work
+
+- N/A in this step.
+
+### What I learned
+
+- Adding normalization early reduces branching complexity in later input-routing tasks.
+
+### What was tricky to build
+
+- Choosing clamp bounds (`MaxVisibleItems`) that are safe without over-constraining future UX; `[1, 50]` is conservative and easy to reason about.
+
+### What warrants a second pair of eyes
+
+- Confirm whether `SlashOpenEnabled` default should remain `true` for all evaluators or be overridden per-example.
+- Confirm whether `provider` slash policy should be a no-op fallback for v1 until provider hook is fully wired.
+
+### What should be done in the future
+
+- Implement task 4 next: command descriptor/registry contracts and evaluator extension hook.
+
+### Code review instructions
+
+- Start with:
+  - `pkg/repl/config.go`
+  - `pkg/repl/config_normalize.go`
+  - `pkg/repl/repl_test.go`
+- Validate:
+  - `go test ./pkg/repl/... -count=1`
+
+### Technical details
+
+- Task tracking:
+  - BOBA-005 task 3 checked complete.
