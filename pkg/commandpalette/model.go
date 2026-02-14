@@ -55,6 +55,14 @@ func (m *Model) RegisterCommand(name, description string, action func() tea.Cmd)
 	m.updateFiltered()
 }
 
+// SetCommands replaces all commands in the palette.
+func (m *Model) SetCommands(commands []Command) {
+	m.commands = append([]Command(nil), commands...)
+	m.query = ""
+	m.selected = 0
+	m.updateFiltered()
+}
+
 // Show makes the command palette visible
 func (m *Model) Show() {
 	m.visible = true

@@ -15,6 +15,10 @@ func (m *Model) updateInput(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	prevValue := m.textInput.Value()
 	prevCursor := m.textInput.Position()
 
+	if handled, cmd := m.handleCommandPaletteInput(k); handled {
+		return m, cmd
+	}
+
 	if handled, cmd := m.handleHelpDrawerShortcuts(k); handled {
 		return m, cmd
 	}

@@ -121,7 +121,7 @@ func NewModel(evaluator Evaluator, config Config, pub message.Publisher) *Model 
 		sh:        sh,
 		focus:     "input",
 		help:      help.New(),
-		keyMap:    NewKeyMap(autocompleteCfg, helpDrawerCfg, focusToggleKey),
+		keyMap:    NewKeyMap(autocompleteCfg, helpDrawerCfg, commandPaletteCfg, focusToggleKey),
 		pub:       pub,
 		completion: completionModel{
 			provider:   completer,

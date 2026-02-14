@@ -17,17 +17,19 @@ type KeyMap struct {
 	HistoryPrev key.Binding `keymap-mode:"input"`
 	HistoryNext key.Binding `keymap-mode:"input"`
 
-	CompletionTrigger  key.Binding `keymap-mode:"input"`
-	CompletionAccept   key.Binding `keymap-mode:"input"`
-	CompletionPrev     key.Binding `keymap-mode:"input"`
-	CompletionNext     key.Binding `keymap-mode:"input"`
-	CompletionPageUp   key.Binding `keymap-mode:"input"`
-	CompletionPageDown key.Binding `keymap-mode:"input"`
-	CompletionCancel   key.Binding `keymap-mode:"input"`
-	HelpDrawerToggle   key.Binding `keymap-mode:"input"`
-	HelpDrawerClose    key.Binding `keymap-mode:"input"`
-	HelpDrawerRefresh  key.Binding `keymap-mode:"input"`
-	HelpDrawerPin      key.Binding `keymap-mode:"input"`
+	CompletionTrigger   key.Binding `keymap-mode:"input"`
+	CompletionAccept    key.Binding `keymap-mode:"input"`
+	CompletionPrev      key.Binding `keymap-mode:"input"`
+	CompletionNext      key.Binding `keymap-mode:"input"`
+	CompletionPageUp    key.Binding `keymap-mode:"input"`
+	CompletionPageDown  key.Binding `keymap-mode:"input"`
+	CompletionCancel    key.Binding `keymap-mode:"input"`
+	HelpDrawerToggle    key.Binding `keymap-mode:"input"`
+	HelpDrawerClose     key.Binding `keymap-mode:"input"`
+	HelpDrawerRefresh   key.Binding `keymap-mode:"input"`
+	HelpDrawerPin       key.Binding `keymap-mode:"input"`
+	CommandPaletteOpen  key.Binding `keymap-mode:"input"`
+	CommandPaletteClose key.Binding `keymap-mode:"input"`
 
 	TimelinePrev      key.Binding `keymap-mode:"timeline"`
 	TimelineNext      key.Binding `keymap-mode:"timeline"`
@@ -37,7 +39,12 @@ type KeyMap struct {
 }
 
 // NewKeyMap returns REPL key bindings derived from config.
-func NewKeyMap(autocompleteCfg AutocompleteConfig, helpDrawerCfg HelpDrawerConfig, focusToggleKey string) KeyMap {
+func NewKeyMap(
+	autocompleteCfg AutocompleteConfig,
+	helpDrawerCfg HelpDrawerConfig,
+	commandPaletteCfg CommandPaletteConfig,
+	focusToggleKey string,
+) KeyMap {
 	km := KeyMap{
 		Quit: binding([]string{"ctrl+c", "alt+q"}, "quit"),
 		ToggleHelp: key.NewBinding(
@@ -50,17 +57,19 @@ func NewKeyMap(autocompleteCfg AutocompleteConfig, helpDrawerCfg HelpDrawerConfi
 		HistoryPrev: binding([]string{"up"}, "history prev"),
 		HistoryNext: binding([]string{"down"}, "history next"),
 
-		CompletionTrigger:  binding(autocompleteCfg.TriggerKeys, "trigger completion"),
-		CompletionAccept:   binding(autocompleteCfg.AcceptKeys, "accept completion"),
-		CompletionPrev:     binding([]string{"up", "ctrl+p"}, "completion prev"),
-		CompletionNext:     binding([]string{"down", "ctrl+n"}, "completion next"),
-		CompletionPageUp:   binding([]string{"pgup", "ctrl+b"}, "completion page up"),
-		CompletionPageDown: binding([]string{"pgdown", "ctrl+f"}, "completion page down"),
-		CompletionCancel:   binding([]string{"esc"}, "close completion"),
-		HelpDrawerToggle:   binding(helpDrawerCfg.ToggleKeys, "toggle drawer"),
-		HelpDrawerClose:    binding(helpDrawerCfg.CloseKeys, "close drawer"),
-		HelpDrawerRefresh:  binding(helpDrawerCfg.RefreshShortcuts, "refresh drawer"),
-		HelpDrawerPin:      binding(helpDrawerCfg.PinShortcuts, "pin drawer"),
+		CompletionTrigger:   binding(autocompleteCfg.TriggerKeys, "trigger completion"),
+		CompletionAccept:    binding(autocompleteCfg.AcceptKeys, "accept completion"),
+		CompletionPrev:      binding([]string{"up", "ctrl+p"}, "completion prev"),
+		CompletionNext:      binding([]string{"down", "ctrl+n"}, "completion next"),
+		CompletionPageUp:    binding([]string{"pgup", "ctrl+b"}, "completion page up"),
+		CompletionPageDown:  binding([]string{"pgdown", "ctrl+f"}, "completion page down"),
+		CompletionCancel:    binding([]string{"esc"}, "close completion"),
+		HelpDrawerToggle:    binding(helpDrawerCfg.ToggleKeys, "toggle drawer"),
+		HelpDrawerClose:     binding(helpDrawerCfg.CloseKeys, "close drawer"),
+		HelpDrawerRefresh:   binding(helpDrawerCfg.RefreshShortcuts, "refresh drawer"),
+		HelpDrawerPin:       binding(helpDrawerCfg.PinShortcuts, "pin drawer"),
+		CommandPaletteOpen:  binding(commandPaletteCfg.OpenKeys, "open palette"),
+		CommandPaletteClose: binding(commandPaletteCfg.CloseKeys, "close palette"),
 
 		TimelinePrev:      binding([]string{"up"}, "select prev"),
 		TimelineNext:      binding([]string{"down"}, "select next"),
@@ -86,6 +95,12 @@ func NewKeyMap(autocompleteCfg AutocompleteConfig, helpDrawerCfg HelpDrawerConfi
 	}
 	if len(helpDrawerCfg.PinShortcuts) == 0 {
 		km.HelpDrawerPin.SetEnabled(false)
+	}
+	if !commandPaletteCfg.Enabled || len(commandPaletteCfg.OpenKeys) == 0 {
+		km.CommandPaletteOpen.SetEnabled(false)
+	}
+	if !commandPaletteCfg.Enabled || len(commandPaletteCfg.CloseKeys) == 0 {
+		km.CommandPaletteClose.SetEnabled(false)
 	}
 
 	return km
@@ -121,6 +136,7 @@ func (k KeyMap) ShortHelp() []key.Binding {
 		k.HelpDrawerToggle,
 		k.HelpDrawerPin,
 		k.HelpDrawerRefresh,
+		k.CommandPaletteOpen,
 		k.CompletionPageUp,
 		k.CompletionPageDown,
 		k.Submit,
@@ -141,6 +157,7 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 		{k.HistoryPrev, k.HistoryNext},
 		{k.CompletionTrigger, k.CompletionAccept, k.CompletionCancel},
 		{k.HelpDrawerToggle, k.HelpDrawerClose, k.HelpDrawerRefresh, k.HelpDrawerPin},
+		{k.CommandPaletteOpen, k.CommandPaletteClose},
 		{k.CompletionPrev, k.CompletionNext, k.CompletionPageUp, k.CompletionPageDown},
 		{k.TimelinePrev, k.TimelineNext, k.TimelineEnterExit},
 		{k.CopyCode, k.CopyText},
