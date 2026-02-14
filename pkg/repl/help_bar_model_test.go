@@ -91,53 +91,53 @@ func TestHelpBarDebounceCoalescesToLatestRequest(t *testing.T) {
 func TestHelpBarResultDropsStaleResponse(t *testing.T) {
 	evaluator := &fakeHelpBarEvaluator{}
 	m := newHelpBarTestModel(t, evaluator)
-	m.helpBarReqSeq = 2
+	m.helpBar.reqSeq = 2
 
 	stale := helpBarResultMsg{
 		RequestID: 1,
 		Payload:   HelpBarPayload{Show: true, Text: "stale"},
 	}
 	_ = m.handleHelpBarResult(stale)
-	assert.False(t, m.helpBarVisible)
+	assert.False(t, m.helpBar.visible)
 
 	current := helpBarResultMsg{
 		RequestID: 2,
 		Payload:   HelpBarPayload{Show: true, Text: "active", Severity: "info"},
 	}
 	_ = m.handleHelpBarResult(current)
-	assert.True(t, m.helpBarVisible)
-	assert.Equal(t, "active", m.helpBarPayload.Text)
+	assert.True(t, m.helpBar.visible)
+	assert.Equal(t, "active", m.helpBar.payload.Text)
 }
 
 func TestHelpBarResultHidesOnShowFalseOrEmptyText(t *testing.T) {
 	evaluator := &fakeHelpBarEvaluator{}
 	m := newHelpBarTestModel(t, evaluator)
-	m.helpBarReqSeq = 1
+	m.helpBar.reqSeq = 1
 
 	_ = m.handleHelpBarResult(helpBarResultMsg{
 		RequestID: 1,
 		Payload:   HelpBarPayload{Show: true, Text: "signature foo(x)"},
 	})
-	assert.True(t, m.helpBarVisible)
+	assert.True(t, m.helpBar.visible)
 
 	_ = m.handleHelpBarResult(helpBarResultMsg{
 		RequestID: 1,
 		Payload:   HelpBarPayload{Show: false, Text: "hidden"},
 	})
-	assert.False(t, m.helpBarVisible)
+	assert.False(t, m.helpBar.visible)
 
 	_ = m.handleHelpBarResult(helpBarResultMsg{
 		RequestID: 1,
 		Payload:   HelpBarPayload{Show: true, Text: "   "},
 	})
-	assert.False(t, m.helpBarVisible)
+	assert.False(t, m.helpBar.visible)
 }
 
 func TestHelpBarDebounceInputChangeKeepsBarVisible(t *testing.T) {
 	evaluator := &fakeHelpBarEvaluator{}
 	m := newHelpBarTestModel(t, evaluator)
-	m.helpBarVisible = true
-	m.helpBarPayload = HelpBarPayload{Show: true, Text: "old context"}
+	m.helpBar.visible = true
+	m.helpBar.payload = HelpBarPayload{Show: true, Text: "old context"}
 	m.textInput.SetValue("co")
 	m.textInput.SetCursor(2)
 
@@ -145,7 +145,7 @@ func TestHelpBarDebounceInputChangeKeepsBarVisible(t *testing.T) {
 	m.textInput.SetCursor(3)
 	cmd := m.scheduleDebouncedHelpBarIfNeeded("co", 2)
 	require.NotNil(t, cmd)
-	assert.True(t, m.helpBarVisible, "help bar should remain visible while debounce request is pending")
+	assert.True(t, m.helpBar.visible, "help bar should remain visible while debounce request is pending")
 }
 
 func TestHelpBarStyleSeverityMapping(t *testing.T) {
@@ -174,8 +174,8 @@ func TestHelpBarEndToEndTypingFlow(t *testing.T) {
 
 	require.Len(t, evaluator.requests, 1)
 	assert.Equal(t, HelpBarReasonDebounce, evaluator.requests[0].Reason)
-	assert.True(t, m.helpBarVisible)
-	assert.Equal(t, "console.log(...args): void", m.helpBarPayload.Text)
+	assert.True(t, m.helpBar.visible)
+	assert.Equal(t, "console.log(...args): void", m.helpBar.payload.Text)
 }
 
 func TestHelpBarCmdRecoversFromProviderPanic(t *testing.T) {
@@ -201,7 +201,7 @@ func TestHelpBarCmdTimesOutSlowProvider(t *testing.T) {
 		payload: HelpBarPayload{Show: true, Text: "late"},
 	}
 	m := newHelpBarTestModel(t, evaluator)
-	m.helpBarReqTimeout = time.Millisecond
+	m.helpBar.reqTimeout = time.Millisecond
 
 	req := HelpBarRequest{
 		Input:      "co",
@@ -230,7 +230,7 @@ func TestHelpBarNoProviderIsInert(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.HelpBar = DefaultHelpBarConfig()
 	m := NewModel(&noHelpBarEvaluator{}, cfg, bus.Publisher)
-	require.Nil(t, m.helpBarProvider)
+	require.Nil(t, m.helpBar.provider)
 
 	prevValue := m.textInput.Value()
 	prevCursor := m.textInput.Position()
@@ -238,6 +238,6 @@ func TestHelpBarNoProviderIsInert(t *testing.T) {
 	m.textInput.SetCursor(1)
 	cmd := m.scheduleDebouncedHelpBarIfNeeded(prevValue, prevCursor)
 	assert.Nil(t, cmd)
-	assert.False(t, m.helpBarVisible)
-	assert.Equal(t, uint64(0), m.helpBarReqSeq)
+	assert.False(t, m.helpBar.visible)
+	assert.Equal(t, uint64(0), m.helpBar.reqSeq)
 }

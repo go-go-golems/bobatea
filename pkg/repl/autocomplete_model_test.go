@@ -109,7 +109,7 @@ func TestCompletionResultDropsStaleResponse(t *testing.T) {
 	evaluator := &fakeCompleterEvaluator{}
 	m := newAutocompleteTestModel(t, evaluator)
 
-	m.completionReqSeq = 2
+	m.completion.reqSeq = 2
 	m.textInput.SetValue("console.lo")
 
 	stale := completionResultMsg{
@@ -124,8 +124,8 @@ func TestCompletionResultDropsStaleResponse(t *testing.T) {
 		},
 	}
 	_ = m.handleCompletionResult(stale)
-	assert.False(t, m.completionVisible)
-	assert.Equal(t, uint64(0), m.completionLastReqID)
+	assert.False(t, m.completion.visible)
+	assert.Equal(t, uint64(0), m.completion.lastReqID)
 
 	current := completionResultMsg{
 		RequestID: 2,
@@ -139,9 +139,9 @@ func TestCompletionResultDropsStaleResponse(t *testing.T) {
 		},
 	}
 	_ = m.handleCompletionResult(current)
-	assert.True(t, m.completionVisible)
-	assert.Equal(t, 0, m.completionSelection)
-	assert.Equal(t, uint64(2), m.completionLastReqID)
+	assert.True(t, m.completion.visible)
+	assert.Equal(t, 0, m.completion.selection)
+	assert.Equal(t, uint64(2), m.completion.lastReqID)
 }
 
 func TestShortcutTriggerUsesShortcutReason(t *testing.T) {
@@ -175,8 +175,8 @@ func TestPopupKeyRoutingConsumesNavigationAndApply(t *testing.T) {
 
 	m.textInput.SetValue("cons")
 	m.textInput.SetCursor(4)
-	m.completionVisible = true
-	m.completionLastResult = CompletionResult{
+	m.completion.visible = true
+	m.completion.lastResult = CompletionResult{
 		Show: true,
 		Suggestions: []autocomplete.Suggestion{
 			{Id: "1", Value: "const", DisplayText: "const"},
@@ -185,19 +185,19 @@ func TestPopupKeyRoutingConsumesNavigationAndApply(t *testing.T) {
 		ReplaceFrom: 0,
 		ReplaceTo:   4,
 	}
-	m.completionSelection = 0
-	m.completionReplaceFrom = 0
-	m.completionReplaceTo = 4
+	m.completion.selection = 0
+	m.completion.replaceFrom = 0
+	m.completion.replaceTo = 4
 
 	m.history.Add("history-entry", "", false)
 
 	_, _ = m.updateInput(tea.KeyMsg{Type: tea.KeyDown})
-	assert.Equal(t, 1, m.completionSelection, "down key should navigate popup when visible")
+	assert.Equal(t, 1, m.completion.selection, "down key should navigate popup when visible")
 	assert.Equal(t, "cons", m.textInput.Value(), "history navigation must not run while popup handles key")
 
 	_, _ = m.updateInput(tea.KeyMsg{Type: tea.KeyEnter})
 	assert.Equal(t, "console", m.textInput.Value())
-	assert.False(t, m.completionVisible, "popup should close after apply")
+	assert.False(t, m.completion.visible, "popup should close after apply")
 }
 
 func TestAutocompleteEndToEndTypingToApplyFlow(t *testing.T) {
@@ -220,16 +220,16 @@ func TestAutocompleteEndToEndTypingToApplyFlow(t *testing.T) {
 	require.Len(t, evaluator.requests, 1)
 	assert.Equal(t, CompletionReasonDebounce, evaluator.requests[0].Reason)
 	assert.Equal(t, "c", evaluator.requests[0].Input)
-	assert.True(t, m.completionVisible)
+	assert.True(t, m.completion.visible)
 
 	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	drainModelCmds(m, cmd)
-	assert.Equal(t, 1, m.completionSelection)
+	assert.Equal(t, 1, m.completion.selection)
 
 	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	drainModelCmds(m, cmd)
 	assert.Equal(t, "console", m.textInput.Value())
-	assert.False(t, m.completionVisible)
+	assert.False(t, m.completion.visible)
 }
 
 func TestCompletionCmdRecoversFromCompleterPanic(t *testing.T) {
@@ -258,12 +258,12 @@ func TestComputeCompletionOverlayLayoutClampsToBounds(t *testing.T) {
 	longInput := strings.Repeat("x", 140)
 	m.textInput.SetValue(longInput)
 	m.textInput.SetCursor(len(longInput))
-	m.completionVisible = true
-	m.completionMaxVisible = 10
-	m.completionMaxHeight = 6
-	m.completionMaxWidth = 28
-	m.completionMinWidth = 16
-	m.completionLastResult = CompletionResult{
+	m.completion.visible = true
+	m.completion.maxVisible = 10
+	m.completion.maxHeight = 6
+	m.completion.maxWidth = 28
+	m.completion.minWidth = 16
+	m.completion.lastResult = CompletionResult{
 		Show: true,
 		Suggestions: []autocomplete.Suggestion{
 			{Id: "1", Value: "console", DisplayText: "console"},
@@ -279,8 +279,8 @@ func TestComputeCompletionOverlayLayoutClampsToBounds(t *testing.T) {
 	assert.GreaterOrEqual(t, layout.PopupX, 0)
 	assert.GreaterOrEqual(t, layout.PopupY, 0)
 	assert.LessOrEqual(t, layout.PopupWidth, m.width)
-	assert.LessOrEqual(t, layout.PopupWidth, m.completionMaxWidth)
-	assert.GreaterOrEqual(t, layout.PopupWidth, m.completionMinWidth)
+	assert.LessOrEqual(t, layout.PopupWidth, m.completion.maxWidth)
+	assert.GreaterOrEqual(t, layout.PopupWidth, m.completion.minWidth)
 	assert.GreaterOrEqual(t, layout.VisibleRows, 1)
 	assert.LessOrEqual(t, layout.VisibleRows, 4, "max height 6 with frame should cap visible rows")
 }
@@ -289,10 +289,10 @@ func TestRenderCompletionPopupUsesScrollWindow(t *testing.T) {
 	evaluator := &fakeCompleterEvaluator{}
 	m := newAutocompleteTestModel(t, evaluator)
 
-	m.completionVisible = true
-	m.completionSelection = 4
-	m.completionScrollTop = 3
-	m.completionLastResult = CompletionResult{
+	m.completion.visible = true
+	m.completion.selection = 4
+	m.completion.scrollTop = 3
+	m.completion.lastResult = CompletionResult{
 		Show: true,
 		Suggestions: []autocomplete.Suggestion{
 			{Id: "1", Value: "alpha", DisplayText: "alpha"},
@@ -318,9 +318,9 @@ func TestCompletionPageNavigationMovesSelectionByViewport(t *testing.T) {
 	evaluator := &fakeCompleterEvaluator{}
 	m := newAutocompleteTestModel(t, evaluator)
 
-	m.completionVisible = true
-	m.completionVisibleRows = 3
-	m.completionLastResult = CompletionResult{
+	m.completion.visible = true
+	m.completion.visibleRows = 3
+	m.completion.lastResult = CompletionResult{
 		Show: true,
 		Suggestions: []autocomplete.Suggestion{
 			{Id: "1", Value: "a", DisplayText: "a"},
@@ -335,21 +335,21 @@ func TestCompletionPageNavigationMovesSelectionByViewport(t *testing.T) {
 
 	handled, _ := m.handleCompletionNavigation(tea.KeyMsg{Type: tea.KeyPgDown})
 	require.True(t, handled)
-	assert.Equal(t, 3, m.completionSelection)
-	assert.GreaterOrEqual(t, m.completionScrollTop, 1)
+	assert.Equal(t, 3, m.completion.selection)
+	assert.GreaterOrEqual(t, m.completion.scrollTop, 1)
 
 	handled, _ = m.handleCompletionNavigation(tea.KeyMsg{Type: tea.KeyPgUp})
 	require.True(t, handled)
-	assert.Equal(t, 0, m.completionSelection)
-	assert.Equal(t, 0, m.completionScrollTop)
+	assert.Equal(t, 0, m.completion.selection)
+	assert.Equal(t, 0, m.completion.scrollTop)
 }
 
 func TestDebounceInputChangeKeepsPopupVisible(t *testing.T) {
 	evaluator := &fakeCompleterEvaluator{}
 	m := newAutocompleteTestModel(t, evaluator)
 
-	m.completionVisible = true
-	m.completionLastResult = CompletionResult{
+	m.completion.visible = true
+	m.completion.lastResult = CompletionResult{
 		Show: true,
 		Suggestions: []autocomplete.Suggestion{
 			{Id: "1", Value: "console", DisplayText: "console"},
@@ -364,7 +364,7 @@ func TestDebounceInputChangeKeepsPopupVisible(t *testing.T) {
 	m.textInput.SetCursor(3)
 	cmd := m.scheduleDebouncedCompletionIfNeeded("co", 2)
 	require.NotNil(t, cmd)
-	assert.True(t, m.completionVisible, "popup should remain visible while debounce request is pending")
+	assert.True(t, m.completion.visible, "popup should remain visible while debounce request is pending")
 }
 
 func TestCompletionOverlayLayoutAppliesOffsets(t *testing.T) {
@@ -372,8 +372,8 @@ func TestCompletionOverlayLayoutAppliesOffsets(t *testing.T) {
 	m := newAutocompleteTestModel(t, evaluator)
 	m.width = 80
 	m.height = 24
-	m.completionVisible = true
-	m.completionLastResult = CompletionResult{
+	m.completion.visible = true
+	m.completion.lastResult = CompletionResult{
 		Show: true,
 		Suggestions: []autocomplete.Suggestion{
 			{Id: "1", Value: "console", DisplayText: "console"},
@@ -385,8 +385,8 @@ func TestCompletionOverlayLayoutAppliesOffsets(t *testing.T) {
 	baseLayout, ok := m.computeCompletionOverlayLayout("title", "timeline")
 	require.True(t, ok)
 
-	m.completionOffsetX = 3
-	m.completionOffsetY = 2
+	m.completion.offsetX = 3
+	m.completion.offsetY = 2
 	shiftedLayout, ok := m.computeCompletionOverlayLayout("title", "timeline")
 	require.True(t, ok)
 	assert.Equal(t, baseLayout.PopupX+3, shiftedLayout.PopupX)
@@ -398,10 +398,10 @@ func TestCompletionOverlayLayoutBottomPlacementAnchorsToBottom(t *testing.T) {
 	m := newAutocompleteTestModel(t, evaluator)
 	m.width = 80
 	m.height = 24
-	m.completionVisible = true
-	m.completionPlacement = CompletionOverlayPlacementBottom
-	m.completionMargin = 1
-	m.completionLastResult = CompletionResult{
+	m.completion.visible = true
+	m.completion.placement = CompletionOverlayPlacementBottom
+	m.completion.margin = 1
+	m.completion.lastResult = CompletionResult{
 		Show: true,
 		Suggestions: []autocomplete.Suggestion{
 			{Id: "1", Value: "console", DisplayText: "console"},
@@ -415,7 +415,7 @@ func TestCompletionOverlayLayoutBottomPlacementAnchorsToBottom(t *testing.T) {
 	layout, ok := m.computeCompletionOverlayLayout("title", "timeline")
 	require.True(t, ok)
 	frameHeight := m.completionPopupStyle().GetVerticalFrameSize()
-	expectedY := m.height - m.completionMargin - (layout.VisibleRows + frameHeight)
+	expectedY := m.height - m.completion.margin - (layout.VisibleRows + frameHeight)
 	assert.Equal(t, expectedY, layout.PopupY)
 }
 
@@ -424,23 +424,23 @@ func TestCompletionOverlayLayoutGrowsLeftFromAnchor(t *testing.T) {
 	m := newAutocompleteTestModel(t, evaluator)
 	m.width = 120
 	m.height = 24
-	m.completionVisible = true
-	m.completionPlacement = CompletionOverlayPlacementBottom
-	m.completionMargin = 1
+	m.completion.visible = true
+	m.completion.placement = CompletionOverlayPlacementBottom
+	m.completion.margin = 1
 	m.textInput.SetValue("console.log")
 	m.textInput.SetCursor(len("console.log"))
-	m.completionLastResult = CompletionResult{
+	m.completion.lastResult = CompletionResult{
 		Show: true,
 		Suggestions: []autocomplete.Suggestion{
 			{Id: "1", Value: "console", DisplayText: "console"},
 		},
 	}
 
-	m.completionHorizontal = CompletionOverlayHorizontalGrowRight
+	m.completion.horizontal = CompletionOverlayHorizontalGrowRight
 	rightLayout, ok := m.computeCompletionOverlayLayout("title", "timeline")
 	require.True(t, ok)
 
-	m.completionHorizontal = CompletionOverlayHorizontalGrowLeft
+	m.completion.horizontal = CompletionOverlayHorizontalGrowLeft
 	leftLayout, ok := m.computeCompletionOverlayLayout("title", "timeline")
 	require.True(t, ok)
 
@@ -466,7 +466,7 @@ func TestCompletionPopupStyleNoBorderRemovesFrame(t *testing.T) {
 	assert.Greater(t, defaultStyle.GetHorizontalFrameSize(), 0)
 	assert.Greater(t, defaultStyle.GetVerticalFrameSize(), 0)
 
-	m.completionNoBorder = true
+	m.completion.noBorder = true
 	noBorder := m.completionPopupStyle()
 	assert.Equal(t, 0, noBorder.GetHorizontalFrameSize())
 	assert.Equal(t, 0, noBorder.GetVerticalFrameSize())

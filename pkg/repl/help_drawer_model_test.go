@@ -81,14 +81,14 @@ func TestHelpDrawerToggleOpenClose(t *testing.T) {
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlH})
 	drainModelCmds(m, cmd)
 
-	assert.True(t, m.helpDrawerVisible)
-	assert.False(t, m.helpDrawerLoading)
+	assert.True(t, m.helpDrawer.visible)
+	assert.False(t, m.helpDrawer.loading)
 	require.Len(t, evaluator.requests, 1)
 	assert.Equal(t, HelpDrawerTriggerToggleOpen, evaluator.requests[0].Trigger)
 
 	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyCtrlH})
 	drainModelCmds(m, cmd)
-	assert.False(t, m.helpDrawerVisible)
+	assert.False(t, m.helpDrawer.visible)
 }
 
 func TestHelpDrawerAdaptiveTypingWhenVisible(t *testing.T) {
@@ -115,21 +115,21 @@ func TestHelpDrawerAdaptiveTypingWhenVisible(t *testing.T) {
 func TestHelpDrawerResultDropsStaleResponse(t *testing.T) {
 	evaluator := &fakeHelpDrawerEvaluator{}
 	m := newHelpDrawerTestModel(t, evaluator)
-	m.helpDrawerVisible = true
-	m.helpDrawerReqSeq = 2
-	m.helpDrawerDoc = HelpDrawerDocument{Show: true, Title: "current"}
+	m.helpDrawer.visible = true
+	m.helpDrawer.reqSeq = 2
+	m.helpDrawer.doc = HelpDrawerDocument{Show: true, Title: "current"}
 
 	_ = m.handleHelpDrawerResult(helpDrawerResultMsg{
 		RequestID: 1,
 		Doc:       HelpDrawerDocument{Show: true, Title: "stale"},
 	})
-	assert.Equal(t, "current", m.helpDrawerDoc.Title)
+	assert.Equal(t, "current", m.helpDrawer.doc.Title)
 
 	_ = m.handleHelpDrawerResult(helpDrawerResultMsg{
 		RequestID: 2,
 		Doc:       HelpDrawerDocument{Show: true, Title: "fresh"},
 	})
-	assert.Equal(t, "fresh", m.helpDrawerDoc.Title)
+	assert.Equal(t, "fresh", m.helpDrawer.doc.Title)
 }
 
 func TestHelpDrawerCloseKey(t *testing.T) {
@@ -144,11 +144,11 @@ func TestHelpDrawerCloseKey(t *testing.T) {
 
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlH})
 	drainModelCmds(m, cmd)
-	require.True(t, m.helpDrawerVisible)
+	require.True(t, m.helpDrawer.visible)
 
 	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	drainModelCmds(m, cmd)
-	assert.False(t, m.helpDrawerVisible)
+	assert.False(t, m.helpDrawer.visible)
 }
 
 func TestHelpDrawerPinPreventsTypingRefresh(t *testing.T) {
@@ -167,7 +167,7 @@ func TestHelpDrawerPinPreventsTypingRefresh(t *testing.T) {
 
 	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyCtrlG})
 	drainModelCmds(m, cmd)
-	require.True(t, m.helpDrawerPinned)
+	require.True(t, m.helpDrawer.pinned)
 
 	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
 	drainModelCmds(m, cmd)
@@ -176,8 +176,8 @@ func TestHelpDrawerPinPreventsTypingRefresh(t *testing.T) {
 
 func TestHelpDrawerDefaultDockAboveRepl(t *testing.T) {
 	m := newHelpDrawerTestModel(t, &fakeHelpDrawerEvaluator{})
-	m.helpDrawerVisible = true
-	m.helpDrawerDock = HelpDrawerDockAboveRepl
+	m.helpDrawer.visible = true
+	m.helpDrawer.dock = HelpDrawerDockAboveRepl
 	m.width = 100
 	m.height = 40
 	header := "Header"
@@ -192,8 +192,8 @@ func TestHelpDrawerDefaultDockAboveRepl(t *testing.T) {
 
 func TestHelpDrawerDockRightNoCutoff(t *testing.T) {
 	m := newHelpDrawerTestModel(t, &fakeHelpDrawerEvaluator{})
-	m.helpDrawerVisible = true
-	m.helpDrawerDock = HelpDrawerDockRight
+	m.helpDrawer.visible = true
+	m.helpDrawer.dock = HelpDrawerDockRight
 	m.width = 80
 	m.height = 20
 
@@ -206,9 +206,9 @@ func TestHelpDrawerDockRightNoCutoff(t *testing.T) {
 
 func TestHelpDrawerRenderKeepsLastDocWhileRefreshing(t *testing.T) {
 	m := newHelpDrawerTestModel(t, &fakeHelpDrawerEvaluator{})
-	m.helpDrawerVisible = true
-	m.helpDrawerLoading = true
-	m.helpDrawerDoc = HelpDrawerDocument{
+	m.helpDrawer.visible = true
+	m.helpDrawer.loading = true
+	m.helpDrawer.doc = HelpDrawerDocument{
 		Show:     true,
 		Title:    "console.log",
 		Subtitle: "function",

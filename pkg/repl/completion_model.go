@@ -1,4 +1,35 @@
 package repl
 
-// BOBA-008 task 3 scaffold:
-// Completion state machine logic is migrated in follow-up steps.
+import "time"
+
+type completionModel struct {
+	provider InputCompleter
+
+	reqSeq     uint64
+	debounce   time.Duration
+	reqTimeout time.Duration
+
+	visible     bool
+	selection   int
+	replaceFrom int
+	replaceTo   int
+	scrollTop   int
+	visibleRows int
+
+	maxVisible int
+	pageSize   int
+	maxWidth   int
+	maxHeight  int
+	minWidth   int
+	margin     int
+	offsetX    int
+	offsetY    int
+	noBorder   bool
+	placement  CompletionOverlayPlacement
+	horizontal CompletionOverlayHorizontalGrow
+
+	lastResult  CompletionResult
+	lastError   error
+	lastReqID   uint64
+	lastReqKind CompletionReason
+}

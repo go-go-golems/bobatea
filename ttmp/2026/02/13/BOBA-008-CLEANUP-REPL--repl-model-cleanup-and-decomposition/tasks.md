@@ -8,7 +8,7 @@
 ## Big-Bang Rewrite Scope
 
 - [x] Create the new internal file layout in one refactor branch (`model_messages.go`, `model_input.go`, `model_timeline_bus.go`, `completion_model.go`, `completion_overlay.go`, `helpbar_model.go`, `helpdrawer_model.go`, `helpdrawer_overlay.go`, `config_normalize.go`, `model_async_provider.go`)
-- [ ] Introduce internal `completionModel`, `helpBarModel`, and `helpDrawerModel` structs and migrate feature state from root `Model`
+- [x] Introduce internal `completionModel`, `helpBarModel`, and `helpDrawerModel` structs and migrate feature state from root `Model`
 - [ ] Refactor root `Model` to orchestration-only responsibilities (`Update` routing + `View` layer composition)
 - [ ] Replace duplicated provider panic/timeout boilerplate with a shared async helper
 - [ ] Remove old transitional paths and dead helpers from `model.go`

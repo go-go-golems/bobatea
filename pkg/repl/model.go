@@ -57,59 +57,9 @@ type Model struct {
 	refreshPending   bool
 	refreshScheduled bool
 
-	// optional autocomplete capability
-	completer             InputCompleter
-	completionReqSeq      uint64
-	completionDebounce    time.Duration
-	completionReqTimeout  time.Duration
-	completionVisible     bool
-	completionSelection   int
-	completionReplaceFrom int
-	completionReplaceTo   int
-	completionScrollTop   int
-	completionVisibleRows int
-	completionMaxVisible  int
-	completionPageSize    int
-	completionMaxWidth    int
-	completionMaxHeight   int
-	completionMinWidth    int
-	completionMargin      int
-	completionOffsetX     int
-	completionOffsetY     int
-	completionNoBorder    bool
-	completionPlacement   CompletionOverlayPlacement
-	completionHorizontal  CompletionOverlayHorizontalGrow
-	completionLastResult  CompletionResult
-	completionLastError   error
-	completionLastReqID   uint64
-	completionLastReqKind CompletionReason
-
-	// optional help-bar capability
-	helpBarProvider    HelpBarProvider
-	helpBarReqSeq      uint64
-	helpBarDebounce    time.Duration
-	helpBarReqTimeout  time.Duration
-	helpBarVisible     bool
-	helpBarPayload     HelpBarPayload
-	helpBarLastErr     error
-	helpBarLastReqID   uint64
-	helpBarLastReqKind HelpBarReason
-
-	// optional help-drawer capability
-	helpDrawerProvider      HelpDrawerProvider
-	helpDrawerVisible       bool
-	helpDrawerDoc           HelpDrawerDocument
-	helpDrawerReqSeq        uint64
-	helpDrawerDebounce      time.Duration
-	helpDrawerReqTimeout    time.Duration
-	helpDrawerLoading       bool
-	helpDrawerErr           error
-	helpDrawerPinned        bool
-	helpDrawerPrefetch      bool
-	helpDrawerDock          HelpDrawerDock
-	helpDrawerWidthPercent  int
-	helpDrawerHeightPercent int
-	helpDrawerMargin        int
+	completion completionModel
+	helpBar    helpBarModel
+	helpDrawer helpDrawerModel
 }
 
 // NewModel constructs a new REPL shell with timeline transcript.
@@ -182,37 +132,40 @@ func NewModel(evaluator Evaluator, config Config, pub message.Publisher) *Model 
 		help:      help.New(),
 		keyMap:    NewKeyMap(autocompleteCfg, helpDrawerCfg, focusToggleKey),
 		pub:       pub,
-		completer: completer,
-
-		completionDebounce:   autocompleteCfg.Debounce,
-		completionReqTimeout: autocompleteCfg.RequestTimeout,
-		completionMaxVisible: autocompleteCfg.MaxSuggestions,
-		completionPageSize:   autocompleteCfg.OverlayPageSize,
-		completionMaxWidth:   autocompleteCfg.OverlayMaxWidth,
-		completionMaxHeight:  autocompleteCfg.OverlayMaxHeight,
-		completionMinWidth:   autocompleteCfg.OverlayMinWidth,
-		completionMargin:     autocompleteCfg.OverlayMargin,
-		completionOffsetX:    autocompleteCfg.OverlayOffsetX,
-		completionOffsetY:    autocompleteCfg.OverlayOffsetY,
-		completionNoBorder:   autocompleteCfg.OverlayNoBorder,
-		completionPlacement:  autocompleteCfg.OverlayPlacement,
-		completionHorizontal: autocompleteCfg.OverlayHorizontalGrow,
-
-		helpBarProvider:   helpBarProvider,
-		helpBarDebounce:   helpBarCfg.Debounce,
-		helpBarReqTimeout: helpBarCfg.RequestTimeout,
-
-		helpDrawerProvider:      helpDrawerProvider,
-		helpDrawerDebounce:      helpDrawerCfg.Debounce,
-		helpDrawerReqTimeout:    helpDrawerCfg.RequestTimeout,
-		helpDrawerPrefetch:      helpDrawerCfg.PrefetchWhenHidden,
-		helpDrawerDock:          helpDrawerCfg.Dock,
-		helpDrawerWidthPercent:  helpDrawerCfg.WidthPercent,
-		helpDrawerHeightPercent: helpDrawerCfg.HeightPercent,
-		helpDrawerMargin:        helpDrawerCfg.Margin,
+		completion: completionModel{
+			provider:   completer,
+			debounce:   autocompleteCfg.Debounce,
+			reqTimeout: autocompleteCfg.RequestTimeout,
+			maxVisible: autocompleteCfg.MaxSuggestions,
+			pageSize:   autocompleteCfg.OverlayPageSize,
+			maxWidth:   autocompleteCfg.OverlayMaxWidth,
+			maxHeight:  autocompleteCfg.OverlayMaxHeight,
+			minWidth:   autocompleteCfg.OverlayMinWidth,
+			margin:     autocompleteCfg.OverlayMargin,
+			offsetX:    autocompleteCfg.OverlayOffsetX,
+			offsetY:    autocompleteCfg.OverlayOffsetY,
+			noBorder:   autocompleteCfg.OverlayNoBorder,
+			placement:  autocompleteCfg.OverlayPlacement,
+			horizontal: autocompleteCfg.OverlayHorizontalGrow,
+		},
+		helpBar: helpBarModel{
+			provider:   helpBarProvider,
+			debounce:   helpBarCfg.Debounce,
+			reqTimeout: helpBarCfg.RequestTimeout,
+		},
+		helpDrawer: helpDrawerModel{
+			provider:      helpDrawerProvider,
+			debounce:      helpDrawerCfg.Debounce,
+			reqTimeout:    helpDrawerCfg.RequestTimeout,
+			prefetch:      helpDrawerCfg.PrefetchWhenHidden,
+			dock:          helpDrawerCfg.Dock,
+			widthPercent:  helpDrawerCfg.WidthPercent,
+			heightPercent: helpDrawerCfg.HeightPercent,
+			margin:        helpDrawerCfg.Margin,
+		},
 	}
 	ret.appCtx, ret.appStop = context.WithCancel(context.Background())
-	if ret.helpDrawerProvider == nil {
+	if ret.helpDrawer.provider == nil {
 		ret.keyMap.HelpDrawerToggle.SetEnabled(false)
 		ret.keyMap.HelpDrawerClose.SetEnabled(false)
 		ret.keyMap.HelpDrawerRefresh.SetEnabled(false)
@@ -353,7 +306,7 @@ func (m *Model) updateInput(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.textInput.Reset()
-		m.helpBarVisible = false
+		m.helpBar.visible = false
 		if m.config.EnableHistory {
 			m.history.Add(input, "", false)
 			m.history.ResetNavigation()
@@ -458,14 +411,14 @@ func (m *Model) View() string {
 	if completionOK {
 		completionPopup = m.renderCompletionPopup(completionLayout)
 		if completionPopup == "" {
-			m.completionVisibleRows = 0
+			m.completion.visibleRows = 0
 			completionOK = false
 		} else {
-			m.completionVisibleRows = completionLayout.VisibleRows
+			m.completion.visibleRows = completionLayout.VisibleRows
 			m.ensureCompletionSelectionVisible()
 		}
 	} else {
-		m.completionVisibleRows = 0
+		m.completion.visibleRows = 0
 	}
 
 	drawerLayout, drawerOK := m.computeHelpDrawerOverlayLayout(header, timelineView)
@@ -609,61 +562,61 @@ func (m *Model) scheduleRefresh() tea.Cmd {
 }
 
 func (m *Model) scheduleDebouncedCompletionIfNeeded(prevValue string, prevCursor int) tea.Cmd {
-	if m.completer == nil {
+	if m.completion.provider == nil {
 		return nil
 	}
 	if prevValue == m.textInput.Value() && prevCursor == m.textInput.Position() {
 		return nil
 	}
 
-	m.completionReqSeq++
-	reqID := m.completionReqSeq
-	return tea.Tick(m.completionDebounce, func(time.Time) tea.Msg {
+	m.completion.reqSeq++
+	reqID := m.completion.reqSeq
+	return tea.Tick(m.completion.debounce, func(time.Time) tea.Msg {
 		return completionDebounceMsg{RequestID: reqID}
 	})
 }
 
 func (m *Model) scheduleDebouncedHelpBarIfNeeded(prevValue string, prevCursor int) tea.Cmd {
-	if m.helpBarProvider == nil {
+	if m.helpBar.provider == nil {
 		return nil
 	}
 	if prevValue == m.textInput.Value() && prevCursor == m.textInput.Position() {
 		return nil
 	}
 
-	m.helpBarReqSeq++
-	reqID := m.helpBarReqSeq
-	return tea.Tick(m.helpBarDebounce, func(time.Time) tea.Msg {
+	m.helpBar.reqSeq++
+	reqID := m.helpBar.reqSeq
+	return tea.Tick(m.helpBar.debounce, func(time.Time) tea.Msg {
 		return helpBarDebounceMsg{RequestID: reqID}
 	})
 }
 
 func (m *Model) scheduleDebouncedHelpDrawerIfNeeded(prevValue string, prevCursor int) tea.Cmd {
-	if m.helpDrawerProvider == nil {
+	if m.helpDrawer.provider == nil {
 		return nil
 	}
-	if !m.helpDrawerVisible && !m.helpDrawerPrefetch {
+	if !m.helpDrawer.visible && !m.helpDrawer.prefetch {
 		return nil
 	}
-	if m.helpDrawerPinned {
+	if m.helpDrawer.pinned {
 		return nil
 	}
 	if prevValue == m.textInput.Value() && prevCursor == m.textInput.Position() {
 		return nil
 	}
 
-	m.helpDrawerReqSeq++
-	reqID := m.helpDrawerReqSeq
-	return tea.Tick(m.helpDrawerDebounce, func(time.Time) tea.Msg {
+	m.helpDrawer.reqSeq++
+	reqID := m.helpDrawer.reqSeq
+	return tea.Tick(m.helpDrawer.debounce, func(time.Time) tea.Msg {
 		return helpDrawerDebounceMsg{RequestID: reqID}
 	})
 }
 
 func (m *Model) handleDebouncedCompletion(msg completionDebounceMsg) tea.Cmd {
-	if m.completer == nil {
+	if m.completion.provider == nil {
 		return nil
 	}
-	if msg.RequestID != m.completionReqSeq {
+	if msg.RequestID != m.completion.reqSeq {
 		return nil
 	}
 
@@ -673,16 +626,16 @@ func (m *Model) handleDebouncedCompletion(msg completionDebounceMsg) tea.Cmd {
 		Reason:     CompletionReasonDebounce,
 		RequestID:  msg.RequestID,
 	}
-	m.completionLastReqID = req.RequestID
-	m.completionLastReqKind = req.Reason
+	m.completion.lastReqID = req.RequestID
+	m.completion.lastReqKind = req.Reason
 	return m.completionCmd(req)
 }
 
 func (m *Model) handleDebouncedHelpBar(msg helpBarDebounceMsg) tea.Cmd {
-	if m.helpBarProvider == nil {
+	if m.helpBar.provider == nil {
 		return nil
 	}
-	if msg.RequestID != m.helpBarReqSeq {
+	if msg.RequestID != m.helpBar.reqSeq {
 		return nil
 	}
 
@@ -692,19 +645,19 @@ func (m *Model) handleDebouncedHelpBar(msg helpBarDebounceMsg) tea.Cmd {
 		Reason:     HelpBarReasonDebounce,
 		RequestID:  msg.RequestID,
 	}
-	m.helpBarLastReqID = req.RequestID
-	m.helpBarLastReqKind = req.Reason
+	m.helpBar.lastReqID = req.RequestID
+	m.helpBar.lastReqKind = req.Reason
 	return m.helpBarCmd(req)
 }
 
 func (m *Model) handleDebouncedHelpDrawer(msg helpDrawerDebounceMsg) tea.Cmd {
-	if m.helpDrawerProvider == nil {
+	if m.helpDrawer.provider == nil {
 		return nil
 	}
-	if msg.RequestID != m.helpDrawerReqSeq {
+	if msg.RequestID != m.helpDrawer.reqSeq {
 		return nil
 	}
-	if !m.helpDrawerVisible && !m.helpDrawerPrefetch {
+	if !m.helpDrawer.visible && !m.helpDrawer.prefetch {
 		return nil
 	}
 
@@ -714,12 +667,12 @@ func (m *Model) handleDebouncedHelpDrawer(msg helpDrawerDebounceMsg) tea.Cmd {
 		RequestID:  msg.RequestID,
 		Trigger:    HelpDrawerTriggerTyping,
 	}
-	m.helpDrawerLoading = true
+	m.helpDrawer.loading = true
 	return m.helpDrawerCmd(req)
 }
 
 func (m *Model) triggerCompletionFromShortcut(k tea.KeyMsg) tea.Cmd {
-	if m.completer == nil {
+	if m.completion.provider == nil {
 		return nil
 	}
 	if !key.Matches(k, m.keyMap.CompletionTrigger) {
@@ -727,16 +680,16 @@ func (m *Model) triggerCompletionFromShortcut(k tea.KeyMsg) tea.Cmd {
 	}
 	keyStr := k.String()
 
-	m.completionReqSeq++
+	m.completion.reqSeq++
 	req := CompletionRequest{
 		Input:      m.textInput.Value(),
 		CursorByte: m.textInput.Position(),
 		Reason:     CompletionReasonShortcut,
 		Shortcut:   keyStr,
-		RequestID:  m.completionReqSeq,
+		RequestID:  m.completion.reqSeq,
 	}
-	m.completionLastReqID = req.RequestID
-	m.completionLastReqKind = req.Reason
+	m.completion.lastReqID = req.RequestID
+	m.completion.lastReqKind = req.Reason
 	return m.completionCmd(req)
 }
 
@@ -757,10 +710,10 @@ func (m *Model) completionCmd(req CompletionRequest) tea.Cmd {
 				}
 			}()
 
-			ctx, cancel := context.WithTimeout(m.appContext(), m.completionReqTimeout)
+			ctx, cancel := context.WithTimeout(m.appContext(), m.completion.reqTimeout)
 			defer cancel()
 
-			result, err = m.completer.CompleteInput(ctx, req)
+			result, err = m.completion.provider.CompleteInput(ctx, req)
 		}()
 
 		if recovered != nil {
@@ -800,10 +753,10 @@ func (m *Model) helpBarCmd(req HelpBarRequest) tea.Cmd {
 				}
 			}()
 
-			ctx, cancel := context.WithTimeout(m.appContext(), m.helpBarReqTimeout)
+			ctx, cancel := context.WithTimeout(m.appContext(), m.helpBar.reqTimeout)
 			defer cancel()
 
-			payload, err = m.helpBarProvider.GetHelpBar(ctx, req)
+			payload, err = m.helpBar.provider.GetHelpBar(ctx, req)
 		}()
 
 		if recovered != nil {
@@ -843,10 +796,10 @@ func (m *Model) helpDrawerCmd(req HelpDrawerRequest) tea.Cmd {
 				}
 			}()
 
-			ctx, cancel := context.WithTimeout(m.appContext(), m.helpDrawerReqTimeout)
+			ctx, cancel := context.WithTimeout(m.appContext(), m.helpDrawer.reqTimeout)
 			defer cancel()
 
-			doc, err = m.helpDrawerProvider.GetHelpDrawer(ctx, req)
+			doc, err = m.helpDrawer.provider.GetHelpDrawer(ctx, req)
 		}()
 
 		if recovered != nil {
@@ -870,65 +823,65 @@ func (m *Model) helpDrawerCmd(req HelpDrawerRequest) tea.Cmd {
 }
 
 func (m *Model) handleCompletionResult(msg completionResultMsg) tea.Cmd {
-	if msg.RequestID != m.completionReqSeq {
+	if msg.RequestID != m.completion.reqSeq {
 		return nil
 	}
-	m.completionLastReqID = msg.RequestID
-	m.completionLastResult = msg.Result
-	m.completionLastError = msg.Err
+	m.completion.lastReqID = msg.RequestID
+	m.completion.lastResult = msg.Result
+	m.completion.lastError = msg.Err
 	if msg.Err != nil || !msg.Result.Show || len(msg.Result.Suggestions) == 0 {
 		m.hideCompletionPopup()
 		return nil
 	}
 
-	m.completionSelection = 0
-	m.completionVisible = true
-	m.completionScrollTop = 0
-	m.completionVisibleRows = 0
-	m.completionReplaceFrom = clampInt(msg.Result.ReplaceFrom, 0, len(m.textInput.Value()))
-	m.completionReplaceTo = clampInt(msg.Result.ReplaceTo, m.completionReplaceFrom, len(m.textInput.Value()))
+	m.completion.selection = 0
+	m.completion.visible = true
+	m.completion.scrollTop = 0
+	m.completion.visibleRows = 0
+	m.completion.replaceFrom = clampInt(msg.Result.ReplaceFrom, 0, len(m.textInput.Value()))
+	m.completion.replaceTo = clampInt(msg.Result.ReplaceTo, m.completion.replaceFrom, len(m.textInput.Value()))
 	m.ensureCompletionSelectionVisible()
 	return nil
 }
 
 func (m *Model) handleHelpBarResult(msg helpBarResultMsg) tea.Cmd {
-	if msg.RequestID != m.helpBarReqSeq {
+	if msg.RequestID != m.helpBar.reqSeq {
 		return nil
 	}
-	m.helpBarLastReqID = msg.RequestID
-	m.helpBarLastErr = msg.Err
+	m.helpBar.lastReqID = msg.RequestID
+	m.helpBar.lastErr = msg.Err
 	if msg.Err != nil {
-		m.helpBarVisible = false
+		m.helpBar.visible = false
 		return nil
 	}
 	if !msg.Payload.Show || strings.TrimSpace(msg.Payload.Text) == "" {
-		m.helpBarVisible = false
+		m.helpBar.visible = false
 		return nil
 	}
 
-	m.helpBarPayload = msg.Payload
-	m.helpBarVisible = true
+	m.helpBar.payload = msg.Payload
+	m.helpBar.visible = true
 	return nil
 }
 
 func (m *Model) handleHelpDrawerResult(msg helpDrawerResultMsg) tea.Cmd {
-	if msg.RequestID != m.helpDrawerReqSeq {
+	if msg.RequestID != m.helpDrawer.reqSeq {
 		return nil
 	}
-	m.helpDrawerLoading = false
-	m.helpDrawerErr = msg.Err
+	m.helpDrawer.loading = false
+	m.helpDrawer.err = msg.Err
 	if msg.Err != nil {
 		return nil
 	}
-	m.helpDrawerDoc = msg.Doc
+	m.helpDrawer.doc = msg.Doc
 	return nil
 }
 
 func (m *Model) renderHelpBar() string {
-	if !m.helpBarVisible {
+	if !m.helpBar.visible {
 		return ""
 	}
-	return m.helpBarStyleForSeverity(m.helpBarPayload.Severity).Render(m.helpBarPayload.Text)
+	return m.helpBarStyleForSeverity(m.helpBar.payload.Severity).Render(m.helpBar.payload.Text)
 }
 
 func (m *Model) helpBarStyleForSeverity(severity string) lipgloss.Style {
@@ -943,23 +896,23 @@ func (m *Model) helpBarStyleForSeverity(severity string) lipgloss.Style {
 }
 
 func (m *Model) handleHelpDrawerShortcuts(k tea.KeyMsg) (bool, tea.Cmd) {
-	if m.helpDrawerProvider == nil {
+	if m.helpDrawer.provider == nil {
 		return false, nil
 	}
 
 	switch {
 	case key.Matches(k, m.keyMap.HelpDrawerToggle):
 		return true, m.toggleHelpDrawer()
-	case m.helpDrawerVisible && key.Matches(k, m.keyMap.HelpDrawerClose):
-		if m.completionVisible && key.Matches(k, m.keyMap.CompletionCancel) {
+	case m.helpDrawer.visible && key.Matches(k, m.keyMap.HelpDrawerClose):
+		if m.completion.visible && key.Matches(k, m.keyMap.CompletionCancel) {
 			return false, nil
 		}
 		m.closeHelpDrawer()
 		return true, nil
-	case m.helpDrawerVisible && key.Matches(k, m.keyMap.HelpDrawerRefresh):
+	case m.helpDrawer.visible && key.Matches(k, m.keyMap.HelpDrawerRefresh):
 		return true, m.requestHelpDrawerNow(HelpDrawerTriggerManualRefresh)
-	case m.helpDrawerVisible && key.Matches(k, m.keyMap.HelpDrawerPin):
-		m.helpDrawerPinned = !m.helpDrawerPinned
+	case m.helpDrawer.visible && key.Matches(k, m.keyMap.HelpDrawerPin):
+		m.helpDrawer.pinned = !m.helpDrawer.pinned
 		return true, nil
 	}
 
@@ -967,43 +920,43 @@ func (m *Model) handleHelpDrawerShortcuts(k tea.KeyMsg) (bool, tea.Cmd) {
 }
 
 func (m *Model) toggleHelpDrawer() tea.Cmd {
-	if m.helpDrawerVisible {
+	if m.helpDrawer.visible {
 		m.closeHelpDrawer()
 		return nil
 	}
 
-	m.helpDrawerVisible = true
-	m.helpDrawerErr = nil
+	m.helpDrawer.visible = true
+	m.helpDrawer.err = nil
 	return m.requestHelpDrawerNow(HelpDrawerTriggerToggleOpen)
 }
 
 func (m *Model) closeHelpDrawer() {
-	m.helpDrawerVisible = false
-	m.helpDrawerLoading = false
+	m.helpDrawer.visible = false
+	m.helpDrawer.loading = false
 }
 
 func (m *Model) requestHelpDrawerNow(trigger HelpDrawerTrigger) tea.Cmd {
-	if m.helpDrawerProvider == nil {
+	if m.helpDrawer.provider == nil {
 		return nil
 	}
-	m.helpDrawerLoading = true
-	m.helpDrawerErr = nil
-	m.helpDrawerReqSeq++
+	m.helpDrawer.loading = true
+	m.helpDrawer.err = nil
+	m.helpDrawer.reqSeq++
 	req := HelpDrawerRequest{
 		Input:      m.textInput.Value(),
 		CursorByte: m.textInput.Position(),
-		RequestID:  m.helpDrawerReqSeq,
+		RequestID:  m.helpDrawer.reqSeq,
 		Trigger:    trigger,
 	}
 	return m.helpDrawerCmd(req)
 }
 
 func (m *Model) handleCompletionNavigation(k tea.KeyMsg) (bool, tea.Cmd) {
-	if !m.completionVisible {
+	if !m.completion.visible {
 		return false, nil
 	}
 
-	suggestions := m.completionLastResult.Suggestions
+	suggestions := m.completion.lastResult.Suggestions
 	if len(suggestions) == 0 {
 		m.hideCompletionPopup()
 		return false, nil
@@ -1014,26 +967,26 @@ func (m *Model) handleCompletionNavigation(k tea.KeyMsg) (bool, tea.Cmd) {
 		m.hideCompletionPopup()
 		return true, nil
 	case key.Matches(k, m.keyMap.CompletionPrev):
-		if m.completionSelection > 0 {
-			m.completionSelection--
+		if m.completion.selection > 0 {
+			m.completion.selection--
 		}
 		m.ensureCompletionSelectionVisible()
 		return true, nil
 	case key.Matches(k, m.keyMap.CompletionNext):
-		if m.completionSelection < len(suggestions)-1 {
-			m.completionSelection++
+		if m.completion.selection < len(suggestions)-1 {
+			m.completion.selection++
 		}
 		m.ensureCompletionSelectionVisible()
 		return true, nil
 	case key.Matches(k, m.keyMap.CompletionPageUp):
-		if m.completionSelection > 0 {
-			m.completionSelection = max(0, m.completionSelection-m.completionPageStep())
+		if m.completion.selection > 0 {
+			m.completion.selection = max(0, m.completion.selection-m.completionPageStep())
 		}
 		m.ensureCompletionSelectionVisible()
 		return true, nil
 	case key.Matches(k, m.keyMap.CompletionPageDown):
-		if m.completionSelection < len(suggestions)-1 {
-			m.completionSelection = min(len(suggestions)-1, m.completionSelection+m.completionPageStep())
+		if m.completion.selection < len(suggestions)-1 {
+			m.completion.selection = min(len(suggestions)-1, m.completion.selection+m.completionPageStep())
 		}
 		m.ensureCompletionSelectionVisible()
 		return true, nil
@@ -1045,16 +998,16 @@ func (m *Model) handleCompletionNavigation(k tea.KeyMsg) (bool, tea.Cmd) {
 }
 
 func (m *Model) applySelectedCompletion() {
-	suggestions := m.completionLastResult.Suggestions
-	if len(suggestions) == 0 || m.completionSelection >= len(suggestions) {
+	suggestions := m.completion.lastResult.Suggestions
+	if len(suggestions) == 0 || m.completion.selection >= len(suggestions) {
 		m.hideCompletionPopup()
 		return
 	}
 
-	selected := suggestions[m.completionSelection]
+	selected := suggestions[m.completion.selection]
 	input := m.textInput.Value()
-	from := clampInt(m.completionReplaceFrom, 0, len(input))
-	to := clampInt(m.completionReplaceTo, from, len(input))
+	from := clampInt(m.completion.replaceFrom, 0, len(input))
+	to := clampInt(m.completion.replaceTo, from, len(input))
 	newInput := input[:from] + selected.Value + input[to:]
 
 	m.textInput.SetValue(newInput)
@@ -1063,19 +1016,19 @@ func (m *Model) applySelectedCompletion() {
 }
 
 func (m *Model) hideCompletionPopup() {
-	m.completionVisible = false
-	m.completionSelection = 0
-	m.completionReplaceFrom = 0
-	m.completionReplaceTo = 0
-	m.completionScrollTop = 0
-	m.completionVisibleRows = 0
+	m.completion.visible = false
+	m.completion.selection = 0
+	m.completion.replaceFrom = 0
+	m.completion.replaceTo = 0
+	m.completion.scrollTop = 0
+	m.completion.visibleRows = 0
 }
 
 func (m *Model) computeCompletionOverlayLayout(header, timelineView string) (completionOverlayLayout, bool) {
-	if !m.completionVisible || m.width <= 0 || m.height <= 0 {
+	if !m.completion.visible || m.width <= 0 || m.height <= 0 {
 		return completionOverlayLayout{}, false
 	}
-	suggestions := m.completionLastResult.Suggestions
+	suggestions := m.completion.lastResult.Suggestions
 	if len(suggestions) == 0 {
 		return completionOverlayLayout{}, false
 	}
@@ -1094,20 +1047,20 @@ func (m *Model) computeCompletionOverlayLayout(header, timelineView string) (com
 	}
 
 	popupWidth := contentWidth + frameWidth
-	if m.completionMinWidth > 0 {
-		popupWidth = max(popupWidth, m.completionMinWidth)
+	if m.completion.minWidth > 0 {
+		popupWidth = max(popupWidth, m.completion.minWidth)
 	}
-	if m.completionMaxWidth > 0 {
-		popupWidth = min(popupWidth, m.completionMaxWidth)
+	if m.completion.maxWidth > 0 {
+		popupWidth = min(popupWidth, m.completion.maxWidth)
 	}
 	popupWidth = min(popupWidth, m.width)
 	contentWidth = max(1, popupWidth-frameWidth)
 
 	desiredRows := len(suggestions)
-	if m.completionMaxVisible > 0 {
-		desiredRows = min(desiredRows, m.completionMaxVisible)
+	if m.completion.maxVisible > 0 {
+		desiredRows = min(desiredRows, m.completion.maxVisible)
 	}
-	maxHeight := m.completionMaxHeight
+	maxHeight := m.completion.maxHeight
 	if maxHeight <= 0 {
 		maxHeight = m.height
 	}
@@ -1118,7 +1071,7 @@ func (m *Model) computeCompletionOverlayLayout(header, timelineView string) (com
 		return completionOverlayLayout{}, false
 	}
 
-	margin := max(0, m.completionMargin)
+	margin := max(0, m.completion.margin)
 	availableBelow := max(0, m.height-(inputY+1+margin))
 	availableAbove := max(0, inputY-margin)
 	belowRows := max(0, min(availableBelow, maxHeight)-frameHeight)
@@ -1131,7 +1084,7 @@ func (m *Model) computeCompletionOverlayLayout(header, timelineView string) (com
 
 	visibleRows := desiredRows
 	popupY := inputY + 1 + margin
-	switch m.completionPlacement {
+	switch m.completion.placement {
 	case CompletionOverlayPlacementAbove:
 		visibleRows = min(visibleRows, aboveRows)
 		popupY = inputY - margin - (visibleRows + frameHeight)
@@ -1159,11 +1112,11 @@ func (m *Model) computeCompletionOverlayLayout(header, timelineView string) (com
 
 	anchorX := m.completionAnchorColumn()
 	popupX := anchorX
-	if m.completionHorizontal == CompletionOverlayHorizontalGrowLeft {
+	if m.completion.horizontal == CompletionOverlayHorizontalGrowLeft {
 		popupX -= popupWidth
 	}
-	popupX += m.completionOffsetX
-	popupY += m.completionOffsetY
+	popupX += m.completion.offsetX
+	popupY += m.completion.offsetY
 	popupX = clampInt(popupX, 0, max(0, m.width-popupWidth))
 	popupY = clampInt(popupY, 0, max(0, m.height-1))
 
@@ -1177,12 +1130,12 @@ func (m *Model) computeCompletionOverlayLayout(header, timelineView string) (com
 }
 
 func (m *Model) computeHelpDrawerOverlayLayout(header, timelineView string) (helpDrawerOverlayLayout, bool) {
-	if !m.helpDrawerVisible || m.width <= 0 || m.height <= 0 {
+	if !m.helpDrawer.visible || m.width <= 0 || m.height <= 0 {
 		return helpDrawerOverlayLayout{}, false
 	}
 
-	widthPercent := clampInt(m.helpDrawerWidthPercent, 20, 90)
-	heightPercent := clampInt(m.helpDrawerHeightPercent, 20, 90)
+	widthPercent := clampInt(m.helpDrawer.widthPercent, 20, 90)
+	heightPercent := clampInt(m.helpDrawer.heightPercent, 20, 90)
 	panelWidth := max(32, m.width*widthPercent/100)
 	panelHeight := max(8, m.height*heightPercent/100)
 	panelWidth = min(panelWidth, max(20, m.width-2))
@@ -1194,13 +1147,13 @@ func (m *Model) computeHelpDrawerOverlayLayout(header, timelineView string) (hel
 	contentWidth := max(1, panelWidth-frameWidth)
 	contentHeight := max(1, panelHeight-frameHeight)
 
-	margin := max(0, m.helpDrawerMargin)
+	margin := max(0, m.helpDrawer.margin)
 	headerHeight := lipgloss.Height(header)
 	inputY := headerHeight + 1 + lipgloss.Height(timelineView)
 
 	panelX := 0
 	panelY := 0
-	switch m.helpDrawerDock {
+	switch m.helpDrawer.dock {
 	case HelpDrawerDockRight:
 		panelX = m.width - margin - panelWidth
 		panelY = headerHeight + 1 + margin
@@ -1237,7 +1190,7 @@ func (m *Model) renderHelpDrawerPanel(layout helpDrawerOverlayLayout) string {
 	title := "Help Drawer"
 	subtitle := "No contextual help provider content yet"
 	bodyLines := []string{}
-	doc := m.helpDrawerDoc
+	doc := m.helpDrawer.doc
 	hasDoc := strings.TrimSpace(doc.Title) != "" ||
 		strings.TrimSpace(doc.Subtitle) != "" ||
 		strings.TrimSpace(doc.Markdown) != "" ||
@@ -1272,18 +1225,18 @@ func (m *Model) renderHelpDrawerPanel(layout helpDrawerOverlayLayout) string {
 			bodyLines = append(bodyLines, "Version: "+doc.VersionTag)
 		}
 	}
-	if m.helpDrawerErr != nil {
+	if m.helpDrawer.err != nil {
 		subtitle = "Error"
-		bodyLines = append(bodyLines, m.helpDrawerErr.Error())
+		bodyLines = append(bodyLines, m.helpDrawer.err.Error())
 	}
-	if m.helpDrawerLoading {
+	if m.helpDrawer.loading {
 		if hasDoc {
 			subtitle = strings.TrimSpace(subtitle + " (refreshing)")
 		} else {
 			subtitle = "Loading..."
 		}
 	}
-	if m.helpDrawerPinned {
+	if m.helpDrawer.pinned {
 		subtitle = strings.TrimSpace(subtitle + " [pinned]")
 	}
 
@@ -1311,18 +1264,18 @@ func (m *Model) renderCompletionPopup(layout completionOverlayLayout) string {
 	if layout.VisibleRows <= 0 || layout.ContentWidth <= 0 {
 		return ""
 	}
-	suggestions := m.completionLastResult.Suggestions
+	suggestions := m.completion.lastResult.Suggestions
 	if len(suggestions) == 0 {
 		return ""
 	}
 
-	start := clampInt(m.completionScrollTop, 0, max(0, len(suggestions)-1))
+	start := clampInt(m.completion.scrollTop, 0, max(0, len(suggestions)-1))
 	end := min(len(suggestions), start+layout.VisibleRows)
 	lines := make([]string, 0, layout.VisibleRows)
 	for i := start; i < end; i++ {
 		itemText := "  " + suggestions[i].DisplayText
 		itemStyle := m.styles.CompletionItem
-		if i == m.completionSelection {
+		if i == m.completion.selection {
 			itemStyle = m.styles.CompletionSelected
 			itemText = "› " + suggestions[i].DisplayText
 		}
@@ -1343,7 +1296,7 @@ func (m *Model) completionAnchorColumn() int {
 }
 
 func (m *Model) completionPopupStyle() lipgloss.Style {
-	if !m.completionNoBorder {
+	if !m.completion.noBorder {
 		return m.styles.CompletionPopup
 	}
 	return m.styles.CompletionPopup.
@@ -1391,41 +1344,41 @@ func clampInt(v, low, high int) int {
 }
 
 func (m *Model) completionVisibleLimit() int {
-	if m.completionVisibleRows > 0 {
-		return max(1, m.completionVisibleRows)
+	if m.completion.visibleRows > 0 {
+		return max(1, m.completion.visibleRows)
 	}
-	if m.completionMaxVisible > 0 {
-		return m.completionMaxVisible
+	if m.completion.maxVisible > 0 {
+		return m.completion.maxVisible
 	}
 	return 1
 }
 
 func (m *Model) completionPageStep() int {
-	if m.completionPageSize > 0 {
-		return max(1, m.completionPageSize)
+	if m.completion.pageSize > 0 {
+		return max(1, m.completion.pageSize)
 	}
 	return m.completionVisibleLimit()
 }
 
 func (m *Model) ensureCompletionSelectionVisible() {
-	suggestions := m.completionLastResult.Suggestions
+	suggestions := m.completion.lastResult.Suggestions
 	if len(suggestions) == 0 {
-		m.completionScrollTop = 0
+		m.completion.scrollTop = 0
 		return
 	}
 
-	m.completionSelection = clampInt(m.completionSelection, 0, len(suggestions)-1)
+	m.completion.selection = clampInt(m.completion.selection, 0, len(suggestions)-1)
 	limit := m.completionVisibleLimit()
 	maxTop := max(0, len(suggestions)-limit)
-	m.completionScrollTop = clampInt(m.completionScrollTop, 0, maxTop)
-	if m.completionSelection < m.completionScrollTop {
-		m.completionScrollTop = m.completionSelection
+	m.completion.scrollTop = clampInt(m.completion.scrollTop, 0, maxTop)
+	if m.completion.selection < m.completion.scrollTop {
+		m.completion.scrollTop = m.completion.selection
 	}
-	visibleEnd := m.completionScrollTop + limit - 1
-	if m.completionSelection > visibleEnd {
-		m.completionScrollTop = m.completionSelection - limit + 1
+	visibleEnd := m.completion.scrollTop + limit - 1
+	if m.completion.selection > visibleEnd {
+		m.completion.scrollTop = m.completion.selection - limit + 1
 	}
-	m.completionScrollTop = clampInt(m.completionScrollTop, 0, maxTop)
+	m.completion.scrollTop = clampInt(m.completion.scrollTop, 0, maxTop)
 }
 
 func (m *Model) updateKeyBindings() { mode_keymap.EnableMode(&m.keyMap, m.focus) }

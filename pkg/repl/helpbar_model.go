@@ -1,4 +1,18 @@
 package repl
 
-// BOBA-008 task 3 scaffold:
-// Help bar request/result/render logic is migrated in follow-up steps.
+import "time"
+
+type helpBarModel struct {
+	provider HelpBarProvider
+
+	reqSeq     uint64
+	debounce   time.Duration
+	reqTimeout time.Duration
+
+	visible bool
+	payload HelpBarPayload
+
+	lastErr     error
+	lastReqID   uint64
+	lastReqKind HelpBarReason
+}
