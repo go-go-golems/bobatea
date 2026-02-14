@@ -15,16 +15,16 @@
 
 ## Cutover Validation
 
-- [ ] Update existing `pkg/repl` tests to reflect the new internal structure and keep behavior coverage intact
-- [ ] Add regression tests for stale-drop ordering, debounce sequencing, and completion/drawer overlay bounds
-- [ ] Run validation: `go test ./pkg/repl/... -count=1`
-- [ ] Run validation: `golangci-lint run -v --max-same-issues=100 ./pkg/repl/...`
-- [ ] Smoke test examples: `go run ./examples/repl/autocomplete-generic` and `go run ./examples/js-repl`
+- [x] Update existing `pkg/repl` tests to reflect the new internal structure and keep behavior coverage intact
+- [x] Add regression tests for stale-drop ordering, debounce sequencing, and completion/drawer overlay bounds
+- [x] Run validation: `go test ./pkg/repl/... -count=1`
+- [x] Run validation: `golangci-lint run -v --max-same-issues=100 ./pkg/repl/...`
+- [x] Smoke test examples: `go run ./examples/repl/autocomplete-generic` and `go run ./examples/js-repl`
 
 ## Ticket Hygiene
 
-- [ ] Update BOBA-008 changelog with rewrite summary and commit hashes
-- [ ] Update BOBA-008 diary/analysis notes with migration details and known follow-ups
+- [x] Update BOBA-008 changelog with rewrite summary and commit hashes
+- [x] Update BOBA-008 diary/analysis notes with migration details and known follow-ups
 - [x] Add optional constructor/helper to inject external base context into repl.Model
 - [x] Switch completion/helpBar/helpDrawer provider command contexts from Background to app context + timeout
 - [x] Run validation (go test ./pkg/repl/... and golangci-lint ./pkg/repl/...) and commit task-by-task

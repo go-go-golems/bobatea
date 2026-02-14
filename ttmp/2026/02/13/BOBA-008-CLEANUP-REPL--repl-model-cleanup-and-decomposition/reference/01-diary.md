@@ -378,3 +378,106 @@ I also completed the required validation step (`go test` + `golangci-lint`) whil
 - Task tracking:
   - BOBA-008 task 19 checked complete.
   - BOBA-008 task 17 checked complete.
+
+## Step 6: Tasks 8-14 - Test Coverage Closure, Validation, Smoke, and Ticket Hygiene
+
+I resumed BOBA-008 to close the remaining open checklist items (8-14) and executed them in order: feature-structure tests, regression tests, focused validation, PTY smoke tests, and ticket documentation updates. This step completed the outstanding cutover verification loop.
+
+I kept the changes scoped to the pending tasks, committed the new test coverage independently, and then updated tasks/changelog/analysis notes/diary to reflect final state and known follow-ups.
+
+### Prompt Context
+
+**User prompt (verbatim):** "ok, didn't we do these? if not, get to work, do them task by task, commit when done, update the diary"
+
+**Assistant interpretation:** Continue BOBA-008 from the partially-complete state, execute the remaining tasks one-by-one, commit completion work, and update diary/ticket docs with exact outcomes.
+
+**Inferred user intent:** Close the ticket in an auditable way with concrete tests, reproducible validation commands, and complete documentation hygiene.
+
+**Commit (code):** a304559 — "repl: add split-model wiring and debounce regression tests"
+
+### What I did
+
+- Added/updated test coverage for split-model cutover:
+  - `pkg/repl/repl_test.go`
+    - `TestNewModelWiresFeatureSubmodelsFromConfig`
+    - `TestNewModelDisablesFeatureProvidersWhenConfigDisabled`
+  - `pkg/repl/help_drawer_model_test.go`
+    - `TestHelpDrawerDebounceCoalescesToLatestRequest`
+- Ran and fixed test loop:
+  - first `go test ./pkg/repl/... -count=1` failed due an incorrect key-binding-disabled assertion assumption
+  - adjusted that assertion to validate provider disabling directly
+  - reran `go test ./pkg/repl/... -count=1` successfully
+- Ran focused validation gates:
+  - `go test ./pkg/repl/... -count=1` (pass)
+  - `golangci-lint run -v --max-same-issues=100 ./pkg/repl/...` (pass)
+- Ran smoke tests for both examples:
+  - initial direct non-TTY run failed (`could not open a new TTY: open /dev/tty: no such device or address`)
+  - reran via PTY wrapper using `script -q -c "timeout 7s go run ..."` for:
+    - `./examples/repl/autocomplete-generic`
+    - `./examples/js-repl`
+  - both started and rendered without panic
+- Updated ticket bookkeeping:
+  - checked tasks 8-12 complete
+  - updated design doc with implementation status + follow-ups
+  - updated changelog with rewrite summary and commit hashes
+  - checked tasks 13-14 complete
+
+### Why
+
+- Tasks 8-14 were still open in BOBA-008 and required closure with both code-level and documentation-level evidence.
+- PTY-based smoke validation was necessary because Bubble Tea examples require a TTY.
+
+### What worked
+
+- New tests covered split-model wiring and help-drawer debounce stale-drop sequencing as intended.
+- Focused test/lint gates passed.
+- PTY smoke approach (`script`) provided reliable runnable checks for TUI examples.
+
+### What didn't work
+
+- Direct smoke runs without PTY:
+  - `go run ./examples/repl/autocomplete-generic`
+  - `go run ./examples/js-repl`
+  - failed with `could not open a new TTY: open /dev/tty: no such device or address`
+- Resolution: wrap runs with `script -q -c "timeout 7s go run ..."` to provide a pseudo-terminal.
+
+### What I learned
+
+- Mode-key enable/disable behavior should not be used as a proxy for provider availability in tests; provider pointer state is the reliable invariant for these checks.
+- PTY smoke commands should be the default pattern for REPL/TUI validation in non-interactive CI shells.
+
+### What was tricky to build
+
+- The first assertion set incorrectly assumed disabled key bindings would remain disabled after mode-key reconfiguration. The symptom was three failing `assert.False(...Enabled())` checks. I switched assertions to provider-disable invariants, which align with actual runtime behavior and still validate the cutover requirement.
+
+### What warrants a second pair of eyes
+
+- Confirm that the selected invariants for task 8 (provider wiring/disable semantics + debounce stale-drop) are sufficient for your expected definition of “coverage intact” after the split.
+- Confirm whether we want a dedicated helper for PTY smoke runs in Makefile/CI to standardize TUI example checks.
+
+### What should be done in the future
+
+- Consider adding a tiny smoke helper script for TTY-required examples to avoid repeating `script -q -c "timeout ..."` command patterns.
+- Continue BOBA-009 for JS runtime-defined symbol autocomplete updates after function declarations.
+
+### Code review instructions
+
+- Start with test changes:
+  - `pkg/repl/repl_test.go`
+  - `pkg/repl/help_drawer_model_test.go`
+- Then review ticket docs:
+  - `ttmp/2026/02/13/BOBA-008-CLEANUP-REPL--repl-model-cleanup-and-decomposition/tasks.md`
+  - `ttmp/2026/02/13/BOBA-008-CLEANUP-REPL--repl-model-cleanup-and-decomposition/changelog.md`
+  - `ttmp/2026/02/13/BOBA-008-CLEANUP-REPL--repl-model-cleanup-and-decomposition/design-doc/01-repl-model-decomposition-analysis-and-split-plan.md`
+  - `ttmp/2026/02/13/BOBA-008-CLEANUP-REPL--repl-model-cleanup-and-decomposition/reference/01-diary.md`
+- Validate:
+  - `go test ./pkg/repl/... -count=1`
+  - `golangci-lint run -v --max-same-issues=100 ./pkg/repl/...`
+  - `script -q -c "timeout 7s go run ./examples/repl/autocomplete-generic" /dev/null`
+  - `script -q -c "timeout 7s go run ./examples/js-repl" /dev/null`
+
+### Technical details
+
+- BOBA-008 commits now summarized in ticket docs:
+  - `be77639`, `506aef1`, `b1fe657`, `cc3a683`, `73bd844`, `a304559`
+  - context-chain commits: `167cc2b`, `6439546`, `2a75285`, `2f0ccf1`

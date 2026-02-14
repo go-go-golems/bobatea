@@ -32,7 +32,7 @@ RelatedFiles:
         Monolithic REPL model analyzed for decomposition boundaries and extraction phases
 ExternalSources: []
 Summary: Big-bang rewrite plan for replacing pkg/repl/model.go with smaller feature models and a clean cutover.
-LastUpdated: 2026-02-13T18:28:00-05:00
+LastUpdated: 2026-02-13T19:28:00-05:00
 WhatFor: Plan a big-bang decomposition and cutover of the REPL model into smaller files and submodels.
 WhenToUse: When implementing BOBA-008 refactors or reviewing REPL architecture boundaries.
 ---
@@ -365,6 +365,32 @@ The BOBA-008 merge should include the full internal model rewrite in one integra
 4. Provider contexts chained from app context (no raw `context.Background()` in provider command paths).
 5. Config normalization removed from `model.go`.
 6. Tests/examples updated to the new behavior shape in the same PR.
+
+## Implementation Status (2026-02-13)
+
+The big-bang split was completed in code and validated in-package. The root model is now orchestration-focused and feature logic lives in dedicated internal files.
+
+Core rewrite commits:
+
+- `be77639` — file layout scaffold for split modules.
+- `506aef1` — migrated completion/help bar/help drawer state into internal submodels.
+- `b1fe657` — moved orchestration internals out of `model.go` into feature files.
+- `cc3a683` — unified provider timeout/panic behavior through shared helper.
+- `73bd844` — removed transitional dead root-model state.
+- `a304559` — added split-model wiring/regression tests (including help-drawer debounce stale-drop behavior).
+
+Context propagation commits (same ticket scope):
+
+- `167cc2b` — app context lifecycle in model + cancel on quit.
+- `6439546` — `NewModelWithContext` for parent-context injection.
+- `2a75285` — provider timeout contexts derive from app context.
+- `2f0ccf1` — regression tests for provider cancellation.
+
+Known follow-ups:
+
+- If desired, extract root `View` layer composition into a tiny composer helper to shrink orchestration surface further.
+- Consider harmonizing key-binding disabled-state behavior with mode-key enabling so disabled bindings cannot be re-enabled by mode switches.
+- Keep JS runtime symbol autocomplete in its dedicated BOBA-009 ticket (dynamic symbol table updates after function definitions).
 
 ## Open Questions
 

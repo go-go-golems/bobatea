@@ -58,3 +58,17 @@ Completed context propagation implementation: provider commands now derive timeo
 - /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/repl_test.go — Added app-context cancellation tests for provider commands and quit behavior
 - /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-008-CLEANUP-REPL--repl-model-cleanup-and-decomposition/reference/01-diary.md — Recorded tasks 16/19/17 implementation diary entries
 
+
+## 2026-02-13
+
+Completed BOBA-008 big-bang REPL model cleanup: split monolithic model into feature files/submodels, unified provider timeout/panic helper, removed transitional state, added context-chain cancellation and regression coverage, and validated with focused test/lint plus PTY smoke runs. Commits: be77639, 506aef1, b1fe657, cc3a683, 73bd844, a304559, 167cc2b, 6439546, 2a75285, 2f0ccf1.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/help_drawer_model_test.go — Debounce stale-drop regression coverage
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/model.go — Root model reduced to orchestration and app-context lifecycle
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/model_async_provider.go — Shared provider timeout/panic handling
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/repl_test.go — Split-model wiring and context-cancellation tests
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-008-CLEANUP-REPL--repl-model-cleanup-and-decomposition/design-doc/01-repl-model-decomposition-analysis-and-split-plan.md — Added implementation status and follow-ups
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-008-CLEANUP-REPL--repl-model-cleanup-and-decomposition/reference/01-diary.md — Added closure diary step for tasks 8-14
+
