@@ -265,3 +265,78 @@ There was one failed commit attempt due pre-commit lint catching unused interim 
 
 - Task tracking:
   - BOBA-005 task 4 checked complete.
+
+## Step 4: Task 5 - Palette State Wiring in Root Model
+
+I wired command palette state into the root REPL model and initialized the underlying commandpalette.Model in NewModel. This creates a concrete feature slot in the split architecture without introducing behavior changes yet.
+
+I also hooked window-size updates so the palette model tracks terminal dimensions consistently.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 2)
+
+**Assistant interpretation:** Continue implementing BOBA-005 tasks in order with isolated commits.
+
+**Inferred user intent:** Build feature infrastructure incrementally, preserving strict lint/test gates.
+
+**Commit (code):** ddae48a — "repl: wire command palette state into root model"
+
+### What I did
+
+- Added `pkg/repl/command_palette_model.go`:
+  - introduced internal `commandPaletteModel` state container:
+    - `ui`, `enabled`, `openKeys`, `closeKeys`, `slashEnabled`, `slashPolicy`, `maxVisible`
+- Updated `pkg/repl/model.go`:
+  - added `palette commandPaletteModel` field to `Model`
+  - normalized and initialized command palette config in `NewModel`
+  - created `commandpalette.New()` model instance during construction
+  - updated `tea.WindowSizeMsg` handling to call `m.palette.ui.SetSize(...)`
+- Validation:
+  - `go test ./pkg/repl/... -count=1` (pass)
+  - pre-commit full test/lint/security gates passed on final commit.
+
+### Why
+
+- Runtime routing/rendering tasks need palette state present in the root model first.
+- Keeping this step behavior-light makes subsequent routing logic easier to reason about.
+
+### What worked
+
+- State wiring and initialization compiled cleanly and passed all checks.
+
+### What didn't work
+
+- First commit attempt failed on `unused` for a provisional field:
+  - `pkg/repl/command_palette_model.go: field commands is unused`
+- Resolution:
+  - removed the unused field until command registration is wired in later tasks.
+
+### What I learned
+
+- With strict `unused` lint settings, feature structs must be introduced with only immediately-used fields.
+
+### What was tricky to build
+
+- Sequencing state shape versus later behavior while satisfying lint at each incremental commit.
+
+### What warrants a second pair of eyes
+
+- Confirm palette sizing should be driven solely from `tea.WindowSizeMsg` or also refreshed at open-time in case of deferred init.
+
+### What should be done in the future
+
+- Implement task 6 next: input-mode open/close routing and command dispatch.
+
+### Code review instructions
+
+- Review:
+  - `pkg/repl/command_palette_model.go`
+  - `pkg/repl/model.go`
+- Validate:
+  - `go test ./pkg/repl/... -count=1`
+
+### Technical details
+
+- Task tracking:
+  - BOBA-005 task 5 checked complete.

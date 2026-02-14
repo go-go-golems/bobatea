@@ -9,7 +9,7 @@
 - [x] Update implementation guide to match BOBA-008 split architecture (`model.go` orchestration + feature files) and layer/z-order policy
 - [x] Extend `repl.Config` with `CommandPaletteConfig` + slash policy enum + normalization defaults
 - [x] Add REPL command descriptor/registry contracts and evaluator command provider hook
-- [ ] Add command-palette state wiring in `repl.Model` and initialize `commandpalette.Model` in `NewModel`
+- [x] Add command-palette state wiring in `repl.Model` and initialize `commandpalette.Model` in `NewModel`
 - [ ] Implement keyboard open/close routing and command dispatch in input mode
 - [ ] Implement conservative slash-open behavior with guard rails (default: empty-input policy)
 - [ ] Render command palette as top lipgloss v2 layer over existing overlays
