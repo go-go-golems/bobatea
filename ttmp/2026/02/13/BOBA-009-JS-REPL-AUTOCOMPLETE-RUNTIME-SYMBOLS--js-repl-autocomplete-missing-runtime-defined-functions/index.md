@@ -1,7 +1,7 @@
 ---
 Title: JS REPL Autocomplete Missing Runtime-Defined Functions
 Ticket: BOBA-009-JS-REPL-AUTOCOMPLETE-RUNTIME-SYMBOLS
-Status: active
+Status: complete
 Topics:
     - repl
     - autocomplete
@@ -14,10 +14,11 @@ Owners: []
 RelatedFiles: []
 ExternalSources: []
 Summary: ""
-LastUpdated: 2026-02-13T19:05:01.60385665-05:00
+LastUpdated: 2026-02-14T11:37:47.912310629-05:00
 WhatFor: ""
 WhenToUse: ""
 ---
+
 
 # JS REPL Autocomplete Missing Runtime-Defined Functions
 

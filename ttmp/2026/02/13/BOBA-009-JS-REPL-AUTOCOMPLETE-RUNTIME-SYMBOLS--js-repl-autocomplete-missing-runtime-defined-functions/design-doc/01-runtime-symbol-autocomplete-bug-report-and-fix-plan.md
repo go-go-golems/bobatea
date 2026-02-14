@@ -12,6 +12,8 @@ DocType: design-doc
 Intent: long-term
 Owners: []
 RelatedFiles:
+    - Path: /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/go-go-goja/pkg/jsparse/repl_completion.go
+      Note: New shared JS-specific completion lookup/merge/runtime helper APIs extracted from bobatea evaluator
     - Path: examples/js-repl/main.go
       Note: User-facing JS REPL entrypoint for manual validation
     - Path: pkg/repl/evaluators/javascript/evaluator.go
@@ -23,8 +25,8 @@ RelatedFiles:
     - Path: ttmp/2026/02/13/BOBA-009-JS-REPL-AUTOCOMPLETE-RUNTIME-SYMBOLS--js-repl-autocomplete-missing-runtime-defined-functions/scripts/probe_runtime_defined_completion.go
       Note: Ticket-local reproduction probe
 ExternalSources: []
-Summary: ""
-LastUpdated: 2026-02-13T19:06:55.779973497-05:00
+Summary: Bug report and implementation plan for runtime-defined JS symbol autocomplete in REPL, now implemented via go-go-goja jsparse helpers.
+LastUpdated: 2026-02-14T11:38:00-05:00
 WhatFor: ""
 WhenToUse: ""
 ---

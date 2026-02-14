@@ -24,3 +24,8 @@
   - `go test ./pkg/repl/... -count=1`
   - `golangci-lint run -v --max-same-issues=100 ./pkg/repl/...`
   - manual probe script `scripts/probe_runtime_defined_completion.go` (now shows `greetUser`, `dataBucket`, and `dataBucket.` keys).
+
+## 2026-02-14
+
+Implementation complete: runtime-aware JS autocomplete with jsparse extraction into go-go-goja and full validation.
+
