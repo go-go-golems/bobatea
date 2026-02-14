@@ -719,3 +719,67 @@ This step is validation-only (no source changes), but I still recorded it for tr
 
 - Task tracking:
   - BOBA-005 go test validation task checked complete.
+
+## Step 10: Task 11 - Run Lint Validation
+
+I ran the explicit lint gate scoped to `pkg/repl` to validate the command palette changes under the project’s active static checks. This step verifies the feature and test additions comply with formatter, exhaustive, and static analysis constraints.
+
+Lint passed cleanly with 0 issues.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 7)
+
+**Assistant interpretation:** Continue with the next checklist task and document completion evidence.
+
+**Inferred user intent:** Ensure ticket closure includes explicit lint validation, not only unit test success.
+
+**Commit (code):** N/A (validation-only step)
+
+### What I did
+
+- Ran:
+  - `golangci-lint run -v --max-same-issues=100 ./pkg/repl/...`
+- Result:
+  - `0 issues.`
+- Marked the lint validation task complete in BOBA-005 checklist.
+
+### Why
+
+- Static analysis catches issues not always exposed by unit tests.
+
+### What worked
+
+- Lint passed without changes required.
+
+### What didn't work
+
+- N/A in this step.
+
+### What I learned
+
+- The added command palette tests and overlay extraction integrate cleanly with current lint rules.
+
+### What was tricky to build
+
+- N/A; this was a direct validation run.
+
+### What warrants a second pair of eyes
+
+- Confirm if broader repo lint should be required for BOBA-005 closure, or whether package-scoped lint remains the intended acceptance criterion.
+
+### What should be done in the future
+
+- Run the remaining PTY smoke test task and then finalize ticket docs.
+
+### Code review instructions
+
+- Re-run:
+  - `golangci-lint run -v --max-same-issues=100 ./pkg/repl/...`
+- Verify checklist update in:
+  - `ttmp/2026/02/13/BOBA-005-COMMAND-PALETTE-REPL-IMPLEMENTATION--repl-command-palette-design-and-implementation/tasks.md`
+
+### Technical details
+
+- Task tracking:
+  - BOBA-005 lint validation task checked complete.
