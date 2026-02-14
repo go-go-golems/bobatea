@@ -1,29 +1,13 @@
 package repl
 
-import (
-	"context"
-
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/go-go-golems/bobatea/pkg/tui/asyncprovider"
-)
+import tea "github.com/charmbracelet/bubbletea"
 
 func (m *Model) completionCmd(req CompletionRequest) tea.Cmd {
-	return func() tea.Msg {
-		result, err := asyncprovider.Run(
-			m.appContext(),
-			req.RequestID,
-			m.completion.reqTimeout,
-			"input-completer",
-			"input completer",
-			func(ctx context.Context) (CompletionResult, error) {
-				return m.completion.provider.CompleteInput(ctx, req)
-			},
-		)
-
-		return completionResultMsg{
-			RequestID: req.RequestID,
-			Result:    result,
-			Err:       err,
-		}
+	m.ensureCompletionWidget()
+	if m.completion.widget == nil {
+		return nil
 	}
+	cmd := m.completion.widget.CommandForRequest(m.appContext(), req)
+	m.syncCompletionLegacyFromWidget()
+	return cmd
 }

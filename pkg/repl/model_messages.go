@@ -3,6 +3,7 @@ package repl
 import (
 	"github.com/go-go-golems/bobatea/pkg/tui/widgets/contextbar"
 	"github.com/go-go-golems/bobatea/pkg/tui/widgets/contextpanel"
+	"github.com/go-go-golems/bobatea/pkg/tui/widgets/suggest"
 )
 
 func ensureAppendPatch(props map[string]any) map[string]any {
@@ -21,15 +22,8 @@ func ensureAppendPatch(props map[string]any) map[string]any {
 // internal helpers
 type timelineRefreshMsg struct{}
 
-type completionDebounceMsg struct {
-	RequestID uint64
-}
-
-type completionResultMsg struct {
-	RequestID uint64
-	Result    CompletionResult
-	Err       error
-}
+type completionDebounceMsg = suggest.DebounceMsg
+type completionResultMsg = suggest.ResultMsg
 
 type helpBarDebounceMsg = contextbar.DebounceMsg
 type helpBarResultMsg = contextbar.ResultMsg
@@ -37,12 +31,6 @@ type helpBarResultMsg = contextbar.ResultMsg
 type helpDrawerDebounceMsg = contextpanel.DebounceMsg
 type helpDrawerResultMsg = contextpanel.ResultMsg
 
-type completionOverlayLayout struct {
-	PopupX       int
-	PopupY       int
-	PopupWidth   int
-	VisibleRows  int
-	ContentWidth int
-}
+type completionOverlayLayout = suggest.OverlayLayout
 
 type helpDrawerOverlayLayout = contextpanel.OverlayLayout

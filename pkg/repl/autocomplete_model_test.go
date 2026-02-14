@@ -246,7 +246,7 @@ func TestCompletionCmdRecoversFromCompleterPanic(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, req.RequestID, msg.RequestID)
 	require.Error(t, msg.Err)
-	assert.Contains(t, msg.Err.Error(), "input completer panic")
+	assert.Contains(t, msg.Err.Error(), "suggest provider panic")
 }
 
 func TestComputeCompletionOverlayLayoutClampsToBounds(t *testing.T) {

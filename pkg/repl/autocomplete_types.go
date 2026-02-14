@@ -3,34 +3,23 @@ package repl
 import (
 	"context"
 
-	"github.com/go-go-golems/bobatea/pkg/autocomplete"
+	"github.com/go-go-golems/bobatea/pkg/tui/widgets/suggest"
 )
 
 // CompletionReason describes why a completion request was triggered.
-type CompletionReason string
+type CompletionReason = suggest.Reason
 
 const (
-	CompletionReasonDebounce CompletionReason = "debounce"
-	CompletionReasonShortcut CompletionReason = "shortcut"
-	CompletionReasonManual   CompletionReason = "manual"
+	CompletionReasonDebounce CompletionReason = suggest.ReasonDebounce
+	CompletionReasonShortcut CompletionReason = suggest.ReasonShortcut
+	CompletionReasonManual   CompletionReason = suggest.ReasonManual
 )
 
 // CompletionRequest captures the current input context for suggestion lookup.
-type CompletionRequest struct {
-	Input      string
-	CursorByte int
-	Reason     CompletionReason
-	Shortcut   string
-	RequestID  uint64
-}
+type CompletionRequest = suggest.Request
 
 // CompletionResult represents what should be shown and how to apply it.
-type CompletionResult struct {
-	Suggestions []autocomplete.Suggestion
-	ReplaceFrom int
-	ReplaceTo   int
-	Show        bool
-}
+type CompletionResult = suggest.Result
 
 // InputCompleter resolves completion suggestions for REPL input snapshots.
 type InputCompleter interface {
