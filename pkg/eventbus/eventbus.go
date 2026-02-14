@@ -37,7 +37,7 @@ func NewInMemoryBus() (*Bus, error) {
 
 // AddHandler subscribes to a topic and handles messages (no publishing from handler by default).
 func (b *Bus) AddHandler(name, topic string, handler func(*message.Message) error) {
-	b.Router.AddNoPublisherHandler(name, topic, b.Subscriber, handler)
+	b.Router.AddConsumerHandler(name, topic, b.Subscriber, handler)
 }
 
 // Run starts the router until ctx is done.
