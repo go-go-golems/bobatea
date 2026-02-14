@@ -115,3 +115,17 @@ Completed validation task: `golangci-lint run -v --max-same-issues=100 ./pkg/rep
 ### Related Files
 
 - /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-005-COMMAND-PALETTE-REPL-IMPLEMENTATION--repl-command-palette-design-and-implementation/tasks.md — Marked lint validation task complete
+
+
+## 2026-02-13
+
+Completed smoke test task with PTY-wrapped example runs:
+
+- `script -q -c "timeout 7s go run ./examples/repl/autocomplete-generic" /dev/null`
+- `script -q -c "timeout 7s go run ./examples/js-repl" /dev/null`
+
+Both example programs launched and rendered expected REPL UI without panic during the smoke window.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-005-COMMAND-PALETTE-REPL-IMPLEMENTATION--repl-command-palette-design-and-implementation/tasks.md — Marked smoke test task complete

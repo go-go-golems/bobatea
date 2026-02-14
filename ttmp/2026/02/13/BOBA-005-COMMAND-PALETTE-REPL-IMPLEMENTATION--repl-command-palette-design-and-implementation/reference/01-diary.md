@@ -783,3 +783,71 @@ Lint passed cleanly with 0 issues.
 
 - Task tracking:
   - BOBA-005 lint validation task checked complete.
+
+## Step 11: Task 12 - Run PTY Smoke Tests for Examples
+
+I ran the ticket’s smoke-test commands for both generic and JS REPL examples using PTY wrapping and timeout protection. This validates that interactive startup paths still work in a non-interactive automation context.
+
+Both examples started successfully, rendered the expected headers/help line (including command palette key hint), and exited cleanly after timeout without panics.
+
+### Prompt Context
+
+**User prompt (verbatim):** (see Step 7)
+
+**Assistant interpretation:** Continue checklist execution with explicit smoke validation and keep ticket diary updated.
+
+**Inferred user intent:** Confirm runtime behavior in real example binaries, not only unit/lint pipelines.
+
+**Commit (code):** N/A (validation-only step)
+
+### What I did
+
+- Ran:
+  - `script -q -c "timeout 7s go run ./examples/repl/autocomplete-generic" /dev/null`
+  - `script -q -c "timeout 7s go run ./examples/js-repl" /dev/null`
+- Observed:
+  - both programs initialized watermill router handlers,
+  - both rendered expected REPL title/input/help rows,
+  - no panic in the smoke window.
+- Marked BOBA-005 smoke-test checklist item complete.
+
+### Why
+
+- This ticket requires end-to-end smoke confidence for both example entry points.
+
+### What worked
+
+- Both smoke commands exited with status 0 after timeout and showed expected UI startup output.
+
+### What didn't work
+
+- N/A in this step.
+
+### What I learned
+
+- PTY wrapping remains a reliable approach for Bubble Tea smoke checks in headless CI-like contexts.
+
+### What was tricky to build
+
+- Not a code challenge, but command composition must preserve correct quoting so timeout and PTY behavior remain deterministic.
+
+### What warrants a second pair of eyes
+
+- If deeper interaction smoke is desired, add scripted key-sequence smoke tests in a future ticket; current task only verifies startup/render.
+
+### What should be done in the future
+
+- Finalize BOBA-005 ticket hygiene closure task in tasks/changelog/diary.
+
+### Code review instructions
+
+- Re-run smoke commands:
+  - `script -q -c "timeout 7s go run ./examples/repl/autocomplete-generic" /dev/null`
+  - `script -q -c "timeout 7s go run ./examples/js-repl" /dev/null`
+- Verify checklist update in:
+  - `ttmp/2026/02/13/BOBA-005-COMMAND-PALETTE-REPL-IMPLEMENTATION--repl-command-palette-design-and-implementation/tasks.md`
+
+### Technical details
+
+- Task tracking:
+  - BOBA-005 smoke-test task checked complete.
