@@ -18,6 +18,7 @@ func TestNew(t *testing.T) {
 		assert.NotNil(t, evaluator)
 		assert.NotNil(t, evaluator.runtime)
 		assert.True(t, evaluator.config.EnableModules)
+		assert.False(t, evaluator.config.EnableCallLog)
 		assert.True(t, evaluator.config.EnableConsoleLog)
 		assert.True(t, evaluator.config.EnableNodeModules)
 	})
@@ -25,6 +26,7 @@ func TestNew(t *testing.T) {
 	t.Run("custom configuration", func(t *testing.T) {
 		config := Config{
 			EnableModules:     false,
+			EnableCallLog:     true,
 			EnableConsoleLog:  false,
 			EnableNodeModules: false,
 			CustomModules: map[string]interface{}{
@@ -35,6 +37,7 @@ func TestNew(t *testing.T) {
 		require.NoError(t, err)
 		assert.NotNil(t, evaluator)
 		assert.False(t, evaluator.config.EnableModules)
+		assert.True(t, evaluator.config.EnableCallLog)
 		assert.False(t, evaluator.config.EnableConsoleLog)
 		assert.False(t, evaluator.config.EnableNodeModules)
 		assert.Equal(t, "value", evaluator.config.CustomModules["test"])
@@ -345,6 +348,7 @@ func TestEvaluator_CustomModules(t *testing.T) {
 func TestConfig_DefaultConfig(t *testing.T) {
 	config := DefaultConfig()
 	assert.True(t, config.EnableModules)
+	assert.False(t, config.EnableCallLog)
 	assert.True(t, config.EnableConsoleLog)
 	assert.True(t, config.EnableNodeModules)
 	assert.NotNil(t, config.CustomModules)
