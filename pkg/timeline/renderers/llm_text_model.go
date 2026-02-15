@@ -2,7 +2,6 @@ package renderers
 
 import (
 	"fmt"
-	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -16,7 +15,6 @@ import (
 	geppetto_events "github.com/go-go-golems/geppetto/pkg/events"
 	"github.com/muesli/termenv"
 	"github.com/rs/zerolog/log"
-	"golang.org/x/term"
 )
 
 // LLMTextModel is an interactive model for rendering LLM text messages.
@@ -201,7 +199,7 @@ func (f *LLMTextFactory) NewEntityModel(initialProps map[string]any) timeline.En
 func NewLLMTextFactory() *LLMTextFactory {
 	// Determine glamour style once at startup
 	var determinedStyle string
-	if !term.IsTerminal(int(os.Stdout.Fd())) {
+	if !stdoutIsTerminal() {
 		determinedStyle = "notty"
 	} else if termenv.HasDarkBackground() {
 		determinedStyle = "dark"

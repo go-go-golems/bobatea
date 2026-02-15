@@ -1,18 +1,18 @@
 package repl
 
 import (
+	lipglossv2 "charm.land/lipgloss/v2"
 	"context"
-	"encoding/json"
 	"fmt"
-	"strings"
-	"time"
 
-	"github.com/ThreeDotsLabs/watermill"
 	"github.com/ThreeDotsLabs/watermill/message"
 	"github.com/charmbracelet/bubbles/cursor"
+	"github.com/charmbracelet/bubbles/help"
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/go-go-golems/bobatea/pkg/eventbus"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/go-go-golems/bobatea/pkg/commandpalette"
 	"github.com/go-go-golems/bobatea/pkg/timeline"
 	renderers "github.com/go-go-golems/bobatea/pkg/timeline/renderers"
 	"github.com/rs/zerolog/log"
@@ -27,24 +27,33 @@ type Model struct {
 	// input & history
 	history   *History
 	textInput textinput.Model
-	multiline bool
-	lines     []string
 
 	// layout
-	width, height int
+	width, height  int
+	timelineWidth  int
+	timelineHeight int
 
 	// timeline shell (viewport + controller)
-	reg   *timeline.Registry
-	sh    *timeline.Shell
-	focus string // "input" or "timeline"
+	reg    *timeline.Registry
+	sh     *timeline.Shell
+	focus  string // "input" or "timeline"
+	help   help.Model
+	keyMap KeyMap
 
 	// bus publisher
 	pub     message.Publisher
 	turnSeq int
+	appCtx  context.Context
+	appStop context.CancelFunc
 
 	// refresh scheduling
 	refreshPending   bool
 	refreshScheduled bool
+
+	completion completionModel
+	helpBar    helpBarModel
+	helpDrawer helpDrawerModel
+	palette    commandPaletteModel
 }
 
 // NewModel constructs a new REPL shell with timeline transcript.
@@ -68,20 +77,117 @@ func NewModel(evaluator Evaluator, config Config, pub message.Publisher) *Model 
 
 	sh := timeline.NewShell(reg)
 
-	return &Model{
+	var completer InputCompleter
+	if c, ok := evaluator.(InputCompleter); ok {
+		completer = c
+	}
+	var helpBarProvider HelpBarProvider
+	if p, ok := evaluator.(HelpBarProvider); ok {
+		helpBarProvider = p
+	}
+	var helpDrawerProvider HelpDrawerProvider
+	if p, ok := evaluator.(HelpDrawerProvider); ok {
+		helpDrawerProvider = p
+	}
+	autocompleteCfg := normalizeAutocompleteConfig(config.Autocomplete)
+	if !autocompleteCfg.Enabled {
+		completer = nil
+	}
+	helpBarCfg := normalizeHelpBarConfig(config.HelpBar)
+	if !helpBarCfg.Enabled {
+		helpBarProvider = nil
+	}
+	helpDrawerCfg := normalizeHelpDrawerConfig(config.HelpDrawer)
+	if !helpDrawerCfg.Enabled {
+		helpDrawerProvider = nil
+	}
+	commandPaletteCfg := normalizeCommandPaletteConfig(config.CommandPalette)
+
+	focusToggleKey := autocompleteCfg.FocusToggleKey
+	if focusToggleKey == "" {
+		if completer != nil {
+			focusToggleKey = "ctrl+t"
+		} else {
+			focusToggleKey = "tab"
+		}
+	}
+
+	ret := &Model{
 		evaluator: evaluator,
 		config:    config,
 		styles:    DefaultStyles(),
 		history:   NewHistory(config.MaxHistorySize),
 		textInput: ti,
-		multiline: config.StartMultiline,
-		lines:     []string{},
 		width:     config.Width,
 		reg:       reg,
 		sh:        sh,
 		focus:     "input",
+		help:      help.New(),
+		keyMap:    NewKeyMap(autocompleteCfg, helpDrawerCfg, commandPaletteCfg, focusToggleKey),
 		pub:       pub,
+		completion: completionModel{
+			provider:   completer,
+			debounce:   autocompleteCfg.Debounce,
+			reqTimeout: autocompleteCfg.RequestTimeout,
+			maxVisible: autocompleteCfg.MaxSuggestions,
+			pageSize:   autocompleteCfg.OverlayPageSize,
+			maxWidth:   autocompleteCfg.OverlayMaxWidth,
+			maxHeight:  autocompleteCfg.OverlayMaxHeight,
+			minWidth:   autocompleteCfg.OverlayMinWidth,
+			margin:     autocompleteCfg.OverlayMargin,
+			offsetX:    autocompleteCfg.OverlayOffsetX,
+			offsetY:    autocompleteCfg.OverlayOffsetY,
+			noBorder:   autocompleteCfg.OverlayNoBorder,
+			placement:  autocompleteCfg.OverlayPlacement,
+			horizontal: autocompleteCfg.OverlayHorizontalGrow,
+		},
+		helpBar: newHelpBarModel(helpBarProvider, helpBarCfg),
+		helpDrawer: helpDrawerModel{
+			provider:      helpDrawerProvider,
+			debounce:      helpDrawerCfg.Debounce,
+			reqTimeout:    helpDrawerCfg.RequestTimeout,
+			prefetch:      helpDrawerCfg.PrefetchWhenHidden,
+			dock:          helpDrawerCfg.Dock,
+			widthPercent:  helpDrawerCfg.WidthPercent,
+			heightPercent: helpDrawerCfg.HeightPercent,
+			margin:        helpDrawerCfg.Margin,
+		},
+		palette: commandPaletteModel{
+			ui:               commandpalette.New(),
+			enabled:          commandPaletteCfg.Enabled,
+			openKeys:         commandPaletteCfg.OpenKeys,
+			closeKeys:        commandPaletteCfg.CloseKeys,
+			slashEnabled:     commandPaletteCfg.SlashOpenEnabled,
+			slashPolicy:      commandPaletteCfg.SlashPolicy,
+			maxVisible:       commandPaletteCfg.MaxVisibleItems,
+			overlayPlacement: commandPaletteCfg.OverlayPlacement,
+			overlayMargin:    commandPaletteCfg.OverlayMargin,
+			overlayOffsetX:   commandPaletteCfg.OverlayOffsetX,
+			overlayOffsetY:   commandPaletteCfg.OverlayOffsetY,
+		},
 	}
+	ret.palette.ui.SetMaxVisible(ret.palette.maxVisible)
+	ret.appCtx, ret.appStop = context.WithCancel(context.Background())
+	if ret.helpDrawer.provider == nil {
+		ret.keyMap.HelpDrawerToggle.SetEnabled(false)
+		ret.keyMap.HelpDrawerClose.SetEnabled(false)
+		ret.keyMap.HelpDrawerRefresh.SetEnabled(false)
+	}
+	ret.help.Width = max(0, ret.width)
+	ret.updateKeyBindings()
+	return ret
+}
+
+// NewModelWithContext constructs a REPL model whose internal app context derives from ctx.
+// Passing nil uses context.Background().
+func NewModelWithContext(ctx context.Context, evaluator Evaluator, config Config, pub message.Publisher) *Model {
+	ret := NewModel(evaluator, config, pub)
+	ret.cancelAppContext()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ret.appCtx, ret.appStop = context.WithCancel(ctx)
+	return ret
 }
 
 // Init subscribes to evaluator events.
@@ -96,17 +202,22 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch v := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = v.Width, v.Height
-		m.textInput.Width = max(10, v.Width-10)
-		// give most of the space to timeline shell viewport
-		tlHeight := max(0, v.Height-4)
-		m.sh.SetSize(v.Width, tlHeight)
-		// initial refresh to fit new size
-		m.sh.RefreshView(false)
+		m.applyLayoutAndRefresh()
 		var cmd tea.Cmd
 		m.textInput, cmd = m.textInput.Update(msg)
 		return m, cmd
 
 	case tea.KeyMsg:
+		switch {
+		case key.Matches(v, m.keyMap.Quit):
+			m.cancelAppContext()
+			return m, tea.Quit
+		case key.Matches(v, m.keyMap.ToggleHelp):
+			m.help.ShowAll = !m.help.ShowAll
+			m.applyLayoutAndRefresh()
+			return m, nil
+		}
+
 		switch m.focus {
 		case "input":
 			return m.updateInput(v)
@@ -138,6 +249,19 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case completionDebounceMsg:
+		return m, m.handleDebouncedCompletion(v)
+	case completionResultMsg:
+		return m, m.handleCompletionResult(v)
+	case helpBarDebounceMsg:
+		return m, m.handleDebouncedHelpBar(v)
+	case helpBarResultMsg:
+		return m, m.handleHelpBarResult(v)
+	case helpDrawerDebounceMsg:
+		return m, m.handleDebouncedHelpDrawer(v)
+	case helpDrawerResultMsg:
+		return m, m.handleHelpDrawerResult(v)
+
 	case cursor.BlinkMsg:
 		return m, nil
 	default:
@@ -151,169 +275,88 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *Model) updateInput(k tea.KeyMsg) (tea.Model, tea.Cmd) {
-	log.Trace().Interface("k", k).Str("key", k.String()).Msg("updating input")
-	//nolint:exhaustive
-	switch k.Type {
-	case tea.KeyCtrlC:
-		return m, tea.Quit
-	}
-	switch k.String() {
-	case "tab":
-		m.focus = "timeline"
-		m.textInput.Blur()
-		m.sh.SetSelectionVisible(true)
-		return m, nil
-	case "enter":
-		input := m.textInput.Value()
-		if strings.TrimSpace(input) == "" {
-			return m, nil
-		}
-		m.textInput.Reset()
-		if m.config.EnableHistory {
-			m.history.Add(input, "", false)
-			m.history.ResetNavigation()
-		}
-		return m, m.submit(input)
-	case "up":
-		if m.config.EnableHistory {
-			if entry := m.history.NavigateUp(); entry != "" {
-				m.textInput.SetValue(entry)
-			}
-		}
-		return m, nil
-	case "down":
-		if m.config.EnableHistory {
-			entry := m.history.NavigateDown()
-			m.textInput.SetValue(entry)
-		}
-		return m, nil
-	}
-	var cmd tea.Cmd
-	m.textInput, cmd = m.textInput.Update(k)
-	return m, cmd
-}
-
-func (m *Model) updateTimeline(k tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch k.String() {
-	case "tab":
-		m.focus = "input"
-		m.textInput.Focus()
-		m.sh.SetSelectionVisible(false)
-		return m, nil
-	case "up":
-		m.sh.SelectPrev()
-		return m, nil
-	case "down":
-		m.sh.SelectNext()
-		return m, nil
-	case "enter":
-		if m.sh.IsEntering() {
-			m.sh.ExitSelection()
-		} else {
-			m.sh.EnterSelection()
-		}
-		return m, nil
-	case "c":
-		return m, m.sh.SendToSelected(timeline.EntityCopyCodeMsg{})
-	case "y":
-		return m, m.sh.SendToSelected(timeline.EntityCopyTextMsg{})
-	}
-	// route keys to shell/controller (e.g., Tab cycles inside entity)
-	cmd := m.sh.HandleMsg(k)
-	return m, cmd
-}
-
 func (m *Model) View() string {
-	var b strings.Builder
 	title := m.config.Title
 	if title == "" {
 		title = fmt.Sprintf("%s REPL", m.evaluator.GetName())
 	}
-	b.WriteString(m.styles.Title.Render(" " + title + " "))
-	b.WriteString("\n\n")
-	// timeline view (viewport-wrapped)
-	b.WriteString(m.sh.View())
-	b.WriteString("\n")
-	// input (dim when in selection mode)
+
+	header := m.styles.Title.Render(" " + title + " ")
+	timelineView := m.sh.View()
+
 	inputView := m.textInput.View()
 	if m.focus == "timeline" {
 		inputView = m.styles.HelpText.Render(inputView)
 	}
-	b.WriteString(inputView)
-	b.WriteString("\n")
-	// help
-	help := "TAB: switch focus | Enter: submit | Up/Down: history/selection | c: copy code | y: copy text | Ctrl+C: quit"
-	b.WriteString(m.styles.HelpText.Render(help))
-	b.WriteString("\n")
-	return b.String()
-}
 
-// submit runs evaluation and streams events to m.events
-func (m *Model) submit(code string) tea.Cmd {
-	return func() tea.Msg {
-		turnID := newTurnID(m.turnSeq)
-		m.turnSeq++
-		// Create input entity directly on UI bus to guarantee ordering and avoid extra newlines
-		_ = m.publishUIEntityCreated(turnID, timeline.EntityID{TurnID: turnID, LocalID: "input", Kind: "text"}, timeline.RendererDescriptor{Kind: "text"}, map[string]any{"text": code})
-		// Optionally still publish the semantic input event to repl.events? We skip to avoid duplicate UI entities.
-		_ = m.evaluator.EvaluateStream(context.Background(), code, func(e Event) {
-			log.Trace().Str("turn_id", turnID).Interface("event", e).Msg("publishing repl event")
-			_ = m.publishReplEvent(turnID, e)
-		})
-		return nil
+	helpView := m.renderHelp()
+	baseSections := []string{
+		header,
+		"",
+		timelineView,
+		inputView,
 	}
-}
-
-func (m *Model) publishReplEvent(turnID string, e Event) error {
-	payload, _ := json.Marshal(struct {
-		TurnID string    `json:"turn_id"`
-		Event  Event     `json:"event"`
-		Time   time.Time `json:"time"`
-	}{TurnID: turnID, Event: e, Time: time.Now()})
-	log.Trace().Str("turn_id", turnID).Interface("event", e).Msg("publishing repl event")
-	return m.pub.Publish(eventbus.TopicReplEvents, message.NewMessage(watermill.NewUUID(), payload))
-}
-
-func (m *Model) publishUIEntityCreated(turnID string, id timeline.EntityID, rd timeline.RendererDescriptor, props map[string]any) error {
-	// Envelope must match timeline.RegisterUIForwarder expectations
-	created := timeline.UIEntityCreated{ID: id, Renderer: rd, Props: props, StartedAt: time.Now()}
-	b, _ := json.Marshal(created)
-	env, _ := json.Marshal(struct {
-		Type    string          `json:"type"`
-		Payload json.RawMessage `json:"payload"`
-	}{Type: "timeline.created", Payload: b})
-	return m.pub.Publish(eventbus.TopicUIEntities, message.NewMessage(watermill.NewUUID(), env))
-}
-
-func ensureAppendPatch(props map[string]any) map[string]any {
-	if props == nil {
-		return map[string]any{}
+	if helpBarView := m.renderHelpBar(); helpBarView != "" {
+		baseSections = append(baseSections, helpBarView)
 	}
-	if _, ok := props["append"]; ok {
-		return props
+	baseSections = append(baseSections, helpView)
+	base := lipgloss.JoinVertical(lipgloss.Left, baseSections...)
+
+	if m.width <= 0 || m.height <= 0 {
+		return base
 	}
-	if s, ok := props["text"].(string); ok {
-		return map[string]any{"append": s}
+
+	completionLayout, completionOK := m.computeCompletionOverlayLayout(header, timelineView)
+	completionPopup := ""
+	if completionOK {
+		completionPopup = m.renderCompletionPopup(completionLayout)
+		if completionPopup == "" {
+			m.completion.visibleRows = 0
+			completionOK = false
+		} else {
+			m.completion.visibleRows = completionLayout.VisibleRows
+			m.ensureCompletionSelectionVisible()
+		}
+	} else {
+		m.completion.visibleRows = 0
 	}
-	return props
-}
 
-// internal helpers
-type timelineRefreshMsg struct{}
-
-func (m *Model) scheduleRefresh() tea.Cmd {
-	if m.refreshScheduled {
-		return nil
+	drawerLayout, drawerOK := m.computeHelpDrawerOverlayLayout(header, timelineView)
+	drawerPanel := ""
+	if drawerOK {
+		drawerPanel = m.renderHelpDrawerPanel(drawerLayout)
+		if drawerPanel == "" {
+			drawerOK = false
+		}
 	}
-	m.refreshScheduled = true
-	return tea.Tick(50*time.Millisecond, func(time.Time) tea.Msg { return timelineRefreshMsg{} })
+
+	paletteLayout, paletteOK := m.computeCommandPaletteOverlayLayout()
+
+	if !completionOK && !drawerOK && !paletteOK {
+		return base
+	}
+
+	layers := []*lipglossv2.Layer{
+		lipglossv2.NewLayer(base).X(0).Y(0).Z(0).ID("repl-base"),
+	}
+	if drawerOK {
+		layers = append(layers,
+			lipglossv2.NewLayer(drawerPanel).X(drawerLayout.PanelX).Y(drawerLayout.PanelY).Z(15).ID("help-drawer-overlay"),
+		)
+	}
+	if completionOK {
+		layers = append(layers,
+			lipglossv2.NewLayer(completionPopup).X(completionLayout.PopupX).Y(completionLayout.PopupY).Z(20).ID("completion-overlay"),
+		)
+	}
+	if paletteOK {
+		layers = append(layers,
+			lipglossv2.NewLayer(paletteLayout.View).X(paletteLayout.PanelX).Y(paletteLayout.PanelY).Z(30).ID("command-palette-overlay"),
+		)
+	}
+
+	comp := lipglossv2.NewCompositor(layers...)
+	canvas := lipglossv2.NewCanvas(max(1, m.width), max(1, m.height))
+	canvas.Compose(comp)
+	return canvas.Render()
 }
-
-func (m *Model) ctrl() *timeline.Controller { return m.sh.Controller() }
-
-func newTurnID(seq int) string {
-	return timeNow().Format("20060102-150405.000000000") + ":" + fmt.Sprintf("%d", seq)
-}
-
-func timeNow() time.Time { return time.Now() }

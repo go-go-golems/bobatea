@@ -1,0 +1,161 @@
+# Changelog
+
+## 2026-02-13
+
+- Initial workspace created
+
+
+## 2026-02-13
+
+Added a detailed analysis and implementation guide for REPL command palette integration covering keyboard and slash-trigger entry, command registry design, key-routing precedence, and compatibility with replacing autocomplete internals.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-005-COMMAND-PALETTE-REPL-IMPLEMENTATION--repl-command-palette-design-and-implementation/design-doc/01-command-palette-analysis-and-implementation-guide.md — Primary analysis and implementation document
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-005-COMMAND-PALETTE-REPL-IMPLEMENTATION--repl-command-palette-design-and-implementation/index.md — Ticket overview updated with guide linkage
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-005-COMMAND-PALETTE-REPL-IMPLEMENTATION--repl-command-palette-design-and-implementation/tasks.md — Execution checklist seeded
+
+
+## 2026-02-13
+
+Updated BOBA-005 task plan and implementation guide to align with post-BOBA-008 REPL split architecture, including explicit file ownership, routing precedence, and lipgloss v2 overlay layering policy for command palette integration.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-005-COMMAND-PALETTE-REPL-IMPLEMENTATION--repl-command-palette-design-and-implementation/design-doc/01-command-palette-analysis-and-implementation-guide.md — Updated architecture and implementation steps for BOBA-008-aligned design
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-005-COMMAND-PALETTE-REPL-IMPLEMENTATION--repl-command-palette-design-and-implementation/reference/01-diary.md — Added diary step documenting planning update before coding
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-005-COMMAND-PALETTE-REPL-IMPLEMENTATION--repl-command-palette-design-and-implementation/tasks.md — Refined execution checklist to task-by-task split-model implementation sequence
+
+
+## 2026-02-13
+
+Completed task 3: extended REPL config with command palette defaults, slash-policy enum, and normalization logic; added config tests for defaults and sanitization. (commit 98c9f37)
+
+### Related Files
+
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/config.go — Added CommandPaletteConfig and slash policy defaults
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/config_normalize.go — Added normalizeCommandPaletteConfig and slash policy sanitization
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/repl_test.go — Added command palette config default and normalization tests
+
+
+## 2026-02-13
+
+Completed task 4: added command palette contracts and evaluator extension hook interfaces (PaletteCommand, PaletteCommandProvider, PaletteCommandRegistry). (commit a9d3f24)
+
+### Related Files
+
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/command_palette_types.go — Introduced command descriptor and evaluator-provider contracts for command palette integration
+
+## 2026-02-13
+
+Completed task 5: added command palette feature state in repl.Model and initialized commandpalette.Model in NewModel with normalized config; wired palette sizing on window resize. (commit ddae48a)
+
+### Related Files
+
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/command_palette_model.go — Added commandPaletteModel internal state container
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/model.go — Integrated command palette state initialization and size updates
+
+
+## 2026-02-13
+
+Completed task 6: implemented keyboard open/close routing for command palette and action dispatch through selected palette commands, including built-in command set and evaluator-provided command merge. (commit a944fdc)
+
+### Related Files
+
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/commandpalette/model.go — Added SetCommands for replacing command list on palette open
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/command_palette_model.go — Implemented input routing
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/keymap.go — Added command palette open/close key bindings and help entries
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/model_input.go — Inserted command palette handling precedence before other input features
+
+
+## 2026-02-13
+
+Completed task 7: implemented guarded slash-open behavior for command palette with policies empty-input (default), column-zero, and provider delegation; slash key is consumed only when policy allows opening. (commit 4640706)
+
+### Related Files
+
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/command_palette_model.go — Added slash key detection and policy guard rails
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/command_palette_types.go — Added slash policy provider request/provider contracts
+
+
+## 2026-02-13
+
+Completed task: moved command palette overlay rendering from `pkg/repl/model.go` into `pkg/repl/command_palette_overlay.go` while keeping lipgloss v2 layer composition in `View()` (`command-palette-overlay` at z=30). Ran `go test ./pkg/repl/... -count=1` successfully. (commit 7be8bcc)
+
+### Related Files
+
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/command_palette_overlay.go — New command palette overlay renderer and centering placement helper
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/model.go — Root view now calls `renderCommandPaletteOverlay()` and keeps compositor layering only
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-005-COMMAND-PALETTE-REPL-IMPLEMENTATION--repl-command-palette-design-and-implementation/tasks.md — Marked overlay extraction task complete
+
+
+## 2026-02-13
+
+Completed task: added focused command palette tests for config normalization bounds, input routing precedence, slash policy variants, and command execution/close semantics. (commit 77faeed)
+
+### Related Files
+
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/command_palette_model_test.go — New focused command palette test suite
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-005-COMMAND-PALETTE-REPL-IMPLEMENTATION--repl-command-palette-design-and-implementation/tasks.md — Marked focused test task complete
+
+
+## 2026-02-13
+
+Completed validation task: `go test ./pkg/repl/... -count=1` passed after command palette overlay extraction and focused test additions.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-005-COMMAND-PALETTE-REPL-IMPLEMENTATION--repl-command-palette-design-and-implementation/tasks.md — Marked go test validation task complete
+
+
+## 2026-02-13
+
+Completed validation task: `golangci-lint run -v --max-same-issues=100 ./pkg/repl/...` passed with 0 issues.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-005-COMMAND-PALETTE-REPL-IMPLEMENTATION--repl-command-palette-design-and-implementation/tasks.md — Marked lint validation task complete
+
+
+## 2026-02-13
+
+Completed smoke test task with PTY-wrapped example runs:
+
+- `script -q -c "timeout 7s go run ./examples/repl/autocomplete-generic" /dev/null`
+- `script -q -c "timeout 7s go run ./examples/js-repl" /dev/null`
+
+Both example programs launched and rendered expected REPL UI without panic during the smoke window.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-005-COMMAND-PALETTE-REPL-IMPLEMENTATION--repl-command-palette-design-and-implementation/tasks.md — Marked smoke test task complete
+
+
+## 2026-02-13
+
+Completed BOBA-005 ticket hygiene closure: all remaining checklist items are now complete and diary/changelog include task-by-task commits, validation runs, and intermediate failure notes.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-005-COMMAND-PALETTE-REPL-IMPLEMENTATION--repl-command-palette-design-and-implementation/tasks.md — Final checklist closure
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-005-COMMAND-PALETTE-REPL-IMPLEMENTATION--repl-command-palette-design-and-implementation/reference/01-diary.md — Full implementation and validation diary record
+
+## 2026-02-14
+
+Completed follow-up polish for command palette overlay placement and configurability: added placement enum (`center|top|bottom|left|right`), margin/offset config, normalization, placement-aware layout math, and placement tests with viewport clamping. Validated with `go test ./pkg/repl/... -count=1` and `golangci-lint run -v --max-same-issues=100 ./pkg/repl/...`.
+
+### Related Files
+
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/config.go — Added command palette placement/margin/offset config fields and defaults
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/config_normalize.go — Added placement normalization and margin sanitization
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/command_palette_model.go — Added normalized placement state to command palette feature model
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/command_palette_overlay.go — Added placement-aware layout computation with viewport clamp
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/pkg/repl/command_palette_overlay_test.go — Added placement-mode and clamp behavior tests
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-005-COMMAND-PALETTE-REPL-IMPLEMENTATION--repl-command-palette-design-and-implementation/tasks.md — Added and checked follow-up placement tasks
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-005-COMMAND-PALETTE-REPL-IMPLEMENTATION--repl-command-palette-design-and-implementation/design-doc/01-command-palette-analysis-and-implementation-guide.md — Updated implementation guide with placement controls and phase C
+- /home/manuel/workspaces/2026-02-13/integrate-ast-parser-repl/bobatea/ttmp/2026/02/13/BOBA-005-COMMAND-PALETTE-REPL-IMPLEMENTATION--repl-command-palette-design-and-implementation/reference/01-diary.md — Added follow-up implementation diary step
+
+## 2026-02-14
+
+Implementation complete, including overlay placement controls and validation.
+

@@ -10,9 +10,7 @@ import (
 	chatstyle "github.com/go-go-golems/bobatea/pkg/timeline/chatstyle"
 	"github.com/muesli/termenv"
 	"github.com/rs/zerolog/log"
-	"golang.org/x/term"
 	"gopkg.in/yaml.v3"
-	"os"
 )
 
 // ToolCallModel renders a tool call request as YAML, syntax highlighted via glamour
@@ -118,7 +116,7 @@ func (f *ToolCallFactory) NewEntityModel(initialProps map[string]any) timeline.E
 // NewToolCallFactory creates a glamour-enabled factory similar to LLMText
 func NewToolCallFactory() *ToolCallFactory {
 	var style string
-	if !term.IsTerminal(int(os.Stdout.Fd())) {
+	if !stdoutIsTerminal() {
 		style = "notty"
 	} else if termenv.HasDarkBackground() {
 		style = "dark"

@@ -6,12 +6,15 @@ import (
 
 // Styles defines the visual styling for the REPL
 type Styles struct {
-	Title    lipgloss.Style
-	Prompt   lipgloss.Style
-	Result   lipgloss.Style
-	Error    lipgloss.Style
-	Info     lipgloss.Style
-	HelpText lipgloss.Style
+	Title              lipgloss.Style
+	Prompt             lipgloss.Style
+	Result             lipgloss.Style
+	Error              lipgloss.Style
+	Info               lipgloss.Style
+	HelpText           lipgloss.Style
+	CompletionPopup    lipgloss.Style
+	CompletionItem     lipgloss.Style
+	CompletionSelected lipgloss.Style
 }
 
 // DefaultStyles returns the default styling configuration
@@ -41,6 +44,15 @@ func DefaultStyles() Styles {
 		HelpText: lipgloss.NewStyle().
 			Foreground(lipgloss.Color("240")).
 			Italic(true),
+		CompletionPopup: lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("240")).
+			Padding(0, 1),
+		CompletionItem: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("248")),
+		CompletionSelected: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("33")).
+			Bold(true),
 	}
 }
 
@@ -83,6 +95,15 @@ var BuiltinThemes = map[string]Theme{
 			HelpText: lipgloss.NewStyle().
 				Foreground(lipgloss.Color("243")).
 				Italic(true),
+			CompletionPopup: lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(lipgloss.Color("241")).
+				Padding(0, 1),
+			CompletionItem: lipgloss.NewStyle().
+				Foreground(lipgloss.Color("252")),
+			CompletionSelected: lipgloss.NewStyle().
+				Foreground(lipgloss.Color("11")).
+				Bold(true),
 		},
 	},
 	"light": {
@@ -112,6 +133,15 @@ var BuiltinThemes = map[string]Theme{
 			HelpText: lipgloss.NewStyle().
 				Foreground(lipgloss.Color("8")).
 				Italic(true),
+			CompletionPopup: lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(lipgloss.Color("246")).
+				Padding(0, 1),
+			CompletionItem: lipgloss.NewStyle().
+				Foreground(lipgloss.Color("238")),
+			CompletionSelected: lipgloss.NewStyle().
+				Foreground(lipgloss.Color("4")).
+				Bold(true),
 		},
 	},
 }

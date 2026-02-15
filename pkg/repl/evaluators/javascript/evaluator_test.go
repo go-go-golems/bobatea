@@ -2,8 +2,11 @@ package javascript
 
 import (
 	"context"
+	"strings"
+	"sync"
 	"testing"
 
+	"github.com/go-go-golems/bobatea/pkg/repl"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -15,6 +18,7 @@ func TestNew(t *testing.T) {
 		assert.NotNil(t, evaluator)
 		assert.NotNil(t, evaluator.runtime)
 		assert.True(t, evaluator.config.EnableModules)
+		assert.False(t, evaluator.config.EnableCallLog)
 		assert.True(t, evaluator.config.EnableConsoleLog)
 		assert.True(t, evaluator.config.EnableNodeModules)
 	})
@@ -22,6 +26,7 @@ func TestNew(t *testing.T) {
 	t.Run("custom configuration", func(t *testing.T) {
 		config := Config{
 			EnableModules:     false,
+			EnableCallLog:     true,
 			EnableConsoleLog:  false,
 			EnableNodeModules: false,
 			CustomModules: map[string]interface{}{
@@ -32,6 +37,7 @@ func TestNew(t *testing.T) {
 		require.NoError(t, err)
 		assert.NotNil(t, evaluator)
 		assert.False(t, evaluator.config.EnableModules)
+		assert.True(t, evaluator.config.EnableCallLog)
 		assert.False(t, evaluator.config.EnableConsoleLog)
 		assert.False(t, evaluator.config.EnableNodeModules)
 		assert.Equal(t, "value", evaluator.config.CustomModules["test"])
@@ -342,8 +348,266 @@ func TestEvaluator_CustomModules(t *testing.T) {
 func TestConfig_DefaultConfig(t *testing.T) {
 	config := DefaultConfig()
 	assert.True(t, config.EnableModules)
+	assert.False(t, config.EnableCallLog)
 	assert.True(t, config.EnableConsoleLog)
 	assert.True(t, config.EnableNodeModules)
 	assert.NotNil(t, config.CustomModules)
 	assert.Len(t, config.CustomModules, 0)
+}
+
+func TestEvaluator_CompleteInput(t *testing.T) {
+	evaluator, err := NewWithDefaults()
+	require.NoError(t, err)
+
+	ctx := context.Background()
+
+	t.Run("property access completion on obj dot", func(t *testing.T) {
+		result, err := evaluator.CompleteInput(ctx, repl.CompletionRequest{
+			Input:      "console.lo",
+			CursorByte: len("console.lo"),
+			Reason:     repl.CompletionReasonShortcut,
+		})
+		require.NoError(t, err)
+		assert.True(t, result.Show)
+		assert.True(t, hasSuggestion(result, "log"))
+		assert.Equal(t, len("console."), result.ReplaceFrom)
+		assert.Equal(t, len("console.lo"), result.ReplaceTo)
+	})
+
+	t.Run("identifier completion for partial symbol", func(t *testing.T) {
+		result, err := evaluator.CompleteInput(ctx, repl.CompletionRequest{
+			Input:      "cons",
+			CursorByte: len("cons"),
+			Reason:     repl.CompletionReasonDebounce,
+		})
+		require.NoError(t, err)
+		assert.True(t, result.Show)
+		assert.True(t, hasSuggestion(result, "console"))
+		assert.Equal(t, 0, result.ReplaceFrom)
+		assert.Equal(t, len("cons"), result.ReplaceTo)
+	})
+
+	t.Run("module binding completion from require declaration", func(t *testing.T) {
+		input := "const fs = require(\"fs\");\nfs.re"
+		result, err := evaluator.CompleteInput(ctx, repl.CompletionRequest{
+			Input:      input,
+			CursorByte: len(input),
+			Reason:     repl.CompletionReasonShortcut,
+		})
+		require.NoError(t, err)
+		assert.True(t, result.Show)
+		assert.True(t, hasSuggestion(result, "readFile"))
+	})
+
+	t.Run("runtime-defined function appears in identifier completion", func(t *testing.T) {
+		_, evalErr := evaluator.Evaluate(ctx, "function greetUser(name) { return 'hi ' + name; }")
+		require.NoError(t, evalErr)
+
+		result, err := evaluator.CompleteInput(ctx, repl.CompletionRequest{
+			Input:      "gre",
+			CursorByte: len("gre"),
+			Reason:     repl.CompletionReasonShortcut,
+			Shortcut:   "tab",
+		})
+		require.NoError(t, err)
+		assert.True(t, result.Show)
+		assert.True(t, hasSuggestion(result, "greetUser"))
+	})
+
+	t.Run("runtime-defined const appears in identifier completion", func(t *testing.T) {
+		_, evalErr := evaluator.Evaluate(ctx, "const dataBucket = { count: 1, label: 'demo' }")
+		require.NoError(t, evalErr)
+
+		result, err := evaluator.CompleteInput(ctx, repl.CompletionRequest{
+			Input:      "dataB",
+			CursorByte: len("dataB"),
+			Reason:     repl.CompletionReasonShortcut,
+			Shortcut:   "tab",
+		})
+		require.NoError(t, err)
+		assert.True(t, result.Show)
+		assert.True(t, hasSuggestion(result, "dataBucket"))
+	})
+
+	t.Run("runtime-defined object properties appear on dot completion", func(t *testing.T) {
+		result, err := evaluator.CompleteInput(ctx, repl.CompletionRequest{
+			Input:      "dataBucket.",
+			CursorByte: len("dataBucket."),
+			Reason:     repl.CompletionReasonShortcut,
+			Shortcut:   "tab",
+		})
+		require.NoError(t, err)
+		assert.True(t, result.Show)
+		assert.True(t, hasSuggestion(result, "count"))
+		assert.True(t, hasSuggestion(result, "label"))
+	})
+
+	t.Run("incomplete input after dot still yields candidates", func(t *testing.T) {
+		input := "console."
+		result, err := evaluator.CompleteInput(ctx, repl.CompletionRequest{
+			Input:      input,
+			CursorByte: len(input),
+			Reason:     repl.CompletionReasonShortcut,
+		})
+		require.NoError(t, err)
+		assert.True(t, result.Show)
+		assert.True(t, hasSuggestion(result, "log"))
+		assert.Equal(t, len(input), result.ReplaceFrom)
+		assert.Equal(t, len(input), result.ReplaceTo)
+	})
+}
+
+func TestEvaluator_CompleteInput_ConcurrentRequests(t *testing.T) {
+	evaluator, err := NewWithDefaults()
+	require.NoError(t, err)
+
+	reqs := []repl.CompletionRequest{
+		{Input: ".co", CursorByte: len(".co"), Reason: repl.CompletionReasonDebounce},
+		{Input: "console.lo", CursorByte: len("console.lo"), Reason: repl.CompletionReasonShortcut, Shortcut: "tab"},
+		{Input: "const fs = require(\"fs\"); fs.re", CursorByte: len("const fs = require(\"fs\"); fs.re"), Reason: repl.CompletionReasonDebounce},
+		{Input: "zzz", CursorByte: len("zzz"), Reason: repl.CompletionReasonShortcut, Shortcut: "tab"},
+	}
+
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		for _, req := range reqs {
+			wg.Add(1)
+			go func(request repl.CompletionRequest) {
+				defer wg.Done()
+				_, completeErr := evaluator.CompleteInput(context.Background(), request)
+				assert.NoError(t, completeErr)
+			}(req)
+		}
+	}
+	wg.Wait()
+}
+
+func TestEvaluator_GetHelpBar(t *testing.T) {
+	evaluator, err := NewWithDefaults()
+	require.NoError(t, err)
+
+	ctx := context.Background()
+
+	t.Run("exact property symbol uses signature catalog", func(t *testing.T) {
+		payload, helpErr := evaluator.GetHelpBar(ctx, repl.HelpBarRequest{
+			Input:      "console.log",
+			CursorByte: len("console.log"),
+			Reason:     repl.HelpBarReasonDebounce,
+		})
+		require.NoError(t, helpErr)
+		require.True(t, payload.Show)
+		assert.Equal(t, "signature", payload.Kind)
+		assert.Contains(t, payload.Text, "console.log")
+	})
+
+	t.Run("prefix identifier uses best candidate", func(t *testing.T) {
+		payload, helpErr := evaluator.GetHelpBar(ctx, repl.HelpBarRequest{
+			Input:      "cons",
+			CursorByte: len("cons"),
+			Reason:     repl.HelpBarReasonDebounce,
+		})
+		require.NoError(t, helpErr)
+		require.True(t, payload.Show)
+		assert.Equal(t, "signature", payload.Kind)
+		assert.Contains(t, payload.Text, "console")
+	})
+
+	t.Run("module alias property uses require alias mapping", func(t *testing.T) {
+		input := "const fs = require(\"fs\");\nfs.re"
+		payload, helpErr := evaluator.GetHelpBar(ctx, repl.HelpBarRequest{
+			Input:      input,
+			CursorByte: len(input),
+			Reason:     repl.HelpBarReasonDebounce,
+		})
+		require.NoError(t, helpErr)
+		require.True(t, payload.Show)
+		assert.Equal(t, "signature", payload.Kind)
+		assert.Contains(t, payload.Text, "fs.")
+	})
+
+	t.Run("runtime fallback exposes name and arity without evaluation", func(t *testing.T) {
+		_, evalErr := evaluator.Evaluate(ctx, "function localFn(a, b, c) { return a + b + c; }")
+		require.NoError(t, evalErr)
+
+		payload, helpErr := evaluator.GetHelpBar(ctx, repl.HelpBarRequest{
+			Input:      "localFn",
+			CursorByte: len("localFn"),
+			Reason:     repl.HelpBarReasonManual,
+		})
+		require.NoError(t, helpErr)
+		require.True(t, payload.Show)
+		assert.Equal(t, "runtime", payload.Kind)
+		assert.Contains(t, payload.Text, "localFn")
+		assert.Contains(t, payload.Text, "arity")
+	})
+
+	t.Run("debounce keeps quiet for one-character identifier", func(t *testing.T) {
+		payload, helpErr := evaluator.GetHelpBar(ctx, repl.HelpBarRequest{
+			Input:      "c",
+			CursorByte: len("c"),
+			Reason:     repl.HelpBarReasonDebounce,
+		})
+		require.NoError(t, helpErr)
+		assert.False(t, payload.Show)
+		assert.True(t, strings.TrimSpace(payload.Text) == "")
+	})
+}
+
+func TestEvaluator_GetHelpDrawer(t *testing.T) {
+	evaluator, err := NewWithDefaults()
+	require.NoError(t, err)
+
+	ctx := context.Background()
+
+	t.Run("property context returns rich drawer document", func(t *testing.T) {
+		doc, helpErr := evaluator.GetHelpDrawer(ctx, repl.HelpDrawerRequest{
+			Input:      "console.lo",
+			CursorByte: len("console.lo"),
+			RequestID:  7,
+			Trigger:    repl.HelpDrawerTriggerTyping,
+		})
+		require.NoError(t, helpErr)
+		require.True(t, doc.Show)
+		assert.Contains(t, doc.Title, "console")
+		assert.Contains(t, doc.Subtitle, "kind: property")
+		assert.Contains(t, doc.Markdown, "Completion Candidates")
+		assert.Contains(t, doc.Markdown, "`log`")
+		assert.Contains(t, doc.VersionTag, "request-7")
+	})
+
+	t.Run("empty input still returns helpful drawer content", func(t *testing.T) {
+		doc, helpErr := evaluator.GetHelpDrawer(ctx, repl.HelpDrawerRequest{
+			Input:      "",
+			CursorByte: 0,
+			RequestID:  8,
+			Trigger:    repl.HelpDrawerTriggerToggleOpen,
+		})
+		require.NoError(t, helpErr)
+		require.True(t, doc.Show)
+		assert.Contains(t, doc.Subtitle, "trigger: toggle-open")
+		assert.Contains(t, doc.Markdown, "Start typing JavaScript")
+	})
+
+	t.Run("require aliases are surfaced", func(t *testing.T) {
+		input := "const fs = require(\"fs\");\nfs.re"
+		doc, helpErr := evaluator.GetHelpDrawer(ctx, repl.HelpDrawerRequest{
+			Input:      input,
+			CursorByte: len(input),
+			RequestID:  9,
+			Trigger:    repl.HelpDrawerTriggerManualRefresh,
+		})
+		require.NoError(t, helpErr)
+		require.True(t, doc.Show)
+		assert.Contains(t, doc.Markdown, "require() Aliases")
+		assert.Contains(t, doc.Markdown, "`fs` -> `fs`")
+	})
+}
+
+func hasSuggestion(result repl.CompletionResult, label string) bool {
+	for _, suggestion := range result.Suggestions {
+		if suggestion.Value == label {
+			return true
+		}
+	}
+	return false
 }
