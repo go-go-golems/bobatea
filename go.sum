@@ -86,6 +86,8 @@ github.com/go-go-golems/glazed v1.0.0 h1:AQ25/uXNAgMK8ISIlyWEKW1RMvgHutczdcbWKYR
 github.com/go-go-golems/glazed v1.0.0/go.mod h1:kE/DlsgJKyGci2p/qw2p4ra3HkYjBCSQrOU8k0wBetA=
 github.com/go-go-golems/go-go-goja v0.1.0 h1:Qib2hSTxFW8Ft/V6ITtXZ6THR2kTCVxf8fuh4ozCRkQ=
 github.com/go-go-golems/go-go-goja v0.1.0/go.mod h1:gnFJYYoPK2Rcyn2q8kyVQm/0jh9/5/CWZywBRrLjcmI=
+github.com/go-go-golems/go-go-goja v0.1.1 h1:XtCO4mQwr21LYZKh/r+gpdvUq0+slQH7o55JMiTy0Ms=
+github.com/go-go-golems/go-go-goja v0.1.1/go.mod h1:gnFJYYoPK2Rcyn2q8kyVQm/0jh9/5/CWZywBRrLjcmI=
 github.com/go-sourcemap/sourcemap v2.1.4+incompatible h1:a+iTbH5auLKxaNwQFg0B+TCYl6lbukKPc7b5x0n1s6Q=
 github.com/go-sourcemap/sourcemap v2.1.4+incompatible/go.mod h1:F8jJfvm2KbVjc5NqelyYJmf/v5J0dwNLS2mL4sNA1Jg=
 github.com/godbus/dbus/v5 v5.0.4/go.mod h1:xhWf0FNVPg57R7Z0UbKHbJfkEywrmjJnf7w5xrFpKfA=

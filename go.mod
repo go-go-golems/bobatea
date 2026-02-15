@@ -12,7 +12,7 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834
 	github.com/dop251/goja v0.0.0-20250630131328-58d95d85e994
 	github.com/go-go-golems/geppetto v0.8.0
-	github.com/go-go-golems/go-go-goja v0.1.0
+	github.com/go-go-golems/go-go-goja v0.1.1
 	github.com/google/uuid v1.6.0
 	github.com/lucasb-eyer/go-colorful v1.3.0
 	github.com/mattn/go-runewidth v0.0.19
