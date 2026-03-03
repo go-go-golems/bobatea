@@ -102,9 +102,21 @@ type model struct {
 	// to drive input via control messages (Replace/Append/Prepend/Submit). This allows
 	// embedding the chat timeline in apps with their own input UX.
 	externalInput bool
+
+	// submitInterceptor can intercept a submitted user message (after trimming).
+	// If it returns handled=true, the message is not sent to the backend.
+	submitInterceptor SubmitInterceptor
+
+	// headerViewFunc renders an optional header above the timeline.
+	headerViewFunc func() string
 }
 
 type ModelOption func(*model)
+
+// SubmitInterceptor can intercept a submitted user message (after trimming).
+// If handled=true, the chat model will not create a user timeline entity and will not
+// call Backend.Start. The returned command is executed by Bubble Tea.
+type SubmitInterceptor func(input string) (handled bool, cmd tea.Cmd)
 
 func WithTitle(title string) ModelOption {
 	return func(m *model) {
@@ -136,6 +148,21 @@ func WithTimelineRegister(hook func(*timeline.Registry)) ModelOption {
 func WithExternalInput(enabled bool) ModelOption {
 	return func(m *model) {
 		m.externalInput = enabled
+	}
+}
+
+// WithSubmitInterceptor installs an interceptor for submitted input (after trimming).
+// Use this for slash-commands like "/profile" that should not be sent to inference.
+func WithSubmitInterceptor(fn SubmitInterceptor) ModelOption {
+	return func(m *model) {
+		m.submitInterceptor = fn
+	}
+}
+
+// WithHeaderView installs a header renderer displayed above the timeline.
+func WithHeaderView(fn func() string) ModelOption {
+	return func(m *model) {
+		m.headerViewFunc = fn
 	}
 }
 
@@ -648,7 +675,10 @@ func (m *model) recomputeSize() {
 }
 
 func (m model) headerView() string {
-	return ""
+	if m.headerViewFunc == nil {
+		return ""
+	}
+	return m.headerViewFunc()
 }
 
 func (m model) textAreaView() string {
@@ -798,19 +828,31 @@ func (m *model) submit() tea.Cmd {
 		Int("input_length", len(m.textArea.Value())).
 		Msg("SUBMIT ENTRY")
 
-	if !m.backend.IsFinished() {
-		slogger.Trace().Msg("Backend not finished - returning error")
-		return func() tea.Msg {
-			return ErrorMsg(errors.New("already streaming"))
-		}
-	}
-
 	// Filter out empty submissions (spaces/newlines only)
 	rawInput := m.textArea.Value()
 	userMessage := strings.TrimSpace(rawInput)
 	if userMessage == "" {
 		slogger.Debug().Msg("Ignoring empty submit (no message sent)")
 		return nil
+	}
+
+	// Allow the host to intercept special commands (e.g. slash commands) even while streaming.
+	if m.submitInterceptor != nil {
+		handled, cmd := m.submitInterceptor(userMessage)
+		if handled {
+			if !m.externalInput {
+				m.textArea.SetValue("")
+				m.textArea.Focus()
+			}
+			return tea.Batch(cmd, func() tea.Msg { return refreshMessageMsg{GoToBottom: true} })
+		}
+	}
+
+	if !m.backend.IsFinished() {
+		slogger.Trace().Msg("Backend not finished - returning error")
+		return func() tea.Msg {
+			return ErrorMsg(errors.New("already streaming"))
+		}
 	}
 
 	// Transition to streaming: blur input immediately
