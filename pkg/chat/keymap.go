@@ -32,6 +32,8 @@ type KeyMap struct {
 	CopyLastSourceBlocksToClipboard key.Binding `keymap-mode:"user-input"`
 	CopySourceBlocksToClipboard     key.Binding `keymap-mode:"moving-around"`
 
+	Profile key.Binding `keymap-mode:"user-input"`
+
 	Help key.Binding `keymap-mode:"*"`
 	// demo triggers for tool calls
 	TriggerWeatherTool   key.Binding `keymap-mode:"user-input"`
@@ -112,8 +114,13 @@ var DefaultKeyMap = KeyMap{
 	),
 
 	Help: key.NewBinding(
-		key.WithKeys("ctrl-?"),
-		key.WithHelp("ctrl-?", "help")),
+		key.WithKeys("ctrl-?", "ctrl+h"),
+		key.WithHelp("ctrl+h", "help")),
+
+	Profile: key.NewBinding(
+		key.WithKeys("ctrl+p"),
+		key.WithHelp("ctrl+p", "profile"),
+	),
 
 	PreviousConversationThread: key.NewBinding(
 		key.WithKeys("left"),
@@ -138,6 +145,7 @@ var DefaultKeyMap = KeyMap{
 func (k KeyMap) ShortHelp() []key.Binding {
 	return []key.Binding{k.Help,
 		k.SubmitMessage,
+		k.Profile,
 		k.CopyLastResponseToClipboard,
 		k.CopyLastSourceBlocksToClipboard,
 		k.CopyToClipboard,
@@ -157,6 +165,7 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 		{k.SelectPrevMessage, k.SelectNextMessage},
 		{k.UnfocusMessage, k.FocusMessage},
 		{k.CopyLastResponseToClipboard, k.CopyToClipboard},
+		{k.Profile},
 		{k.CopySourceBlocksToClipboard},
 	}
 }

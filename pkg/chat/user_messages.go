@@ -54,6 +54,7 @@ type GetInputTextMsg struct{}
 // Demo tool triggers
 type TriggerWeatherToolMsg struct{}
 type TriggerWebSearchToolMsg struct{}
+type OpenProfilePickerMsg struct{}
 
 func (ToggleHelpMsg) isUserAction()                      {}
 func (UnfocusMessageMsg) isUserAction()                  {}
@@ -78,6 +79,7 @@ func (PrependInputTextMsg) isUserAction()     {}
 func (GetInputTextMsg) isUserAction()         {}
 func (TriggerWeatherToolMsg) isUserAction()   {}
 func (TriggerWebSearchToolMsg) isUserAction() {}
+func (OpenProfilePickerMsg) isUserAction()    {}
 
 // Blur and Unblur input control messages
 type BlurInputMsg struct{}

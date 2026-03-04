@@ -266,6 +266,9 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keyMap.Help):
 		log.Debug().Str("component", "chat").Str("key", msg.String()).Msg("Help pressed")
 		cmd = func() tea.Msg { return ToggleHelpMsg{} }
+	case key.Matches(msg, m.keyMap.Profile):
+		log.Debug().Str("component", "chat").Str("key", msg.String()).Msg("Profile pressed")
+		cmd = func() tea.Msg { return OpenProfilePickerMsg{} }
 	case key.Matches(msg, m.keyMap.UnfocusMessage):
 		log.Debug().Str("component", "chat").Str("key", msg.String()).Msg("Unfocus (ESC) pressed")
 		cmd = func() tea.Msg { return UnfocusMessageMsg{} }
