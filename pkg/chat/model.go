@@ -924,9 +924,6 @@ func (m *model) finishCompletion() tea.Cmd {
 			Int64("finish_call_id", finishCallID).
 			Msg("Stream completion state - performing cleanup")
 
-		// WARN not sure if really necessary actually, this should only be called once at this point.
-		m.backend.Kill()
-
 		m.state = StateUserInput
 		m.inputBlurred = false
 		m.textArea.Focus()
