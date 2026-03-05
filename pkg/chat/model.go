@@ -102,9 +102,24 @@ type model struct {
 	// to drive input via control messages (Replace/Append/Prepend/Submit). This allows
 	// embedding the chat timeline in apps with their own input UX.
 	externalInput bool
+
+	// submitInterceptor can intercept a submitted user message (after trimming).
+	// If it returns handled=true, the message is not sent to the backend.
+	submitInterceptor SubmitInterceptor
+
+	// headerViewFunc renders an optional header above the timeline.
+	headerViewFunc func() string
+
+	// statusBarViewFunc renders an optional status bar between the timeline and the input area.
+	statusBarViewFunc func() string
 }
 
 type ModelOption func(*model)
+
+// SubmitInterceptor can intercept a submitted user message (after trimming).
+// If handled=true, the chat model will not create a user timeline entity and will not
+// call Backend.Start. The returned command is executed by Bubble Tea.
+type SubmitInterceptor func(input string) (handled bool, cmd tea.Cmd)
 
 func WithTitle(title string) ModelOption {
 	return func(m *model) {
@@ -136,6 +151,29 @@ func WithTimelineRegister(hook func(*timeline.Registry)) ModelOption {
 func WithExternalInput(enabled bool) ModelOption {
 	return func(m *model) {
 		m.externalInput = enabled
+	}
+}
+
+// WithSubmitInterceptor installs an interceptor for submitted input (after trimming).
+// Use this for slash-commands like "/profile" that should not be sent to inference.
+func WithSubmitInterceptor(fn SubmitInterceptor) ModelOption {
+	return func(m *model) {
+		m.submitInterceptor = fn
+	}
+}
+
+// WithHeaderView installs a header renderer displayed above the timeline.
+func WithHeaderView(fn func() string) ModelOption {
+	return func(m *model) {
+		m.headerViewFunc = fn
+	}
+}
+
+// WithStatusBarView installs a status bar renderer displayed between the timeline
+// and the input area (just above the text entry field).
+func WithStatusBarView(fn func() string) ModelOption {
+	return func(m *model) {
+		m.statusBarViewFunc = fn
 	}
 }
 
@@ -239,6 +277,9 @@ func (m *model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keyMap.Help):
 		log.Debug().Str("component", "chat").Str("key", msg.String()).Msg("Help pressed")
 		cmd = func() tea.Msg { return ToggleHelpMsg{} }
+	case key.Matches(msg, m.keyMap.Profile):
+		log.Debug().Str("component", "chat").Str("key", msg.String()).Msg("Profile pressed")
+		cmd = func() tea.Msg { return OpenProfilePickerMsg{} }
 	case key.Matches(msg, m.keyMap.UnfocusMessage):
 		log.Debug().Str("component", "chat").Str("key", msg.String()).Msg("Unfocus (ESC) pressed")
 		cmd = func() tea.Msg { return UnfocusMessageMsg{} }
@@ -606,14 +647,20 @@ func (m *model) recomputeSize() {
 		return
 	}
 
+	statusBarView := m.statusBarView()
+	statusBarHeight := lipgloss.Height(statusBarView)
+	if statusBarView == "" {
+		statusBarHeight = 0
+	}
+
 	textAreaStart := time.Now()
 	textAreaView := m.textAreaView()
 	textAreaHeight := lipgloss.Height(textAreaView)
 	textAreaDuration := time.Since(textAreaStart)
 
-	newHeight := m.height - headerHeight - helpViewHeight
+	newHeight := m.height - headerHeight - statusBarHeight - helpViewHeight
 	if !m.externalInput {
-		newHeight = m.height - textAreaHeight - headerHeight - helpViewHeight
+		newHeight = m.height - textAreaHeight - headerHeight - statusBarHeight - helpViewHeight
 	}
 	if newHeight < 0 {
 		newHeight = 0
@@ -623,6 +670,7 @@ func (m *model) recomputeSize() {
 		Int64("recompute_call_id", recomputeCallID).
 		Dur("textarea_duration", textAreaDuration).
 		Int("textarea_height", textAreaHeight).
+		Int("statusbar_height", statusBarHeight).
 		Int("calculated_viewport_height", newHeight).
 		Msg("Text area computed, viewport height calculated")
 
@@ -648,7 +696,17 @@ func (m *model) recomputeSize() {
 }
 
 func (m model) headerView() string {
-	return ""
+	if m.headerViewFunc == nil {
+		return ""
+	}
+	return m.headerViewFunc()
+}
+
+func (m model) statusBarView() string {
+	if m.statusBarViewFunc == nil {
+		return ""
+	}
+	return m.statusBarViewFunc()
 }
 
 func (m model) textAreaView() string {
@@ -703,6 +761,8 @@ func (m model) View() string {
 	textAreaView := m.textAreaView()
 	textAreaDuration := time.Since(textAreaStart)
 
+	statusBarView := m.statusBarView()
+
 	helpStart := time.Now()
 	helpView := m.help.View(m.keyMap)
 	helpDuration := time.Since(helpStart)
@@ -722,22 +782,28 @@ func (m model) View() string {
 		ret = headerView
 	}
 
+	// Status bar sits between the timeline viewport and the input area.
+	statusBarSuffix := ""
+	if statusBarView != "" {
+		statusBarSuffix = "\n" + statusBarView
+	}
+
 	switch m.state {
 	case StateUserInput, StateError, StateStreamCompletion:
 		if m.externalInput {
-			ret += viewportView + "\n" + helpView
+			ret += viewportView + statusBarSuffix + "\n" + helpView
 		} else {
-			ret += viewportView + "\n" + textAreaView + "\n" + helpView
+			ret += viewportView + statusBarSuffix + "\n" + textAreaView + "\n" + helpView
 		}
-		vlogger.Trace().Str("combined_state", "viewport+textarea+help").Int("final_length", len(ret)).Msg("Combined view for main states")
+		vlogger.Trace().Str("combined_state", "viewport+statusbar+textarea+help").Int("final_length", len(ret)).Msg("Combined view for main states")
 	case StateMovingAround:
 		// Keep input visible (greyed) while selecting entities; if external, omit
 		if m.externalInput {
-			ret += viewportView + "\n" + helpView
+			ret += viewportView + statusBarSuffix + "\n" + helpView
 		} else {
-			ret += viewportView + "\n" + textAreaView + "\n" + helpView
+			ret += viewportView + statusBarSuffix + "\n" + textAreaView + "\n" + helpView
 		}
-		vlogger.Trace().Str("combined_state", "viewport+textarea+help (selection mode)").Int("final_length", len(ret)).Msg("Combined view for moving-around state")
+		vlogger.Trace().Str("combined_state", "viewport+statusbar+textarea+help (selection mode)").Int("final_length", len(ret)).Msg("Combined view for moving-around state")
 
 	case StateSavingToFile:
 		ret += m.filepicker.View()
@@ -798,19 +864,31 @@ func (m *model) submit() tea.Cmd {
 		Int("input_length", len(m.textArea.Value())).
 		Msg("SUBMIT ENTRY")
 
-	if !m.backend.IsFinished() {
-		slogger.Trace().Msg("Backend not finished - returning error")
-		return func() tea.Msg {
-			return ErrorMsg(errors.New("already streaming"))
-		}
-	}
-
 	// Filter out empty submissions (spaces/newlines only)
 	rawInput := m.textArea.Value()
 	userMessage := strings.TrimSpace(rawInput)
 	if userMessage == "" {
 		slogger.Debug().Msg("Ignoring empty submit (no message sent)")
 		return nil
+	}
+
+	// Allow the host to intercept special commands (e.g. slash commands) even while streaming.
+	if m.submitInterceptor != nil {
+		handled, cmd := m.submitInterceptor(userMessage)
+		if handled {
+			if !m.externalInput {
+				m.textArea.SetValue("")
+				m.textArea.Focus()
+			}
+			return tea.Batch(cmd, func() tea.Msg { return refreshMessageMsg{GoToBottom: true} })
+		}
+	}
+
+	if !m.backend.IsFinished() {
+		slogger.Trace().Msg("Backend not finished - returning error")
+		return func() tea.Msg {
+			return ErrorMsg(errors.New("already streaming"))
+		}
 	}
 
 	// Transition to streaming: blur input immediately
@@ -881,9 +959,6 @@ func (m *model) finishCompletion() tea.Cmd {
 		log.Trace().
 			Int64("finish_call_id", finishCallID).
 			Msg("Stream completion state - performing cleanup")
-
-		// WARN not sure if really necessary actually, this should only be called once at this point.
-		m.backend.Kill()
 
 		m.state = StateUserInput
 		m.inputBlurred = false
