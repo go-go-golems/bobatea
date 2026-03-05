@@ -109,6 +109,9 @@ type model struct {
 
 	// headerViewFunc renders an optional header above the timeline.
 	headerViewFunc func() string
+
+	// statusBarViewFunc renders an optional status bar between the timeline and the input area.
+	statusBarViewFunc func() string
 }
 
 type ModelOption func(*model)
@@ -163,6 +166,14 @@ func WithSubmitInterceptor(fn SubmitInterceptor) ModelOption {
 func WithHeaderView(fn func() string) ModelOption {
 	return func(m *model) {
 		m.headerViewFunc = fn
+	}
+}
+
+// WithStatusBarView installs a status bar renderer displayed between the timeline
+// and the input area (just above the text entry field).
+func WithStatusBarView(fn func() string) ModelOption {
+	return func(m *model) {
+		m.statusBarViewFunc = fn
 	}
 }
 
@@ -636,14 +647,20 @@ func (m *model) recomputeSize() {
 		return
 	}
 
+	statusBarView := m.statusBarView()
+	statusBarHeight := lipgloss.Height(statusBarView)
+	if statusBarView == "" {
+		statusBarHeight = 0
+	}
+
 	textAreaStart := time.Now()
 	textAreaView := m.textAreaView()
 	textAreaHeight := lipgloss.Height(textAreaView)
 	textAreaDuration := time.Since(textAreaStart)
 
-	newHeight := m.height - headerHeight - helpViewHeight
+	newHeight := m.height - headerHeight - statusBarHeight - helpViewHeight
 	if !m.externalInput {
-		newHeight = m.height - textAreaHeight - headerHeight - helpViewHeight
+		newHeight = m.height - textAreaHeight - headerHeight - statusBarHeight - helpViewHeight
 	}
 	if newHeight < 0 {
 		newHeight = 0
@@ -653,6 +670,7 @@ func (m *model) recomputeSize() {
 		Int64("recompute_call_id", recomputeCallID).
 		Dur("textarea_duration", textAreaDuration).
 		Int("textarea_height", textAreaHeight).
+		Int("statusbar_height", statusBarHeight).
 		Int("calculated_viewport_height", newHeight).
 		Msg("Text area computed, viewport height calculated")
 
@@ -682,6 +700,13 @@ func (m model) headerView() string {
 		return ""
 	}
 	return m.headerViewFunc()
+}
+
+func (m model) statusBarView() string {
+	if m.statusBarViewFunc == nil {
+		return ""
+	}
+	return m.statusBarViewFunc()
 }
 
 func (m model) textAreaView() string {
@@ -736,6 +761,8 @@ func (m model) View() string {
 	textAreaView := m.textAreaView()
 	textAreaDuration := time.Since(textAreaStart)
 
+	statusBarView := m.statusBarView()
+
 	helpStart := time.Now()
 	helpView := m.help.View(m.keyMap)
 	helpDuration := time.Since(helpStart)
@@ -755,22 +782,28 @@ func (m model) View() string {
 		ret = headerView
 	}
 
+	// Status bar sits between the timeline viewport and the input area.
+	statusBarSuffix := ""
+	if statusBarView != "" {
+		statusBarSuffix = "\n" + statusBarView
+	}
+
 	switch m.state {
 	case StateUserInput, StateError, StateStreamCompletion:
 		if m.externalInput {
-			ret += viewportView + "\n" + helpView
+			ret += viewportView + statusBarSuffix + "\n" + helpView
 		} else {
-			ret += viewportView + "\n" + textAreaView + "\n" + helpView
+			ret += viewportView + statusBarSuffix + "\n" + textAreaView + "\n" + helpView
 		}
-		vlogger.Trace().Str("combined_state", "viewport+textarea+help").Int("final_length", len(ret)).Msg("Combined view for main states")
+		vlogger.Trace().Str("combined_state", "viewport+statusbar+textarea+help").Int("final_length", len(ret)).Msg("Combined view for main states")
 	case StateMovingAround:
 		// Keep input visible (greyed) while selecting entities; if external, omit
 		if m.externalInput {
-			ret += viewportView + "\n" + helpView
+			ret += viewportView + statusBarSuffix + "\n" + helpView
 		} else {
-			ret += viewportView + "\n" + textAreaView + "\n" + helpView
+			ret += viewportView + statusBarSuffix + "\n" + textAreaView + "\n" + helpView
 		}
-		vlogger.Trace().Str("combined_state", "viewport+textarea+help (selection mode)").Int("final_length", len(ret)).Msg("Combined view for moving-around state")
+		vlogger.Trace().Str("combined_state", "viewport+statusbar+textarea+help (selection mode)").Int("final_length", len(ret)).Msg("Combined view for moving-around state")
 
 	case StateSavingToFile:
 		ret += m.filepicker.View()
