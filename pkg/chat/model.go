@@ -461,6 +461,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		logger.Trace().Str("error", msg_.Error()).Msg("Error message received")
 		m.err = msg_
 		m.state = StateError
+		m.recomputeSize()
 		m.updateKeyBindings()
 		return m, nil
 
@@ -1107,6 +1108,10 @@ func (m model) handleUserAction(msg UserActionMsg) (tea.Model, tea.Cmd) {
 	case DismissErrorMsg:
 		m.err = nil
 		m.state = StateUserInput
+		if !m.externalInput {
+			m.textArea.Focus()
+		}
+		m.recomputeSize()
 		m.updateKeyBindings()
 
 	case ReplaceInputTextMsg:
