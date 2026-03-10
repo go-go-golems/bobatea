@@ -234,7 +234,7 @@ func (e *AdvancedCalculatorEvaluator) showVariables() string {
 	var result strings.Builder
 	result.WriteString("Variables:\n")
 	for name, value := range e.variables {
-		result.WriteString(fmt.Sprintf("  %s = %.6g\n", name, value))
+		fmt.Fprintf(&result, "  %s = %.6g\n", name, value)
 	}
 
 	return strings.TrimSpace(result.String())
@@ -244,7 +244,7 @@ func (e *AdvancedCalculatorEvaluator) showFunctions() string {
 	var result strings.Builder
 	result.WriteString("Available functions:\n")
 	for name := range e.functions {
-		result.WriteString(fmt.Sprintf("  %s(x)\n", name))
+		fmt.Fprintf(&result, "  %s(x)\n", name)
 	}
 
 	return strings.TrimSpace(result.String())
@@ -265,7 +265,7 @@ func (e *AdvancedCalculatorEvaluator) showHistory() string {
 	}
 
 	for i := start; i < len(e.history); i++ {
-		result.WriteString(fmt.Sprintf("  %d: %s\n", i+1, e.history[i]))
+		fmt.Fprintf(&result, "  %d: %s\n", i+1, e.history[i])
 	}
 
 	return strings.TrimSpace(result.String())

@@ -1283,8 +1283,8 @@ func (fp *AdvancedModel) buildDirectoryPreview(file File) string {
 
 	content.WriteString(previewTitleStyle.Render(file.Name) + "\n")
 	content.WriteString("Type: Directory\n")
-	content.WriteString(fmt.Sprintf("Modified: %s\n", file.ModTime.Format("Jan 02, 2006 15:04")))
-	content.WriteString(fmt.Sprintf("Permissions: %s\n", file.Mode.String()))
+	fmt.Fprintf(&content, "Modified: %s\n", file.ModTime.Format("Jan 02, 2006 15:04"))
+	fmt.Fprintf(&content, "Permissions: %s\n", file.Mode.String())
 
 	// Try to count items in directory
 	if entries, err := os.ReadDir(file.Path); err == nil {
@@ -1297,9 +1297,9 @@ func (fp *AdvancedModel) buildDirectoryPreview(file File) string {
 				visibleCount++
 			}
 		}
-		content.WriteString(fmt.Sprintf("Items: %d", visibleCount))
+		fmt.Fprintf(&content, "Items: %d", visibleCount)
 		if hiddenCount > 0 {
-			content.WriteString(fmt.Sprintf(" (%d hidden)", hiddenCount))
+			fmt.Fprintf(&content, " (%d hidden)", hiddenCount)
 		}
 		content.WriteString("\n")
 	}
@@ -1312,9 +1312,9 @@ func (fp *AdvancedModel) buildFilePreview(file File) string {
 	var content strings.Builder
 
 	content.WriteString(previewTitleStyle.Render(file.Name) + "\n")
-	content.WriteString(fmt.Sprintf("Size: %s\n", fp.formatFileSize(file.Size)))
-	content.WriteString(fmt.Sprintf("Modified: %s\n", file.ModTime.Format("Jan 02, 2006 15:04")))
-	content.WriteString(fmt.Sprintf("Permissions: %s\n", file.Mode.String()))
+	fmt.Fprintf(&content, "Size: %s\n", fp.formatFileSize(file.Size))
+	fmt.Fprintf(&content, "Modified: %s\n", file.ModTime.Format("Jan 02, 2006 15:04"))
+	fmt.Fprintf(&content, "Permissions: %s\n", file.Mode.String())
 	content.WriteString(strings.Repeat("─", 20) + "\n")
 
 	// Try to preview file content
@@ -1327,7 +1327,7 @@ func (fp *AdvancedModel) buildFilePreview(file File) string {
 	} else if fp.isImageFile(file.Name) {
 		content.WriteString("[Image file]\n")
 		if info, err := os.Stat(file.Path); err == nil {
-			content.WriteString(fmt.Sprintf("Size: %dx? pixels\n", info.Size()))
+			fmt.Fprintf(&content, "Size: %dx? pixels\n", info.Size())
 		}
 	} else if fp.isArchiveFile(file.Name) {
 		content.WriteString("[Archive file]\n")
@@ -1946,12 +1946,12 @@ func (fp *AdvancedModel) formatFileEntry(file File, isCursor bool, width int) st
 	} else if fp.multiSelected[file.Path] {
 		indicator = "✓  "
 	}
-	line.WriteString(fmt.Sprintf("%-*s", indicatorWidth, indicator))
+	fmt.Fprintf(&line, "%-*s", indicatorWidth, indicator)
 
 	// Icon (fixed width)
 	if fp.showIcons {
 		icon := fp.getFileIcon(file)
-		line.WriteString(fmt.Sprintf("%-*s", iconWidth, icon))
+		fmt.Fprintf(&line, "%-*s", iconWidth, icon)
 	}
 
 	// Spacer after icon
@@ -1962,16 +1962,16 @@ func (fp *AdvancedModel) formatFileEntry(file File, isCursor bool, width int) st
 	if len(name) > nameWidth {
 		name = name[:nameWidth-3] + "..."
 	}
-	line.WriteString(fmt.Sprintf("%-*s", nameWidth, name))
+	fmt.Fprintf(&line, "%-*s", nameWidth, name)
 
 	// Add detail columns based on available space
 	if showSize {
 		// Size column (right-aligned with extra spacing after)
 		if !file.IsDir && file.Name != ".." {
 			size := fp.formatFileSize(file.Size)
-			line.WriteString(fmt.Sprintf("%*s", sizeWidth, size))
+			fmt.Fprintf(&line, "%*s", sizeWidth, size)
 		} else {
-			line.WriteString(fmt.Sprintf("%*s", sizeWidth, ""))
+			fmt.Fprintf(&line, "%*s", sizeWidth, "")
 		}
 		// Extra spacer after size column (since sizes can be wide)
 		line.WriteString(strings.Repeat(" ", sizeDateSpacer))
@@ -1981,9 +1981,9 @@ func (fp *AdvancedModel) formatFileEntry(file File, isCursor bool, width int) st
 		// Date column (left-aligned)
 		if file.Name != ".." {
 			modTime := file.ModTime.Format("Jan 02")
-			line.WriteString(fmt.Sprintf("%-*s", dateWidth, modTime))
+			fmt.Fprintf(&line, "%-*s", dateWidth, modTime)
 		} else {
-			line.WriteString(fmt.Sprintf("%-*s", dateWidth, ""))
+			fmt.Fprintf(&line, "%-*s", dateWidth, "")
 		}
 	}
 
