@@ -1,6 +1,6 @@
 module github.com/go-go-golems/bobatea
 
-go 1.25.7
+go 1.26.1
 
 require (
 	charm.land/lipgloss/v2 v2.0.0-beta.3.0.20260210014823-2f36a2f1ba17

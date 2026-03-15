@@ -1,4 +1,3 @@
-# .github/workflows/dependency-scanning.yml
 name: Dependency Scanning
 
 on:
@@ -40,7 +39,7 @@ jobs:
       
       - name: Run govulncheck
         run: govulncheck ./...
-
+        
   gosec:
     name: GoSec Security Scan
     runs-on: ubuntu-latest
