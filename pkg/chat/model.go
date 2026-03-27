@@ -27,7 +27,6 @@ import (
 // Tracing counters for debugging recursive calls
 var (
 	updateCallCounter = int64(0)
-	viewCallCounter   = int64(0)
 )
 
 type ErrorMsg error
@@ -509,8 +508,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case refreshMessageMsg:
-		logger.Trace().Bool("go_to_bottom", msg_.GoToBottom).Bool("scroll_to_bottom", m.scrollToBottom).Msg("REFRESH MESSAGE - POTENTIAL TRIGGER FOR LOOPS")
-
 		m.recomputeSize()
 		if msg_.GoToBottom || m.scrollToBottom {
 			m.timelineSh.GotoBottom()
@@ -610,41 +607,16 @@ func (m *model) updateKeyBindings() {
 func (m *model) scrollToSelected() { m.timelineSh.ScrollToSelected() }
 
 func (m *model) recomputeSize() {
-	recomputeCallID := atomic.AddInt64(&updateCallCounter, 1)
-	log.Trace().
-		Int64("recompute_call_id", recomputeCallID).
-		Int("model_width", m.width).
-		Int("model_height", m.height).
-		Str("state", string(m.state)).
-		Msg("RECOMPUTE SIZE ENTRY - POTENTIAL CASCADE TRIGGER")
-
-	headerStart := time.Now()
 	headerView := m.headerView()
 	headerHeight := lipgloss.Height(headerView)
 	if headerView == "" {
 		headerHeight = 0
 	}
-	headerDuration := time.Since(headerStart)
-
-	helpStart := time.Now()
 	helpView := m.help.View(m.keyMap)
 	helpViewHeight := lipgloss.Height(helpView)
-	helpDuration := time.Since(helpStart)
-
-	log.Trace().
-		Int64("recompute_call_id", recomputeCallID).
-		Dur("header_duration", headerDuration).
-		Dur("help_duration", helpDuration).
-		Int("header_height", headerHeight).
-		Int("help_height", helpViewHeight).
-		Msg("Header and help views computed")
 
 	if m.state == StateSavingToFile {
 		m.filepicker.Filepicker.Height = m.height - headerHeight - helpViewHeight
-		log.Trace().
-			Int64("recompute_call_id", recomputeCallID).
-			Int("filepicker_height", m.filepicker.Filepicker.Height).
-			Msg("File picker size set")
 		return
 	}
 
@@ -654,10 +626,8 @@ func (m *model) recomputeSize() {
 		statusBarHeight = 0
 	}
 
-	textAreaStart := time.Now()
 	textAreaView := m.textAreaView()
 	textAreaHeight := lipgloss.Height(textAreaView)
-	textAreaDuration := time.Since(textAreaStart)
 
 	newHeight := m.height - headerHeight - statusBarHeight - helpViewHeight
 	if !m.externalInput {
@@ -667,33 +637,16 @@ func (m *model) recomputeSize() {
 		newHeight = 0
 	}
 
-	log.Trace().
-		Int64("recompute_call_id", recomputeCallID).
-		Dur("textarea_duration", textAreaDuration).
-		Int("textarea_height", textAreaHeight).
-		Int("statusbar_height", statusBarHeight).
-		Int("calculated_viewport_height", newHeight).
-		Msg("Text area computed, viewport height calculated")
-
 	// Update shell (timeline) dimensions and position
 	m.timelineSh.SetSize(m.width, newHeight)
 
 	h, _ := m.style.SelectedMessage.GetFrameSize()
 	m.textArea.SetWidth(m.width - h)
 
-	log.Trace().
-		Int64("recompute_call_id", recomputeCallID).
-		Int("textarea_width", m.width-h).
-		Msg("Component dimensions updated")
-
 	// CRITICAL: Regenerate timeline view and set content
 	v := m.timelineSh.View()
 	log.Debug().Str("component", "chat").Str("when", "recompute_size").Int("view_len", len(v)).Msg("SetContent")
 	m.timelineSh.GotoBottom()
-	log.Trace().
-		Int64("recompute_call_id", recomputeCallID).
-		Int("view_length", len(v)).
-		Msg("RECOMPUTE SIZE EXIT - View regenerated and viewport updated")
 }
 
 func (m model) headerView() string {
@@ -740,43 +693,14 @@ func (m model) textAreaView() string {
 }
 
 func (m model) View() string {
-	// Track View calls and timing - CRITICAL FOR DETECTING EXCESSIVE RENDERS
-	viewCallID := atomic.AddInt64(&viewCallCounter, 1)
-	viewStartTime := time.Now()
-
-	vlogger := log.With().Int64("view_call_id", viewCallID).Logger()
-	vlogger.Trace().Str("state", string(m.state)).Bool("scroll_to_bottom", m.scrollToBottom).Time("start_time", viewStartTime).Msg("VIEW ENTRY - POTENTIAL EXCESSIVE CALL POINT")
-
-	headerStart := time.Now()
 	headerView := m.headerView()
-	headerDuration := time.Since(headerStart)
-
-	vlogger.Trace().Dur("header_duration", headerDuration).Bool("header_empty", headerView == "").Msg("Header view generated")
 
 	// Generate timeline view via shell (no outer viewport wrapping)
-	viewportViewStart := time.Now()
 	viewportView := m.timelineSh.View()
-	viewportViewDuration := time.Since(viewportViewStart)
-
-	textAreaStart := time.Now()
 	textAreaView := m.textAreaView()
-	textAreaDuration := time.Since(textAreaStart)
 
 	statusBarView := m.statusBarView()
-
-	helpStart := time.Now()
 	helpView := m.help.View(m.keyMap)
-	helpDuration := time.Since(helpStart)
-
-	vlogger.Trace().Dur("viewport_view_duration", viewportViewDuration).Dur("textarea_duration", textAreaDuration).Dur("help_duration", helpDuration).Msg("UI component views generated")
-
-	// debugging heights with trace logging
-	viewportHeight := lipgloss.Height(viewportView)
-	textAreaHeight := lipgloss.Height(textAreaView)
-	headerHeight := lipgloss.Height(headerView)
-	helpViewHeight := lipgloss.Height(helpView)
-
-	vlogger.Trace().Int("viewport_height", viewportHeight).Int("textarea_height", textAreaHeight).Int("header_height", headerHeight).Int("help_height", helpViewHeight).Int("total_calculated_height", viewportHeight+textAreaHeight+headerHeight+helpViewHeight).Int("model_height", m.height).Msg("Height calculations")
 
 	ret := ""
 	if headerView != "" {
@@ -796,7 +720,6 @@ func (m model) View() string {
 		} else {
 			ret += viewportView + statusBarSuffix + "\n" + textAreaView + "\n" + helpView
 		}
-		vlogger.Trace().Str("combined_state", "viewport+statusbar+textarea+help").Int("final_length", len(ret)).Msg("Combined view for main states")
 	case StateMovingAround:
 		// Keep input visible (greyed) while selecting entities; if external, omit
 		if m.externalInput {
@@ -804,15 +727,10 @@ func (m model) View() string {
 		} else {
 			ret += viewportView + statusBarSuffix + "\n" + textAreaView + "\n" + helpView
 		}
-		vlogger.Trace().Str("combined_state", "viewport+statusbar+textarea+help (selection mode)").Int("final_length", len(ret)).Msg("Combined view for moving-around state")
 
 	case StateSavingToFile:
 		ret += m.filepicker.View()
-		vlogger.Trace().Str("combined_state", "filepicker").Int("final_length", len(ret)).Msg("Combined view for file saving state")
 	}
-
-	viewDuration := time.Since(viewStartTime)
-	vlogger.Trace().Dur("total_view_duration", viewDuration).Int("final_output_length", len(ret)).Msg("VIEW EXIT")
 
 	return ret
 }
