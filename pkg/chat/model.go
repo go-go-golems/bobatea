@@ -355,13 +355,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Consolidated logger for this update call
 	logger := log.With().Int64("update_call_id", updateCallID).Logger()
-	logger.Trace().
-		Str("msg_type", msgType).
-		Str("current_state", string(m.state)).
-		Bool("scroll_to_bottom", m.scrollToBottom).
-		Bool("backend_finished", m.backend.IsFinished()).
-		Time("start_time", updateStartTime).
-		Msg("UPDATE ENTRY")
 
 	var cmds []tea.Cmd
 	var cmd tea.Cmd
@@ -471,28 +464,24 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Accept external timeline lifecycle messages (e.g., from backend simulating agent tool calls)
 	case timeline.UIEntityCreated:
-		logger.Debug().Str("lifecycle", "created").Str("kind", msg_.ID.Kind).Str("local_id", msg_.ID.LocalID).Msg("Applying external entity event")
 		m.timelineSh.OnCreated(msg_)
 		if m.scrollToBottom {
 			m.timelineSh.GotoBottom()
 		}
 		return m, nil
 	case timeline.UIEntityUpdated:
-		logger.Debug().Str("lifecycle", "updated").Str("kind", msg_.ID.Kind).Str("local_id", msg_.ID.LocalID).Int64("version", msg_.Version).Msg("Applying external entity event")
 		m.timelineSh.OnUpdated(msg_)
 		if m.scrollToBottom {
 			m.timelineSh.GotoBottom()
 		}
 		return m, nil
 	case timeline.UIEntityCompleted:
-		logger.Debug().Str("lifecycle", "completed").Str("kind", msg_.ID.Kind).Str("local_id", msg_.ID.LocalID).Msg("Applying external entity event")
 		m.timelineSh.OnCompleted(msg_)
 		if m.scrollToBottom {
 			m.timelineSh.GotoBottom()
 		}
 		return m, nil
 	case timeline.UIEntityDeleted:
-		logger.Debug().Str("lifecycle", "deleted").Str("kind", msg_.ID.Kind).Str("local_id", msg_.ID.LocalID).Msg("Applying external entity event")
 		m.timelineSh.OnDeleted(msg_)
 		if m.scrollToBottom {
 			m.timelineSh.GotoBottom()
@@ -747,30 +736,17 @@ func (m *model) startBackend() tea.Cmd {
 	m.textArea.Blur()
 	m.updateKeyBindings()
 
-	log.Debug().
-		Int64("start_call_id", startCallID).
-		Msg("Calling viewport.GotoBottom()")
 	m.timelineSh.GotoBottom()
 
 	refreshCmd := func() tea.Msg {
-		log.Debug().
-			Int64("start_call_id", startCallID).
-			Msg("REFRESH MESSAGE FROM START BACKEND - LOOP RISK")
 		return refreshMessageMsg{
 			GoToBottom: true,
 		}
 	}
 
 	backendCmd := func() tea.Msg {
-		log.Debug().
-			Int64("start_call_id", startCallID).
-			Msg("BACKEND START COMMAND EXECUTING (no-op in new prompt flow)")
 		return nil
 	}
-
-	log.Debug().
-		Int64("start_call_id", startCallID).
-		Msg("START BACKEND EXIT - returning batch of refresh + backend commands")
 
 	return tea.Batch(refreshCmd, backendCmd)
 }
@@ -778,10 +754,6 @@ func (m *model) startBackend() tea.Cmd {
 func (m *model) submit() tea.Cmd {
 	submitCallID := atomic.AddInt64(&updateCallCounter, 1)
 	slogger := log.With().Int64("submit_call_id", submitCallID).Logger()
-	slogger.Trace().
-		Bool("backend_finished", m.backend.IsFinished()).
-		Int("input_length", len(m.textArea.Value())).
-		Msg("SUBMIT ENTRY")
 
 	// Filter out empty submissions (spaces/newlines only)
 	rawInput := m.textArea.Value()
@@ -821,23 +793,18 @@ func (m *model) submit() tea.Cmd {
 
 	// Add entity to timeline
 	id := uuid.New().String()
-	log.Debug().Str("component", "chat").Str("when", "submit").Str("id", id).Msg("Adding user message to timeline")
 	m.timelineSh.OnCreated(timeline.UIEntityCreated{
 		ID:       timeline.EntityID{LocalID: id, Kind: "llm_text"},
 		Renderer: timeline.RendererDescriptor{Kind: "llm_text"},
 		Props:    map[string]any{"role": "user", "text": userMessage},
 	})
 	m.timelineSh.OnCompleted(timeline.UIEntityCompleted{ID: timeline.EntityID{LocalID: id, Kind: "llm_text"}})
-	log.Debug().Str("component", "chat").Str("when", "submit").Str("id", id).Msg("User message added to timeline")
 
 	if !m.externalInput {
 		m.textArea.SetValue("")
 	}
 
 	refreshCmd := func() tea.Msg {
-		log.Debug().
-			Int64("submit_call_id", submitCallID).
-			Msg("REFRESH COMMAND EXECUTED - POTENTIAL LOOP TRIGGER")
 		return refreshMessageMsg{GoToBottom: true}
 	}
 
