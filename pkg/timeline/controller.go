@@ -92,7 +92,6 @@ func (c *Controller) OnCreated(e UIEntityCreated) {
 
 func (c *Controller) OnUpdated(e UIEntityUpdated) {
 	if rec, ok := c.store.get(e.ID); ok {
-		log.Debug().Str("component", "timeline_controller").Str("event", "updated").Str("kind", e.ID.Kind).Str("local_id", e.ID.LocalID).Int64("version", e.Version).Int("patch_len", len(e.Patch)).Msg("applying update")
 		applyPatch(rec.Props, e.Patch)
 		if rec.model != nil {
 			rec.model.Update(EntityPropsUpdatedMsg{ID: rec.ID, Patch: e.Patch})
@@ -104,7 +103,6 @@ func (c *Controller) OnUpdated(e UIEntityUpdated) {
 
 func (c *Controller) OnCompleted(e UIEntityCompleted) {
 	if rec, ok := c.store.get(e.ID); ok {
-		log.Debug().Str("component", "timeline_controller").Str("event", "completed").Str("kind", e.ID.Kind).Str("local_id", e.ID.LocalID).Int("result_len", len(e.Result)).Msg("applying complete")
 		if len(e.Result) > 0 {
 			applyPatch(rec.Props, e.Result)
 		}
@@ -116,7 +114,6 @@ func (c *Controller) OnCompleted(e UIEntityCompleted) {
 }
 
 func (c *Controller) OnDeleted(e UIEntityDeleted) {
-	log.Debug().Str("component", "timeline_controller").Str("event", "deleted").Str("kind", e.ID.Kind).Str("local_id", e.ID.LocalID).Msg("applying delete")
 	c.store.remove(e.ID)
 	if c.selected >= len(c.store.order) {
 		c.selected = len(c.store.order) - 1

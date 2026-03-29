@@ -68,14 +68,11 @@ func (s *Shell) UpdateViewport(msg tea.Msg) tea.Cmd {
 
 // RefreshView regenerates the viewport content and optionally scrolls to bottom.
 func (s *Shell) RefreshView(goToBottom bool) {
-	start := time.Now()
 	v := s.ctrl.View()
 	s.viewport.SetContent(v)
 	if goToBottom || s.scrollToBottom {
 		s.viewport.GotoBottom()
 	}
-	dur := time.Since(start)
-	log.Debug().Str("component", "timeline_shell").Str("op", "RefreshView").Dur("dur", dur).Int("len", len(v)).Msg("refreshed viewport content")
 }
 
 // GotoBottom forces the viewport to scroll to the bottom.
