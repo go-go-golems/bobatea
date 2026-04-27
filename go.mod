@@ -71,7 +71,7 @@ require (
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
-	github.com/rs/zerolog v1.34.0
+	github.com/rs/zerolog v1.35.1
 	github.com/spf13/cobra v1.10.1
 	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/text v0.35.0
