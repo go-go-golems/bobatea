@@ -17,7 +17,7 @@ import (
 	"github.com/go-go-golems/bobatea/pkg/repl"
 	"github.com/go-go-golems/bobatea/pkg/timeline"
 	"github.com/rs/zerolog"
-	zlog "github.com/rs/zerolog/log"
+	zerologlog "github.com/rs/zerolog/log"
 )
 
 // DemoEvaluator: simple + shell
@@ -32,7 +32,7 @@ func (d DemoEvaluator) EvaluateStream(ctx context.Context, code string, emit fun
 		if cmdStr == "" {
 			return nil
 		}
-		zlog.Debug().Str("cmd", cmdStr).Msg("starting shell command")
+		zerologlog.Debug().Str("cmd", cmdStr).Msg("starting shell command")
 		cmd := exec.CommandContext(ctx, "bash", "-c", cmdStr)
 		stdout, _ := cmd.StdoutPipe()
 		stderr, _ := cmd.StderrPipe()
@@ -82,15 +82,15 @@ func (d DemoEvaluator) EvaluateStream(ctx context.Context, code string, emit fun
 		errCh := make(chan string, 1024)
 		var wg sync.WaitGroup
 		wg.Add(4)
-		zlog.Debug().Msg("streaming stdout and stderr")
+		zerologlog.Debug().Msg("streaming stdout and stderr")
 		go func() { defer wg.Done(); streamLines(stdout, func(line string) { outCh <- line }) }()
 		go func() { defer wg.Done(); streamLines(stderr, func(line string) { errCh <- line }) }()
 		go func() { defer wg.Done(); coalesce(outCh, repl.EventStdout, map[string]any{}) }()
 		go func() { defer wg.Done(); coalesce(errCh, repl.EventStderr, map[string]any{"is_error": true}) }()
-		zlog.Debug().Msg("streaming stdout and stderr done")
+		zerologlog.Debug().Msg("streaming stdout and stderr done")
 
 		// Start coalescers and wait for process end
-		zlog.Debug().Msg("waiting for command to finish")
+		zerologlog.Debug().Msg("waiting for command to finish")
 		err := cmd.Wait()
 		close(outCh)
 		close(errCh)
@@ -102,7 +102,7 @@ func (d DemoEvaluator) EvaluateStream(ctx context.Context, code string, emit fun
 		}
 		md := fmt.Sprintf("Command: `%s`\n\nExit: %d\nDuration: %s", cmdStr, exit, dur)
 		emit(repl.Event{Kind: repl.EventResultMarkdown, Props: map[string]any{"markdown": md}})
-		zlog.Debug().Str("cmd", cmdStr).Int("exit", exit).Dur("duration", dur).Msg("command finished")
+		zerologlog.Debug().Str("cmd", cmdStr).Int("exit", exit).Dur("duration", dur).Msg("command finished")
 
 		return err
 	}
@@ -175,15 +175,15 @@ func main() {
 				TimeFormat: "15:04:05",
 				NoColor:    true,
 			}
-			zlog.Logger = zerolog.New(consoleWriter).With().Timestamp().Logger()
+			zerologlog.Logger = zerolog.New(consoleWriter).With().Timestamp().Logger()
 		}
 	} else {
 		// Avoid any console logging interfering with TUI
-		zlog.Logger = zerolog.New(io.Discard)
+		zerologlog.Logger = zerolog.New(io.Discard)
 	}
 
 	// Add caller info
-	zlog.Logger = zlog.Logger.With().Caller().Logger()
+	zerologlog.Logger = zerologlog.Logger.With().Caller().Logger()
 
 	evaluator := DemoEvaluator{CoalesceMs: coalesceMs}
 	cfg := repl.Config{

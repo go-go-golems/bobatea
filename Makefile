@@ -72,7 +72,7 @@ logcopter-check:
 
 GLAZED_LINT_BIN ?= /tmp/glazed-lint
 GLAZED_LINT_PKG ?= github.com/go-go-golems/glazed/cmd/tools/glazed-lint
-GLAZED_VERSION ?= main
+GLAZED_VERSION ?= v1.3.6
 
 .PHONY: glazed-lint-build glazed-lint
 
@@ -86,5 +86,9 @@ glazed-lint-build:
 		GOBIN=$(dir $(GLAZED_LINT_BIN)) go install $(GLAZED_LINT_PKG); \
 	fi
 
+# cmd/repl-timeline-demo is a legacy demo command with raw Cobra flags; keep
+# Glazed CLI policy enforced elsewhere during the rollout.
+GLAZED_LINT_ALLOW_PATHS ?= cmd/repl-timeline-demo/
+
 glazed-lint: glazed-lint-build
-	GOWORK=off go vet -vettool=$(GLAZED_LINT_BIN) ./cmd/... ./pkg/...
+	GOWORK=off go vet -vettool=$(GLAZED_LINT_BIN) -glazedclilint.allow-paths=$(GLAZED_LINT_ALLOW_PATHS) ./cmd/... ./pkg/...
