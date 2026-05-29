@@ -61,3 +61,11 @@ codeql-local:
 	codeql database create --language=go --source-root=. ./codeql-db
 	codeql database analyze ./codeql-db $(HOME)/codeql-go/ql/src/go/Security --format=sarif-latest --output=codeql-results.sarif
 	@echo "Results saved to codeql-results.sarif"
+
+.PHONY: logcopter-generate
+logcopter-generate:
+	GOWORK=off go tool logcopter-gen -include-main -var zlog -area-prefix go-go-golems.bobatea -strip-prefix github.com/go-go-golems/bobatea ./cmd/... ./pkg/...
+
+.PHONY: logcopter-check
+logcopter-check:
+	GOWORK=off go tool logcopter-gen -include-main -var zlog -area-prefix go-go-golems.bobatea -strip-prefix github.com/go-go-golems/bobatea -check ./cmd/... ./pkg/...
