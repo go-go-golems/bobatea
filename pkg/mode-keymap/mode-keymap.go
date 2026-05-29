@@ -53,7 +53,7 @@ func forEachKeyBinding(
 		return
 	}
 	// check that keymap is a struct or a pointer to a struct
-	if reflect.TypeOf(keymap).Kind() == reflect.Ptr {
+	if reflect.TypeOf(keymap).Kind() == reflect.Pointer {
 		if reflect.TypeOf(keymap).Elem().Kind() != reflect.Struct {
 			return
 		}
@@ -67,7 +67,7 @@ func forEachKeyBinding(
 	}
 
 	// if v is a pointer, get the value it points to
-	if v.Kind() == reflect.Ptr {
+	if v.Kind() == reflect.Pointer {
 		v = v.Elem()
 	}
 
@@ -98,7 +98,7 @@ func forEachKeyBinding(
 			// recurse into the struct
 			forEachKeyBinding(field.Addr().Interface(), f, modes_)
 
-		case reflect.Ptr:
+		case reflect.Pointer:
 			name := field.Type().Elem().Name()
 			pkg := field.Type().Elem().PkgPath()
 			if name == "Binding" && pkg == "github.com/charmbracelet/bubbles/key" {
@@ -122,7 +122,7 @@ func forEachKeyBinding(
 // structs and pointers, extracting all key.Bindings.
 func ForEachKeyBinding(keymap interface{}, f func(b *key.Binding, modes Modes)) {
 	// panic if keymap is not an addressable value
-	if reflect.TypeOf(keymap).Kind() != reflect.Ptr {
+	if reflect.TypeOf(keymap).Kind() != reflect.Pointer {
 		panic("keymap must be a pointer to a struct")
 	}
 
