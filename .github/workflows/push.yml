@@ -21,6 +21,7 @@ jobs:
       -
         name: generate assets
         run: go generate ./...
-      -
-        name: run unit tests
+      - name: Verify Glazed CLI policy
+        run: make glazed-lint
+      - name: Run unit tests
         run: go test ./...
