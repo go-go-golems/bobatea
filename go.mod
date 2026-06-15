@@ -76,8 +76,8 @@ require (
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/rs/zerolog v1.35.1
 	github.com/spf13/cobra v1.10.1
-	golang.org/x/sync v0.20.0 // indirect
-	golang.org/x/text v0.37.0
+	golang.org/x/sync v0.21.0 // indirect
+	golang.org/x/text v0.38.0
 )
 
 tool github.com/go-go-golems/logcopter/cmd/logcopter-gen
